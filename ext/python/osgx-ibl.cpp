@@ -5,20 +5,20 @@
 
 namespace osgx_python {
 
-void bind_ibl(py::module_& m_ibl) {
+void bind_ibl(py::module_& m) {
 	osgx::registerIBLShaderLibs();
 
-	m_ibl.attr("FULLSCREEN_VERT") = osgx::FULLSCREEN_VERT;
-	m_ibl.attr("BRDF_LUT_FRAG") = osgx::BRDF_LUT_FRAG;
-	m_ibl.attr("SH_IRRADIANCE") = osgx::SH_IRRADIANCE;
-	m_ibl.attr("LAMBERTIAN_IRRADIANCE") = osgx::LAMBERTIAN_IRRADIANCE;
+	m.attr("FULLSCREEN_VERT") = osgx::FULLSCREEN_VERT;
+	m.attr("BRDF_LUT_FRAG") = osgx::BRDF_LUT_FRAG;
+	m.attr("SH_IRRADIANCE") = osgx::SH_IRRADIANCE;
+	m.attr("LAMBERTIAN_IRRADIANCE") = osgx::LAMBERTIAN_IRRADIANCE;
 
 	py::class_<
 		osgx::RunOnceCallback,
 		osg::NodeCallback,
 		osg::ref_ptr<osgx::RunOnceCallback>
 	>(
-		m_ibl,
+		m,
 		"RunOnceCallback",
 		"Disables a node after its update callback has fired exactly once -- e.g. a PRE_RENDER "
 		"bake camera that should render one frame at startup and then go idle. Call rebake() to "
@@ -32,7 +32,7 @@ void bind_ibl(py::module_& m_ibl) {
 		)
 	;
 
-	m_ibl
+	m
 		.def(
 			"loadPrefilterCubemap",
 			&osgx::loadPrefilterCubemap,
@@ -51,7 +51,7 @@ void bind_ibl(py::module_& m_ibl) {
 	;
 
 	py::class_<osgx::SH9>(
-		m_ibl,
+		m,
 		"SH9",
 		"9 RGB coefficients (L0-L2 spherical harmonics) standing in for a whole low-frequency "
 		"diffuse environment. See computeSH() to build one from an HDR image, and SH_IRRADIANCE "
@@ -71,14 +71,14 @@ void bind_ibl(py::module_& m_ibl) {
 		}, "i"_a, "value"_a, "Sets the i'th RGB coefficient (0-8).")
 	;
 
-	m_ibl.def(
+	m.def(
 		"computeSH",
 		&osgx::computeSH,
 		"image"_a,
 		"Projects an equirectangular HDR/LDR osg.Image onto SH9 diffuse irradiance coefficients."
 	);
 
-	m_ibl.def(
+	m.def(
 		"computeLambertianCubeMap",
 		&osgx::computeLambertianCubeMap,
 		"image"_a,
@@ -91,7 +91,7 @@ void bind_ibl(py::module_& m_ibl) {
 	);
 
 	py::class_<osgx::GGXPrefilterOptions>(
-		m_ibl,
+		m,
 		"GGXPrefilterOptions",
 		"Tuning knobs for GGXPrefilterScene.create()/rebake(): bake resolution, sample count, "
 		"firefly suppression, and readback timing."
@@ -134,7 +134,7 @@ void bind_ibl(py::module_& m_ibl) {
 		osg::Camera::DrawCallback,
 		osg::ref_ptr<osgx::GGXPrefilterReadback>
 	>(
-		m_ibl,
+		m,
 		"GGXPrefilterReadback",
 		"Post-draw callback that, once attached to a rendering camera, waits until its trigger "
 		"frame has rendered and then reads the prefiltered cubemap back from the GPU."
@@ -150,7 +150,7 @@ void bind_ibl(py::module_& m_ibl) {
 	;
 
 	py::class_<osgx::GGXPrefilterScene>(
-		m_ibl,
+		m,
 		"GGXPrefilterScene",
 		"The offscreen scene graph (PRE_RENDER cameras, one per cubemap face/mip) that "
 		"GGX-prefilters an equirectangular HDR source. Building it renders nothing -- the caller "

@@ -3,9 +3,9 @@
 
 namespace osgx_python {
 
-void bind_gbuffer(py::module_& m_gbuffer) {
+void bind_gbuffer(py::module_& m) {
 	py::enum_<osgx::AttachmentFormat>(
-		m_gbuffer,
+		m,
 		"AttachmentFormat",
 		"Texture internal-format presets for one G-buffer color attachment: RGBA8 for ordinary "
 		"LDR color/albedo, RGB16F for signed [-1,1] data (e.g. a view-space normal), RGBA16F for "
@@ -18,7 +18,7 @@ void bind_gbuffer(py::module_& m_gbuffer) {
 	;
 
 	py::class_<osgx::GBuffer>(
-		m_gbuffer,
+		m,
 		"GBuffer",
 		"One populated G-buffer: `camera` is the PRE_RENDER FBO pass writing `colorTextures` "
 		"(indexed exactly as passed to create(), i.e. colorTextures[i] is COLOR_BUFFERi) plus "
@@ -67,7 +67,7 @@ void bind_gbuffer(py::module_& m_gbuffer) {
 	;
 
 	py::class_<osgx::SSAO>(
-		m_gbuffer,
+		m,
 		"SSAO",
 		"Hemisphere-kernel screen-space ambient occlusion, operating on any G-buffer's "
 		"view-space normal+position channels. `aoTexture` (the blurred result) is a "

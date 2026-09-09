@@ -173,7 +173,7 @@ inline constexpr int EMISSIVE_TEXTURE_UNIT = 3;
 // multiple graphics contexts (osgViewer::CompositeViewer, an offscreen bake pass alongside the
 // main view) with no shared mutable state to race over, the same guarantee osg::Material::apply()
 // gets for free by only ever touching glMaterialfv with already-known values.
-class Material : public osg::StateAttribute {
+class Material: public osg::StateAttribute {
 	public:
 		static constexpr Type MATERIAL_TYPE = CAPABILITY;
 

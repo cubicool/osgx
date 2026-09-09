@@ -69,6 +69,20 @@ def test_make_pick_camera_overloads():
 
 	assert isinstance(cam_tex, osg.Camera)
 
+def test_make_pick_camera_install_program_false():
+	# installProgram=False -- caller (e.g. a wrapper Group between this camera and shared scene
+	# content) installs its own Program instead of fighting this camera's OVERRIDE with
+	# PROTECTED. Just confirms both overloads still construct a usable camera with the generic
+	# pick Program skipped; the StateSet isn't inspected here, that's covered at the osgSlug
+	# integration level (pickScope no longer needs PROTECTED against this camera).
+	cam_image = osgx.makePickCamera(64, 64, make_image(), installProgram=False)
+
+	assert isinstance(cam_image, osg.Camera)
+
+	cam_tex = osgx.makePickCamera(64, 64, osg.Texture2D(), installProgram=False)
+
+	assert isinstance(cam_tex, osg.Camera)
+
 def test_decode_pick_id():
 	assert osgx.decodePickID(bytes([5, 0, 0, 0])) == 5
 	assert osgx.decodePickID(bytes([0, 1, 0, 0])) == 256
@@ -93,3 +107,38 @@ def test_pick_rule_buffer_too_small_raises():
 		assert False, "expected an exception for an undersized buffer"
 	except RuntimeError:
 		pass
+
+def test_pick_id_allocator_hands_out_contiguous_ranges():
+	alloc = osgx.PickIDAllocator()
+
+	# ID 0 stays reserved for "nothing hit" -- the first real ID is 1.
+	assert alloc.alloc() == 1
+	assert alloc.alloc() == 2
+	# A 3-layer CompositeShape reserves a contiguous block; the caller adds its own
+	# 0-based layer index on top of the returned base.
+	assert alloc.alloc(3) == 3
+	assert alloc.alloc() == 6
+
+def test_pick_id_allocator_instances_are_independent():
+	a = osgx.PickIDAllocator()
+	b = osgx.PickIDAllocator()
+
+	a.alloc(5)
+
+	# A fresh allocator still starts at 1 -- state lives on the instance, not process-wide.
+	assert b.alloc() == 1
+
+def test_register_pick_shader_libs_expands_encode_pragma():
+	osgx.registerPickShaderLibs()
+
+	resolved = osgx.resolveShaderLibs("#pragma osgx::picking encode\n")
+
+	assert "osgx_encodePickID" in resolved
+	# Bit layout must match decodePickID()'s R/G/B/A convention.
+	assert "0xFFu" in resolved
+
+def test_register_pick_shader_libs_is_idempotent():
+	# registerShaderLibs() only throws on a genuine content conflict -- re-registering the
+	# same catalog (e.g. called from more than one module import) must be a safe no-op.
+	osgx.registerPickShaderLibs()
+	osgx.registerPickShaderLibs()

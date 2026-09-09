@@ -11,17 +11,17 @@ OSGX_ENABLE_WARNINGS
 
 namespace osgx_python {
 
-void bind_shadow(py::module_& m_shadow) {
+void bind_shadow(py::module_& m) {
 	osgx::registerShadowShaderLibs();
 
-	m_shadow.attr("SHADOW_UNIFORMS") = osgx::SHADOW_UNIFORMS;
-	m_shadow.attr("SHADOW_FACTOR") = osgx::SHADOW_FACTOR;
-	m_shadow.attr("DIRECT_LIGHTING_HOOK_SHADOWED") = osgx::DIRECT_LIGHTING_HOOK_SHADOWED;
+	m.attr("SHADOW_UNIFORMS") = osgx::SHADOW_UNIFORMS;
+	m.attr("SHADOW_FACTOR") = osgx::SHADOW_FACTOR;
+	m.attr("DIRECT_LIGHTING_HOOK_SHADOWED") = osgx::DIRECT_LIGHTING_HOOK_SHADOWED;
 
 	// Python-side convenience mirroring osgx.pbr.makeDirectLightingHookShader() -- assembles
 	// DIRECT_LIGHTING_HOOK_SHADOWED as a standalone FRAGMENT osg::Shader, ready to add()/append()
 	// onto an osg::Program in place of osgx.pbr.makeDirectLightingHookShader()'s unshadowed one.
-	m_shadow.def(
+	m.def(
 		"makeShadowedDirectLightingHookShader",
 		[]() {
 			auto* shader = new osg::Shader(
@@ -41,7 +41,7 @@ void bind_shadow(py::module_& m_shadow) {
 	);
 
 	py::class_<osgx::ShadowMapOptions>(
-		m_shadow,
+		m,
 		"ShadowMapOptions",
 		"Tuning knobs for ShadowMap.create()/reposition(): orthographic frustum size, depth "
 		"precision, and shadow darkness."
@@ -75,7 +75,7 @@ void bind_shadow(py::module_& m_shadow) {
 	;
 
 	py::class_<osgx::ShadowMap>(
-		m_shadow,
+		m,
 		"ShadowMap",
 		"A directional shadow map: owns the PRE_RENDER depth-only orthographic camera plus the "
 		"uniforms DIRECT_LIGHTING_HOOK_SHADOWED reads every frame. World-space, not eye-space -- "

@@ -62,9 +62,20 @@ namespace osgx {
 // - addChild(scene) on the returned camera
 // - syncing view/projection from the main camera each update traversal
 // - installing a readback callback (update NodeCallback for SYNC; postDrawCallback for ASYNC)
+//
+// installProgram=false skips building/installing the generic pick Program (and ignores
+// vertHook/fragHook -- there is no core to attach them to; passing either logs a warning) while
+// still setting up everything else (FBO, ABSOLUTE_RF, clear, viewport, the picking-correct
+// BlendFunc/DITHER overrides). Use this when a subtree under the returned camera owns its own
+// vertex-layout contract and needs to install its own Program (e.g. a wrapper Group with
+// ON|OVERRIDE) -- without this flag, this camera's own OVERRIDE Program wins regardless (OSG
+// resolves OVERRIDE shallowest-wins), forcing the subtree to fight back with PROTECTED. Skipping
+// installation here is the real fix; PROTECTED downstream is now only a workaround for callers
+// that don't use this flag.
 osg::ref_ptr<osg::Camera> makePickCamera(
 	int w, int h,
 	osg::Image* image = nullptr,
+	bool installProgram = true,
 	osg::Shader* vertHook = nullptr,
 	osg::Shader* fragHook = nullptr
 );
@@ -74,9 +85,12 @@ osg::ref_ptr<osg::Camera> makePickCamera(
 // a postDrawCallback that uses glGetTexImage + PBO for zero-stall async readback -- valid
 // after FBO unbind since glGetTexImage reads from the texture object, not the framebuffer.
 // makePickCamera configures the texture's size, format, and NEAREST filters.
+//
+// installProgram -- see the Image overload above; same meaning here.
 osg::ref_ptr<osg::Camera> makePickCamera(
 	int w, int h,
 	osg::Texture2D* tex,
+	bool installProgram = true,
 	osg::Shader* vertHook = nullptr,
 	osg::Shader* fragHook = nullptr
 );
@@ -85,6 +99,39 @@ osg::ref_ptr<osg::Camera> makePickCamera(
 inline uint32_t decodePickID(const uint8_t* px) {
 	return uint32_t(px[0]) | (uint32_t(px[1]) << 8) | (uint32_t(px[2]) << 16) | (uint32_t(px[3]) << 24);
 }
+
+// A GLSL `vec4 osgx_encodePickID(uint id)` matching decodePickID()'s bit layout above, registered
+// under the "osgx::picking" pragma namespace (`#pragma osgx::picking encode`) via
+// osgx::registerShaderLibs -- see Shader.hpp. Exists so a shader that CAN'T reuse
+// makePickCamera()'s own PICK_FRAG_CORE/PICK_FRAG_HOOK_UNIFORM wholesale (e.g. one that has to run
+// its own coverage/discard test before it knows the final ID) still packs the ID exactly the way
+// this file's own decodePickID() expects it, from one shared implementation instead of a
+// hand-copied one drifting in another repo.
+void registerPickShaderLibs();
+
+// Hands out contiguous pick-ID ranges instead of a single ID -- for a drawable whose fragment
+// shader distinguishes more than one pickable "part" per draw call (e.g. a multi-layer composite
+// shape rendered in one draw call, where a per-vertex layer index picks out the part). ID 0 stays
+// reserved for "nothing hit" (the pick camera's clear color), so the first real ID is 1.
+//
+// Not thread-safe -- allocation happens at scene-build time on a single thread, same as the rest
+// of scene construction; nothing here is touched during rendering or readback.
+class PickIDAllocator {
+public:
+	// Reserves `count` (>= 1) contiguous IDs and returns the first one. A caller with multiple
+	// parts per drawable adds its own per-part offset (e.g. a 0-based layer index) to this base
+	// to get that part's final ID.
+	uint32_t alloc(uint32_t count = 1) {
+		const uint32_t base = _next;
+
+		_next += count > 0 ? count : 1;
+
+		return base;
+	}
+
+private:
+	uint32_t _next{1};
+};
 
 // Selects one pick ID from a flat NxN RGBA pixel buffer.
 // pixels -- row-major RGBA, n*n pixels, Y=0 at bottom-left (OpenGL convention)

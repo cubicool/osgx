@@ -290,7 +290,10 @@ int main() {
 	viewer.addEventHandler(new osgViewer::StatsHandler());
 
 #ifdef OSGX_IMGUI
-	auto* gui = new osgx::imgui::Widget(viewer);
+	// LightGizmos' directional-light visualization is a nested POST_RENDER camera.
+	// Draw ImGui from that camera's PostDrawCallback, after its overlay, so the
+	// directional plane/arrow cannot paint over the panel.
+	auto* gui = new osgx::imgui::Widget(viewer, gizmos->getOverlay());
 
 	// Every section's fn() runs directly in Panel's window ID stack -- Panel::draw() (ImGui.cpp)
 	// only auto-wraps `expand`-mode sections (the Profiler's scrolling table) in their own

@@ -1,8 +1,11 @@
 #include "osgx/Picking.hpp"
+#include "osgx/Shader.hpp"
 
 #ifdef OSGX_PLATFORM
 #include "osgx/Linux.hpp"
 #endif
+
+#include <osg/Notify>
 
 #include <cstring>
 
@@ -22,7 +25,8 @@ namespace {
 // getPickID() -- fragment stage; return the pick ID for this fragment.
 // Default: reads uniform uint pickID (PICK_FRAG_HOOK_UNIFORM).
 //
-// makePickCamera() assembles these into a program and installs it with OVERRIDE.
+// makePickCamera() assembles these into a program and installs it with OVERRIDE, unless
+// installProgram=false -- see its own doc comment in osgx/Picking.hpp.
 // ------------------------------------------------------------------------------------------------
 
 // Core: declares the hook prototypes and provides the main() implementations.
@@ -71,11 +75,36 @@ uniform uint pickID;
 uint getPickID() { return pickID; }
 )GLSL";
 
+// See registerPickShaderLibs()/Picking.hpp's own comment: a `vec4 osgx_encodePickID(uint id)`
+// matching decodePickID()'s bit layout, published under the "osgx::picking" pragma namespace for
+// a shader elsewhere (e.g. osgSlug's coverage-aware pick fragment) that can't reuse
+// PICK_FRAG_CORE/PICK_FRAG_HOOK_UNIFORM above wholesale. Not used by makePickCamera() itself --
+// its own inline encode in PICK_FRAG_CORE is already working code, left untouched.
+constexpr const char* PICK_ENCODE_SRC = R"GLSL(
+vec4 osgx_encodePickID(uint id) {
+	return vec4(
+		float( id & 0xFFu) / 255.0,
+		float((id >> 8u) & 0xFFu) / 255.0,
+		float((id >> 16u) & 0xFFu) / 255.0,
+		float((id >> 24u) & 0xFFu) / 255.0
+	);
+}
+)GLSL";
+
+}
+
+void registerPickShaderLibs() {
+	static constexpr ShaderLib libs[] = {
+		{"encode", "osgx_encodePickID", PICK_ENCODE_SRC}
+	};
+
+	::osgx::registerShaderLibs("osgx::picking", libs);
 }
 
 osg::ref_ptr<osg::Camera> makePickCamera(
 	int w, int h,
 	osg::Image* image,
+	bool installProgram,
 	osg::Shader* vertHook,
 	osg::Shader* fragHook
 ) {
@@ -91,6 +120,12 @@ osg::ref_ptr<osg::Camera> makePickCamera(
 	// transform stack, producing a wrong cull frustum that clips all geometry.
 	cam->setReferenceFrame(osg::Transform::ABSOLUTE_RF);
 	cam->setSmallFeatureCullingPixelSize(-1.0f);
+	// Implicit renderbuffer -- no readback needed, this only exists so overlapping pickable
+	// geometry at different depths resolves nearest-wins during THIS pass instead of last-
+	// drawn-wins. setClearMask() above already asked for GL_DEPTH_BUFFER_BIT; without an actual
+	// attachment here that clear (and any depth test) is a silent no-op against a buffer that
+	// was never created.
+	cam->attach(osg::Camera::DEPTH_BUFFER, GL_DEPTH_COMPONENT24);
 
 	if(image) {
 		cam->attach(osg::Camera::COLOR_BUFFER, image);
@@ -109,32 +144,43 @@ osg::ref_ptr<osg::Camera> makePickCamera(
 	}
 	else cam->attach(osg::Camera::COLOR_BUFFER, GL_RGBA);
 
-	auto prog = make_ref<osg::Program>();
-
-	prog->setName("pickProgram");
-
-	auto* vc = new osg::Shader(osg::Shader::VERTEX, PICK_VERT_CORE);
-	auto* vh = vertHook ? vertHook : new osg::Shader(osg::Shader::VERTEX, PICK_VERT_HOOK_NOOP);
-	auto* fc = new osg::Shader(osg::Shader::FRAGMENT, PICK_FRAG_CORE);
-	auto* fh = fragHook ? fragHook : new osg::Shader(osg::Shader::FRAGMENT, PICK_FRAG_HOOK_UNIFORM);
-
-	vc->setName("pickVertCore"); vh->setName("pickVertHook");
-	fc->setName("pickFragCore"); fh->setName("pickFragHook");
-
-	prog->addShader(vc); prog->addShader(vh);
-	prog->addShader(fc); prog->addShader(fh);
+	if(!installProgram && (vertHook || fragHook)) {
+		osg::notify(osg::WARN) <<
+			"osgx::makePickCamera: vertHook/fragHook ignored -- installProgram=false means no "
+			"core program exists for them to attach to" << std::endl;
+	}
 
 	auto* ss = cam->getOrCreateStateSet();
 
+	if(installProgram) {
+		auto prog = make_ref<osg::Program>();
+
+		prog->setName("pickProgram");
+
+		auto* vc = new osg::Shader(osg::Shader::VERTEX, PICK_VERT_CORE);
+		auto* vh = vertHook ? vertHook : new osg::Shader(osg::Shader::VERTEX, PICK_VERT_HOOK_NOOP);
+		auto* fc = new osg::Shader(osg::Shader::FRAGMENT, PICK_FRAG_CORE);
+		auto* fh = fragHook ? fragHook : new osg::Shader(osg::Shader::FRAGMENT, PICK_FRAG_HOOK_UNIFORM);
+
+		vc->setName("pickVertCore"); vh->setName("pickVertHook");
+		fc->setName("pickFragCore"); fh->setName("pickFragHook");
+
+		prog->addShader(vc); prog->addShader(vh);
+		prog->addShader(fc); prog->addShader(fh);
+
+		ss->setAttributeAndModes(prog, osg::StateAttribute::ON | osg::StateAttribute::OVERRIDE);
+	}
+
 	// BlendFunc(ONE,ZERO) with PROTECTED: osg::Text re-enables blend without
-	// respecting OVERRIDE alone; PROTECTED prevents any child from overriding it.
+	// respecting OVERRIDE alone; PROTECTED prevents any child from overriding it. Kept
+	// regardless of installProgram -- correct pick-buffer semantics (opaque write, no
+	// blending) apply no matter whose Program is actually running.
 	auto* bf = new osg::BlendFunc(
 		osg::BlendFunc::ONE, osg::BlendFunc::ZERO,
 		osg::BlendFunc::ONE, osg::BlendFunc::ZERO
 	);
 
 	ss->setMode(GL_DITHER, osg::StateAttribute::OFF | osg::StateAttribute::OVERRIDE);
-	ss->setAttributeAndModes(prog, osg::StateAttribute::ON | osg::StateAttribute::OVERRIDE);
 	ss->setAttributeAndModes(
 		bf,
 		osg::StateAttribute::ON | osg::StateAttribute::OVERRIDE | osg::StateAttribute::PROTECTED
@@ -146,6 +192,7 @@ osg::ref_ptr<osg::Camera> makePickCamera(
 osg::ref_ptr<osg::Camera> makePickCamera(
 	int w, int h,
 	osg::Texture2D* tex,
+	bool installProgram,
 	osg::Shader* vertHook,
 	osg::Shader* fragHook
 ) {
@@ -165,30 +212,41 @@ osg::ref_ptr<osg::Camera> makePickCamera(
 	cam->setReferenceFrame(osg::Transform::ABSOLUTE_RF);
 	cam->setSmallFeatureCullingPixelSize(-1.0f);
 	cam->attach(osg::Camera::COLOR_BUFFER, tex);
+	// See the Image overload's identical attachment above for why this is needed.
+	cam->attach(osg::Camera::DEPTH_BUFFER, GL_DEPTH_COMPONENT24);
 
-	auto prog = make_ref<osg::Program>();
-
-	prog->setName("pickProgram");
-
-	auto* vc = new osg::Shader(osg::Shader::VERTEX, PICK_VERT_CORE);
-	auto* vh = vertHook ? vertHook : new osg::Shader(osg::Shader::VERTEX, PICK_VERT_HOOK_NOOP);
-	auto* fc = new osg::Shader(osg::Shader::FRAGMENT, PICK_FRAG_CORE);
-	auto* fh = fragHook ? fragHook : new osg::Shader(osg::Shader::FRAGMENT, PICK_FRAG_HOOK_UNIFORM);
-
-	vc->setName("pickVertCore"); vh->setName("pickVertHook");
-	fc->setName("pickFragCore"); fh->setName("pickFragHook");
-
-	prog->addShader(vc); prog->addShader(vh);
-	prog->addShader(fc); prog->addShader(fh);
+	if(!installProgram && (vertHook || fragHook)) {
+		osg::notify(osg::WARN) <<
+			"osgx::makePickCamera: vertHook/fragHook ignored -- installProgram=false means no "
+			"core program exists for them to attach to" << std::endl;
+	}
 
 	auto* ss = cam->getOrCreateStateSet();
+
+	if(installProgram) {
+		auto prog = make_ref<osg::Program>();
+
+		prog->setName("pickProgram");
+
+		auto* vc = new osg::Shader(osg::Shader::VERTEX, PICK_VERT_CORE);
+		auto* vh = vertHook ? vertHook : new osg::Shader(osg::Shader::VERTEX, PICK_VERT_HOOK_NOOP);
+		auto* fc = new osg::Shader(osg::Shader::FRAGMENT, PICK_FRAG_CORE);
+		auto* fh = fragHook ? fragHook : new osg::Shader(osg::Shader::FRAGMENT, PICK_FRAG_HOOK_UNIFORM);
+
+		vc->setName("pickVertCore"); vh->setName("pickVertHook");
+		fc->setName("pickFragCore"); fh->setName("pickFragHook");
+
+		prog->addShader(vc); prog->addShader(vh);
+		prog->addShader(fc); prog->addShader(fh);
+
+		ss->setAttributeAndModes(prog, osg::StateAttribute::ON | osg::StateAttribute::OVERRIDE);
+	}
 
 	auto* bf = new osg::BlendFunc(
 		osg::BlendFunc::ONE, osg::BlendFunc::ZERO,
 		osg::BlendFunc::ONE, osg::BlendFunc::ZERO
 	);
 
-	ss->setAttributeAndModes(prog, osg::StateAttribute::ON | osg::StateAttribute::OVERRIDE);
 	ss->setAttributeAndModes(bf, osg::StateAttribute::ON | osg::StateAttribute::OVERRIDE | osg::StateAttribute::PROTECTED);
 	ss->setMode(GL_DITHER, osg::StateAttribute::OFF | osg::StateAttribute::OVERRIDE);
 

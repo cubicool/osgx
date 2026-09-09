@@ -11,35 +11,35 @@ OSGX_ENABLE_WARNINGS
 
 namespace osgx_python {
 
-void bind_pbr(py::module_& m_pbr) {
+void bind_pbr(py::module_& m) {
 	osgx::registerPBRShaderLibs();
 
-	m_pbr.attr("D_GGX") = osgx::D_GGX;
-	m_pbr.attr("G_SCHLICK") = osgx::G_SCHLICK;
-	m_pbr.attr("G_SMITH") = osgx::G_SMITH;
-	m_pbr.attr("F_SCHLICK") = osgx::F_SCHLICK;
-	m_pbr.attr("F_SCHLICK_ROUGHNESS") = osgx::F_SCHLICK_ROUGHNESS;
-	m_pbr.attr("DIRECT_SPECULAR") = osgx::DIRECT_SPECULAR;
-	m_pbr.attr("DIRECT_DIFFUSE") = osgx::DIRECT_DIFFUSE;
-	m_pbr.attr("POINT_LIGHT_RADIANCE") = osgx::POINT_LIGHT_RADIANCE;
-	m_pbr.attr("LIGHT_UNIFORMS") = osgx::LIGHT_UNIFORMS;
-	m_pbr.attr("DIRECT_LIGHT") = osgx::DIRECT_LIGHT;
-	m_pbr.attr("DIRECTIONAL_LIGHT_RADIANCE") = osgx::DIRECTIONAL_LIGHT_RADIANCE;
-	m_pbr.attr("SPOT_LIGHT_RADIANCE") = osgx::SPOT_LIGHT_RADIANCE;
-	m_pbr.attr("SPHERE_LIGHT_SPECULAR") = osgx::SPHERE_LIGHT_SPECULAR;
-	m_pbr.attr("DIRECT_LIGHT_SPHERE") = osgx::DIRECT_LIGHT_SPHERE;
-	m_pbr.attr("MAX_LIGHTS") = osgx::MAX_LIGHTS;
-	m_pbr.attr("LIGHT_STRUCT_FLOATS") = osgx::LIGHT_STRUCT_FLOATS;
-	m_pbr.attr("DIRECT_LIGHTING_DECL") = osgx::DIRECT_LIGHTING_DECL;
-	m_pbr.attr("DIRECT_LIGHTING_HOOK_DEFAULT") = osgx::DIRECT_LIGHTING_HOOK_DEFAULT;
-	m_pbr.attr("F_MULTISCATTER") = osgx::F_MULTISCATTER;
-	m_pbr.attr("IBL_SPECULAR") = osgx::IBL_SPECULAR;
-	m_pbr.attr("AMBIENT_LIGHTING_DECL") = osgx::AMBIENT_LIGHTING_DECL;
-	m_pbr.attr("AMBIENT_LIGHTING_HOOK_DEFAULT") = osgx::AMBIENT_LIGHTING_HOOK_DEFAULT;
-	m_pbr.attr("TONEMAP_PBR_NEUTRAL") = osgx::TONEMAP_PBR_NEUTRAL;
-	m_pbr.attr("TONEMAP_DECL") = osgx::TONEMAP_DECL;
-	m_pbr.attr("TONEMAP_HOOK_DEFAULT") = osgx::TONEMAP_HOOK_DEFAULT;
-	m_pbr.attr("MATERIAL_BINDING") = osgx::MATERIAL_BINDING;
+	m.attr("D_GGX") = osgx::D_GGX;
+	m.attr("G_SCHLICK") = osgx::G_SCHLICK;
+	m.attr("G_SMITH") = osgx::G_SMITH;
+	m.attr("F_SCHLICK") = osgx::F_SCHLICK;
+	m.attr("F_SCHLICK_ROUGHNESS") = osgx::F_SCHLICK_ROUGHNESS;
+	m.attr("DIRECT_SPECULAR") = osgx::DIRECT_SPECULAR;
+	m.attr("DIRECT_DIFFUSE") = osgx::DIRECT_DIFFUSE;
+	m.attr("POINT_LIGHT_RADIANCE") = osgx::POINT_LIGHT_RADIANCE;
+	m.attr("LIGHT_UNIFORMS") = osgx::LIGHT_UNIFORMS;
+	m.attr("DIRECT_LIGHT") = osgx::DIRECT_LIGHT;
+	m.attr("DIRECTIONAL_LIGHT_RADIANCE") = osgx::DIRECTIONAL_LIGHT_RADIANCE;
+	m.attr("SPOT_LIGHT_RADIANCE") = osgx::SPOT_LIGHT_RADIANCE;
+	m.attr("SPHERE_LIGHT_SPECULAR") = osgx::SPHERE_LIGHT_SPECULAR;
+	m.attr("DIRECT_LIGHT_SPHERE") = osgx::DIRECT_LIGHT_SPHERE;
+	m.attr("MAX_LIGHTS") = osgx::MAX_LIGHTS;
+	m.attr("LIGHT_STRUCT_FLOATS") = osgx::LIGHT_STRUCT_FLOATS;
+	m.attr("DIRECT_LIGHTING_DECL") = osgx::DIRECT_LIGHTING_DECL;
+	m.attr("DIRECT_LIGHTING_HOOK_DEFAULT") = osgx::DIRECT_LIGHTING_HOOK_DEFAULT;
+	m.attr("F_MULTISCATTER") = osgx::F_MULTISCATTER;
+	m.attr("IBL_SPECULAR") = osgx::IBL_SPECULAR;
+	m.attr("AMBIENT_LIGHTING_DECL") = osgx::AMBIENT_LIGHTING_DECL;
+	m.attr("AMBIENT_LIGHTING_HOOK_DEFAULT") = osgx::AMBIENT_LIGHTING_HOOK_DEFAULT;
+	m.attr("TONEMAP_PBR_NEUTRAL") = osgx::TONEMAP_PBR_NEUTRAL;
+	m.attr("TONEMAP_DECL") = osgx::TONEMAP_DECL;
+	m.attr("TONEMAP_HOOK_DEFAULT") = osgx::TONEMAP_HOOK_DEFAULT;
+	m.attr("MATERIAL_BINDING") = osgx::MATERIAL_BINDING;
 
 	// osgx::MaterialFactors/attachMaterialFactors() are gone -- collapsed into osgx::Material, a
 	// real osg::StateAttribute (PBR.hpp/PBR.cpp). Bound the same way osgx-callbacks.cpp already
@@ -51,7 +51,7 @@ void bind_pbr(py::module_& m_pbr) {
 	// to have already happened in this interpreter -- pybind11 has no way to resolve a base class
 	// it hasn't seen registered yet.
 	py::class_<osgx::Material, osg::StateAttribute, osg::ref_ptr<osgx::Material>>(
-		m_pbr,
+		m,
 		"Material",
 		"A real osg.StateAttribute carrying PBR material factors (base color/roughness/metallic/"
 		"occlusion) and texture maps (base color/normal/metallicRoughness/emissive), applied via "
@@ -95,7 +95,7 @@ void bind_pbr(py::module_& m_pbr) {
 		)
 	;
 
-	m_pbr.def(
+	m.def(
 		"snippets", &osgx::snippets,
 		"Returns the five core BRDF snippets (D_GGX, G_SCHLICK, G_SMITH, F_SCHLICK, "
 		"F_SCHLICK_ROUGHNESS) concatenated in dependency order -- convenience for a caller that "
@@ -109,7 +109,7 @@ void bind_pbr(py::module_& m_pbr) {
 	// osg.Shader(osg.Shader.FRAGMENT, osgx.resolveShaderLibs(osgx.pbr.DIRECT_LIGHTING_HOOK_DEFAULT))
 	// itself. See PBR.hpp's DIRECT_LIGHTING_DECL/DIRECT_LIGHTING_HOOK_DEFAULT comment for the full
 	// rationale.
-	m_pbr.def(
+	m.def(
 		"makeDirectLightingHookShader",
 		[]() {
 			auto* shader = new osg::Shader(
@@ -134,7 +134,7 @@ void bind_pbr(py::module_& m_pbr) {
 	// osgx_AmbientLighting() CONTRACT's Python-side convenience -- same shape as
 	// makeDirectLightingHookShader() above. See PBR.hpp's AMBIENT_LIGHTING_DECL/
 	// AMBIENT_LIGHTING_HOOK_DEFAULT comment: specular-only default (no SH-9 diffuse yet).
-	m_pbr.def(
+	m.def(
 		"makeAmbientLightingHookShader",
 		[]() {
 			auto* shader = new osg::Shader(
@@ -153,7 +153,7 @@ void bind_pbr(py::module_& m_pbr) {
 
 	// osgx_Tonemap() CONTRACT's Python-side convenience -- same shape as
 	// makeDirectLightingHookShader() above. See PBR.hpp's TONEMAP_DECL/TONEMAP_HOOK_DEFAULT comment.
-	m_pbr.def(
+	m.def(
 		"makeTonemapHookShader",
 		[]() {
 			auto* shader = new osg::Shader(
@@ -171,7 +171,7 @@ void bind_pbr(py::module_& m_pbr) {
 	);
 
 	py::class_<osgx::OrbitLightRig::Orbit>(
-		m_pbr,
+		m,
 		"Orbit",
 		"One light's orbit parameters for OrbitLightRig: radius/height around `center`, angular "
 		"speed and phase offset, and a per-orbit intensity scale."
@@ -195,7 +195,7 @@ void bind_pbr(py::module_& m_pbr) {
 	;
 
 	py::enum_<osgx::LightType>(
-		m_pbr,
+		m,
 		"LightType",
 		"Selects the radiance function LightSet's per-light `type` field picks in the fragment "
 		"shader loop. No Sphere member: a sphere light is a Point or Spot light with a nonzero "
@@ -207,7 +207,7 @@ void bind_pbr(py::module_& m_pbr) {
 	;
 
 	py::class_<osgx::LightSet, osg::StateAttribute, osg::ref_ptr<osgx::LightSet>>(
-		m_pbr,
+		m,
 		"LightSet",
 		"A real osg.StateAttribute owning up to MAX_LIGHTS punctual lights in one std430 shader "
 		"storage buffer plus their count uniform. Attach with setAttributeAndModes() on an "
@@ -248,9 +248,15 @@ void bind_pbr(py::module_& m_pbr) {
 			"(KHR_lights_punctual convention); `sourceRadius` > 0 widens its specular highlight, "
 			"same as setPoint()."
 		)
-		.def(
-			"setCount", &osgx::LightSet::setCount, "count"_a,
-			"Sets how many of MAX_LIGHTS light slots the shader loop actually iterates."
+		.def_property(
+			"count",
+			&osgx::LightSet::getCount,
+			[](const osgx::LightSet& lights, int count) {
+				if(count < 0) throw std::out_of_range("LightSet count out of range");
+
+				lights.setCount(static_cast<std::size_t>(count));
+			},
+			"How many of MAX_LIGHTS light slots the shader loop actually iterates."
 		)
 		.def(
 			"setEnabled", &osgx::LightSet::setEnabled, "index"_a, "enabled"_a,
@@ -262,7 +268,6 @@ void bind_pbr(py::module_& m_pbr) {
 			"spotAngles/sourceRadius untouched -- the primitive OrbitLightRig uses to animate an "
 			"already-configured light every frame."
 		)
-		.def("getCount", &osgx::LightSet::getCount, "Returns how many light slots are currently active.")
 		.def("getPosIntensity", &osgx::LightSet::getPosIntensity, "index"_a, "Returns light `index`'s (position.xyz, intensity.w).")
 		.def("getColor", &osgx::LightSet::getColor, "index"_a, "Returns light `index`'s color.")
 		.def(
@@ -284,7 +289,7 @@ void bind_pbr(py::module_& m_pbr) {
 		osg::NodeCallback,
 		osg::ref_ptr<osgx::OrbitLightRig>
 	>(
-		m_pbr,
+		m,
 		"OrbitLightRig",
 		"Animates a handful of point lights orbiting a center point, writing world-space "
 		"position+intensity into an attached LightSet's posIntensity field every update "

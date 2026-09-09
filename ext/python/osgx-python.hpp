@@ -32,13 +32,13 @@ namespace osgx_python {
 
 void bind_core(py::module_& m);
 void bind_callbacks(py::module_& m);
-void bind_pbr(py::module_& m_pbr);
-void bind_shadow(py::module_& m_shadow);
-void bind_gbuffer(py::module_& m_gbuffer);
-void bind_ibl(py::module_& m_ibl);
+void bind_pbr(py::module_& m);
+void bind_shadow(py::module_& m);
+void bind_gbuffer(py::module_& m);
+void bind_ibl(py::module_& m);
 void bind_aura(py::module_& m);
 void bind_debug(py::module_& m_debug);
-void bind_picking(py::module_& m_picking);
+void bind_picking(py::module_& m);
 void bind_shapes(py::module_& m);
 void bind_gizmos(py::module_& m);
 void bind_pixel_text(py::module_& m);
