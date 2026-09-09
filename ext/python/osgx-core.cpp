@@ -660,6 +660,16 @@ void bind_core(py::module_& m) {
 		"Expand registered '#pragma osgx::...' lines into their GLSL source."
 	);
 
+	m.def(
+		"cachedShader",
+		&osgx::cachedShader,
+		"type"_a,
+		"src"_a,
+		"Return the process-wide cached osg.Shader for this (type, source) pair. Repeated calls "
+		"with identical arguments return the same shader object, allowing OSG to reuse its compiled "
+		"per-context shader."
+	);
+
 	// Shader-object substitution hook slots, the counterpart to resolveShaderLibs()' text
 	// splicing above -- see osgx::applyHooks() (Shader.hpp) and PBRIBLScene.create()'s "hooks"
 	// parameter. A HookList is just `[(osgx.Hook.Tonemap, shader), ...]` in Python; no separate

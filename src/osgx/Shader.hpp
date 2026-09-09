@@ -39,6 +39,28 @@ void registerShaderLibs(std::string_view namespaceName, std::span<const ShaderLi
 std::string resolveShaderLibs(std::string src);
 
 // ================================================================================================
+// Shader-object caching: osg::Shader INSTANCE dedup, the compile-time counterpart to
+// resolveShaderLibs()'s text-splicing above. osg::Shader dedupes its own GL compile by instance
+// identity, not source content: Program::apply() calls Shader::getPCS(state) once per attached
+// Shader object, and a PerContextShader's compile is gated by `if(!_needsCompile) return`, so N
+// Programs sharing the SAME osg::Shader* only ever trigger one real glCompileShader, while N
+// Programs each holding their OWN Shader instance -- even with byte-identical source -- recompile
+// independently every time. Confirmed empirically (not just by reading OSG's source) via a
+// miscosg scratchpad proof; see slughorn/osgSlug's project_shader_object_caching memory.
+// cachedShader() makes sharing the outcome by default for source that's likely to repeat.
+// ================================================================================================
+
+// Returns a cached osg::Shader for (type, src), compiling a new instance only the first time this
+// exact (type, source text) pair is requested; every later call with the same pair returns the
+// SAME instance, so Program::apply() finds it already compiled. Process-wide and never evicted --
+// same tradeoff as the shaderLibCatalogs() registry above -- which is fine for the intended use (a
+// library's own default/no-op shader constants, or caller-supplied hook text that happens to
+// repeat across call sites), but wrong for source built fresh with caller-specific data baked in
+// as a literal every call: that source never actually repeats, so caching it only grows the map
+// forever for no benefit.
+osg::Shader* cachedShader(osg::Shader::Type type, std::string src);
+
+// ================================================================================================
 // Hook points: shader-object SUBSTITUTION, the counterpart to registerShaderLibs()/
 // resolveShaderLibs()' text-splicing above. A Program-building call site (e.g.
 // osgx::gltf::pbribl::PBRIBLScene::create()) declares which slots it supports via `defaults`;

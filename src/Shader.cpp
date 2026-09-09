@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <map>
 #include <optional>
 #include <stdexcept>
 #include <utility>
@@ -94,6 +95,30 @@ void registerShaderLibs(std::string_view namespaceName, std::span<const ShaderLi
 			throw std::runtime_error("osgx::registerShaderLibs: conflicting library '" + std::string(lib.name) + "'");
 		}
 	}
+}
+
+namespace {
+
+// Process-wide shader cache, keyed by (type, source text). Same "function-local static inside a
+// header-defined inline function only merges within one link unit" concern as
+// shaderLibCatalogs() above -- defined exactly once here, compiled into libosgx.
+std::map<std::pair<osg::Shader::Type, std::string>, osg::ref_ptr<osg::Shader>>& shaderCache() {
+	static std::map<std::pair<osg::Shader::Type, std::string>, osg::ref_ptr<osg::Shader>> cache;
+	return cache;
+}
+
+}
+
+osg::Shader* cachedShader(osg::Shader::Type type, std::string src) {
+	auto& cache = shaderCache();
+	auto key = std::make_pair(type, std::move(src));
+	const auto found = cache.find(key);
+
+	if(found != cache.end()) return found->second.get();
+
+	auto* shader = new osg::Shader(type, key.second);
+
+	return cache.emplace(std::move(key), shader).first->second.get();
 }
 
 namespace {
