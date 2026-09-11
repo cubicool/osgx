@@ -1,5 +1,6 @@
 #include "osgx/Cursor.hpp"
 
+#include "osgx/Linux.hpp"
 #include "osgx/Warnings.hpp"
 
 OSGX_DISABLE_WARNINGS
@@ -30,6 +31,30 @@ void setCursorVisible(osgViewer::View& view, bool visible) {
 
 void warpPointer(osgViewer::View& view, float x, float y) {
 	view.requestWarpPointer(x, y);
+}
+
+bool CursorHandler::handle(const osgGA::GUIEventAdapter& ea, osgGA::GUIActionAdapter&) {
+	if(
+		_state &&
+		(
+			ea.getEventType() == osgGA::GUIEventAdapter::MOVE ||
+			ea.getEventType() == osgGA::GUIEventAdapter::DRAG
+		)
+	) {
+		_state->updateMouse(static_cast<int>(ea.getX()), static_cast<int>(ea.getY()));
+	}
+
+	return false;
+}
+
+void CursorCallback::operator()(osg::Node* node, osg::NodeVisitor* nv) {
+	if(_state) {
+		if(auto* cam = _viewerCam.get()) _state->setInWindow(isCursorInWindow(cam));
+
+		if(_fn) _fn(_state->x(), _state->y());
+	}
+
+	traverse(node, nv);
 }
 
 void PointerCapture::setCaptured(bool captured) {

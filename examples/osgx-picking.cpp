@@ -23,6 +23,7 @@
 // osgx/Picking.hpp.
 
 #include "osgx/Core.hpp"
+#include "osgx/Cursor.hpp"
 #include "osgx/Picking.hpp"
 
 OSGX_DISABLE_WARNINGS
@@ -42,6 +43,7 @@ OSGX_DISABLE_WARNINGS
 
 OSGX_ENABLE_WARNINGS
 
+#include <climits>
 #include <cstring>
 
 // ------------------------------------------------------------------------------------------------
@@ -205,6 +207,35 @@ int main(int argc, char** argv) {
 	root->setName("root");
 	root->addChild(pickCam);
 	root->addChild(scene);
+
+	// osgx::platform::CursorState/CursorHandler/CursorCallback quick smoke test -- the general
+	// cursor-tracking primitive TODO.md just gained, unrelated to picking itself. Dumps to the
+	// console only when the position (or in-window state) actually changes, since a plain
+	// per-frame print would flood the terminal.
+	auto cursorState = osgx::make_ref<osgx::platform::CursorState>();
+
+	viewer.addEventHandler(new osgx::platform::CursorHandler(cursorState.get()));
+
+	root->setUpdateCallback(new osgx::platform::CursorCallback(
+		cursorState.get(),
+		viewer.getCamera(),
+		[cursorState](int x, int y) {
+			static int lastX = INT_MIN, lastY = INT_MIN;
+			static bool lastInWindow = true;
+
+			bool inWindow = cursorState->inWindow();
+
+			if(x == lastX && y == lastY && inWindow == lastInWindow) return;
+
+			lastX = x;
+			lastY = y;
+			lastInWindow = inWindow;
+
+			OSG_NOTICE
+				<< "Cursor -> (" << x << ", " << y << ")"
+				<< (inWindow ? "" : "  [outside window]") << std::endl;
+		}
+	));
 
 	viewer.setSceneData(root);
 

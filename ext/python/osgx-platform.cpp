@@ -134,6 +134,81 @@ void bind_platform(py::module_& m_platform) {
 		"window-local pixels) without the jump itself registering as motion."
 	);
 
+	// Thread-safe, event-driven cursor position tracking -- the generalized, picking-agnostic
+	// version of osgx.picking.PickReadback's positional half. CursorHandler/CursorCallback retain
+	// it in C++, matching the osg::ref_ptr holder used here.
+	py::class_<osgx::platform::CursorState, osg::ref_ptr<osgx::platform::CursorState>>(
+		m_platform,
+		"CursorState",
+		"Thread-safe, event-driven cursor position tracking -- the generalized, picking-agnostic "
+		"version of osgx.picking.PickReadback's positional half. Pure state; nothing here "
+		"requires a pick camera, scene graph, or rendering of any kind."
+	)
+		.def(py::init<>())
+		.def(
+			"updateMouse", &osgx::platform::CursorState::updateMouse, "x"_a, "y"_a,
+			"Updates the tracked position, in view/event coordinates (GUIEventAdapter.x/y "
+			"space). Called from CursorHandler on every MOVE/DRAG event; safe from any thread."
+		)
+		.def_property_readonly(
+			"x", &osgx::platform::CursorState::x, "Last tracked cursor X position."
+		)
+		.def_property_readonly(
+			"y", &osgx::platform::CursorState::y, "Last tracked cursor Y position."
+		)
+		.def_property(
+			"inWindow",
+			&osgx::platform::CursorState::inWindow,
+			&osgx::platform::CursorState::setInWindow,
+			"Whether the last known position is still inside the window. Refreshed every update "
+			"traversal by CursorCallback via isCursorInWindow() -- there is no 'pointer left the "
+			"window' GUIEventAdapter event to react to instead. True (fail-safe) until the first "
+			"refresh."
+		)
+	;
+
+	py::class_<
+		osgx::platform::CursorHandler,
+		osgGA::GUIEventHandler,
+		osg::ref_ptr<osgx::platform::CursorHandler>
+	>(
+		m_platform,
+		"CursorHandler",
+		"Forwards MOVE/DRAG events into a CursorState. Same shape as osgx.picking.PickHandler's "
+		"continuous branch, minus everything about IDs/clicks."
+	)
+		.def(
+			py::init<osgx::platform::CursorState*>(),
+			"state"_a,
+			"Retains state. "
+			"Every MOVE/DRAG event updates its tracked position. Always returns False so the "
+			"active manipulator (or any other handler) still sees the event."
+		)
+	;
+
+	py::class_<
+		osgx::platform::CursorCallback,
+		osg::NodeCallback,
+		osg::ref_ptr<osgx::platform::CursorCallback>
+	>(
+		m_platform,
+		"CursorCallback",
+		"Fires a callable(x, y) every update traversal (unconditionally, same style as "
+		"osgx.picking.PickCameraSync) with the current cursor position. The consumer decides "
+		"what 'follow' means -- reposition a HUD quad, unproject onto a world plane, drive a "
+		"rendered software cursor, whatever."
+	)
+		.def(
+			py::init<osgx::platform::CursorState*, osg::Camera*, std::function<void(int, int)>>(),
+			"state"_a,
+			"viewerCam"_a,
+			"fn"_a,
+			"Retains state. Install via setUpdateCallback(). Also refreshes state.inWindow via "
+			"isCursorInWindow() against viewerCam every traversal, the same way PickCameraSync "
+			"does for PickReadback."
+		)
+	;
+
 	// Software hide+warp+accumulate mouse capture for turntable/FPS-style relative-motion look
 	// controls. NOT true OS-level pointer confinement -- see osgx/Cursor.hpp.
 	py::class_<
