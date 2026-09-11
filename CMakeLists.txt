@@ -22,6 +22,17 @@ option(OSGX_BUILD_PYTHON "Build the osgx Python module" ${OSGX_IS_TOP_LEVEL})
 set(OSGX_OPENSCENEGRAPH_PY_DIR "${CMAKE_SOURCE_DIR}/../OpenSceneGraph.py" CACHE PATH
 	"Path to an OpenSceneGraph.py checkout (used for its vendored ext/pybind11 and pyosg/pybind11x headers)"
 )
+
+# Opt-in, EXPERIMENTAL: point this at an already-built OpenSceneGraph.py CMake build directory
+# (e.g. .../OpenSceneGraph.py/BUILD-g++-13.3.0-NOASAN) to statically link osgx_python_bindings
+# against its libOpenSceneGraph_python{d}.a. This lets osgx's Python bindings call OpenSceneGraph.py's
+# pybind11x::kwargs_init_own<T> specializations (Object/Node/Group/Transform/Camera/...) directly --
+# see ext/python/osgx-rtt.cpp and TODO.md's "osgx.RTT Python kwargs support" section for why. Empty
+# (the default) leaves osgx_python_bindings exactly as it was before this variable existed.
+set(OSGX_OPENSCENEGRAPH_PY_BUILD_DIR "" CACHE PATH
+	"Path to a built OpenSceneGraph.py CMake build directory, for statically linking against its \
+libOpenSceneGraph_python{d}.a (experimental -- see TODO.md)"
+)
 option(OSGX_BUILD_KTX2 "Build the KTX2 osgDB plugin (osgdb_ktx2) and the osgx::ktx2 static library" ${OSGX_IS_TOP_LEVEL})
 option(OSGX_BUILD_GLTF "Build the glTF osgDB plugin (osgdb_gltf) and the osgx::gltf/osgx::gltf_pbribl static libraries" ${OSGX_IS_TOP_LEVEL})
 option(OSGX_INSTALL "Generate osgx installation rules" ${OSGX_IS_TOP_LEVEL})
@@ -606,6 +617,31 @@ if(OSGX_BUILD_PYTHON AND Python3_Development.Module_FOUND)
 		target_compile_options(osgx_python_bindings PRIVATE /wd28182)
 	endif()
 	set_target_properties(osgx_python_bindings PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
+	if(OSGX_OPENSCENEGRAPH_PY_BUILD_DIR)
+		find_library(OSGX_OPENSCENEGRAPH_PY_STATIC_LIB
+			NAMES OpenSceneGraph_pythond OpenSceneGraph_python
+			PATHS "${OSGX_OPENSCENEGRAPH_PY_BUILD_DIR}"
+			NO_DEFAULT_PATH
+		)
+
+		if(NOT OSGX_OPENSCENEGRAPH_PY_STATIC_LIB)
+			message(FATAL_ERROR
+				"OSGX_OPENSCENEGRAPH_PY_BUILD_DIR is set (${OSGX_OPENSCENEGRAPH_PY_BUILD_DIR}), but "
+				"no libOpenSceneGraph_python{d}.a was found there -- build OpenSceneGraph.py first."
+			)
+		endif()
+
+		message(STATUS "osgx_python_bindings will link against ${OSGX_OPENSCENEGRAPH_PY_STATIC_LIB}")
+
+		add_library(osgx_opensceneegraph_py_static STATIC IMPORTED)
+
+		set_target_properties(osgx_opensceneegraph_py_static PROPERTIES
+			IMPORTED_LOCATION "${OSGX_OPENSCENEGRAPH_PY_STATIC_LIB}"
+		)
+
+		target_link_libraries(osgx_python_bindings PUBLIC osgx_opensceneegraph_py_static)
+	endif()
 
 	if(OSGX_WITH_PLATFORM)
 		target_sources(osgx_python_bindings PRIVATE "ext/python/osgx-platform.cpp")
