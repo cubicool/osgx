@@ -15,6 +15,7 @@ PYBIND11_MODULE(osgx, m) {
 
 	osgx_python::bind_core(m);
 	osgx_python::bind_callbacks(m);
+	osgx_python::bind_rtt(m);
 
 	// pbr/shadow/gbuffer/ibl/picking used to live in their own osgx::{foo}:: C++ namespaces; those
 	// collapsed into plain osgx:: this week, so their bindings now go straight onto the top-level

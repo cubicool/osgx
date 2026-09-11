@@ -32,6 +32,7 @@ namespace osgx_python {
 
 void bind_core(py::module_& m);
 void bind_callbacks(py::module_& m);
+void bind_rtt(py::module_& m);
 void bind_pbr(py::module_& m);
 void bind_shadow(py::module_& m);
 void bind_gbuffer(py::module_& m);

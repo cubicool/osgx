@@ -1,5 +1,6 @@
 #include "osgx/GBuffer.hpp"
 #include "osgx/IBL.hpp"
+#include "osgx/RTT.hpp"
 
 OSGX_DISABLE_WARNINGS
 
@@ -99,7 +100,8 @@ struct TextureBinding {
 
 // Shared boilerplate for SSAO's two fullscreen-quad RTT passes (raw sample + blur) -- both are
 // simple single-shader single-output passes, so one helper covers both rather than duplicating
-// the camera/program/quad setup twice in create() below.
+// the camera/program/quad setup twice in create() below. osgx::RTT::fullscreenQuad() now owns
+// the camera/program/quad/depth-state boilerplate this used to hand-roll directly.
 osg::ref_ptr<osg::Camera> makeFullscreenRTTPass(
 	const char* name,
 	std::span<const TextureBinding> textures,
@@ -108,47 +110,18 @@ osg::ref_ptr<osg::Camera> makeFullscreenRTTPass(
 	int width,
 	int height
 ) {
-	auto cam = osgx::make_ref<osg::Camera>();
+	auto cam = osgx::RTT::fullscreenQuad(width, height, fragmentShaderSrc);
 
 	cam->setName(name);
-	cam->setRenderOrder(osg::Camera::PRE_RENDER);
-	cam->setRenderTargetImplementation(osg::Camera::FRAME_BUFFER_OBJECT);
-	cam->setReferenceFrame(osg::Transform::ABSOLUTE_RF);
-	cam->setProjectionMatrix(osg::Matrix::identity());
-	cam->setViewMatrix(osg::Matrix::identity());
-	cam->setClearMask(GL_COLOR_BUFFER_BIT);
 	cam->setClearColor(osg::Vec4(0.0, 0.0, 0.0, 0.0));
-	cam->setViewport(0, 0, width, height);
-	cam->attach(osg::Camera::COLOR_BUFFER0, outputTexture);
+	cam->attach({{osg::Camera::COLOR_BUFFER0, outputTexture}});
 
 	auto* ss = cam->getOrCreateStateSet();
-
-	// Same reasoning as PBRIBLLightingScene::create()'s own lighting-pass quad: this quad covers
-	// every pixel unconditionally, so it has to own its depth state rather than inherit whatever
-	// the surrounding framebuffer happens to be carrying (an FBO's implicit depth renderbuffer is
-	// never cleared here, which would otherwise silently discard every fragment).
-	ss->setMode(GL_DEPTH_TEST, osg::StateAttribute::OFF);
 
 	for(const auto& binding: textures) {
 		ss->setTextureAttributeAndModes(binding.unit, binding.texture, osg::StateAttribute::ON);
 		ss->addUniform(new osg::Uniform(binding.uniformName, static_cast<int>(binding.unit)));
 	}
-
-	auto prog = osgx::make_ref<osg::Program>();
-
-	prog->setName(name);
-	prog->addShader(new osg::Shader(osg::Shader::VERTEX, osgx::FULLSCREEN_VERT));
-	prog->addShader(new osg::Shader(osg::Shader::FRAGMENT, fragmentShaderSrc));
-
-	ss->setAttributeAndModes(prog, osg::StateAttribute::ON);
-
-	auto quad = osg::createTexturedQuadGeometry(
-		osg::Vec3(-1, -1, 0), osg::Vec3(2, 0, 0), osg::Vec3(0, 2, 0)
-	);
-	auto geode = osgx::make_ref<osg::Geode>();
-
-	geode->addDrawable(quad);
-	cam->addChild(geode);
 
 	return cam;
 }
@@ -285,24 +258,29 @@ GBuffer GBuffer::create(
 	result.depthTexture->setWrap(osg::Texture::WRAP_T, osg::Texture::CLAMP_TO_EDGE);
 	result.depthTexture->setDataVariance(osg::Object::DYNAMIC);
 
-	result.camera = osgx::make_ref<osg::Camera>();
-	result.camera->setName("osgx_gbuffer_GeometryPass");
-	result.camera->setRenderOrder(osg::Camera::PRE_RENDER);
-	result.camera->setRenderTargetImplementation(osg::Camera::FRAME_BUFFER_OBJECT);
-	result.camera->setReferenceFrame(referenceFrame);
-	result.camera->setClearMask(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-	result.camera->setClearColor(osg::Vec4(0.0, 0.0, 0.0, 0.0));
-	result.camera->setViewport(0, 0, width, height);
+	// Locally osgx::RTT-typed (constructor takes referenceFrame directly -- GBuffer's own default
+	// of RELATIVE_RF is exactly RTT's documented second shape, see RTT.hpp) -- but GBuffer::camera
+	// itself stays osg::ref_ptr<osg::Camera> (Python-bound; see ShadowMap's identical reasoning).
+	auto camera = osgx::make_ref<osgx::RTT>(width, height, referenceFrame);
 
+	camera->setName("osgx_gbuffer_GeometryPass");
+	camera->setClearMask(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+	camera->setClearColor(osg::Vec4(0.0, 0.0, 0.0, 0.0));
+
+	// Dynamic attachment count (caller-chosen colorFormats span) -- AttachmentList's initializer-
+	// list shape needs a compile-time-fixed count, so this stays a loop over RTT's inherited
+	// attach() rather than one declarative call (see ShadowMap/Aura for the fixed-count case).
 	for(std::size_t i = 0; i < result.colorTextures.size(); i++) {
-		result.camera->attach(
+		camera->attach(
 			static_cast<osg::Camera::BufferComponent>(osg::Camera::COLOR_BUFFER0 + i),
 			result.colorTextures[i]
 		);
 	}
 
-	result.camera->attach(osg::Camera::DEPTH_BUFFER, result.depthTexture);
-	result.camera->addChild(node);
+	camera->attach(osg::Camera::DEPTH_BUFFER, result.depthTexture);
+	camera->addChild(node);
+
+	result.camera = camera;
 
 	return result;
 }

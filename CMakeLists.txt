@@ -231,6 +231,7 @@ add_library(osgx ${OSGX_LIBRARY_TYPE}
 	src/PBR.cpp
 	src/Picking.cpp
 	src/PixelText.cpp
+	src/RTT.cpp
 	src/Shadow.cpp
 	src/Shapes.cpp
 	src/Shader.cpp
@@ -257,6 +258,7 @@ target_sources(osgx PUBLIC
 	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/PBR.hpp>"
 	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/Picking.hpp>"
 	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/PixelText.hpp>"
+	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/RTT.hpp>"
 	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/Shadow.hpp>"
 	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/Shapes.hpp>"
 	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/Shader.hpp>"
@@ -564,6 +566,7 @@ if(OSGX_BUILD_PYTHON AND Python3_Development.Module_FOUND)
 	add_library(osgx_python_bindings STATIC
 		"ext/python/osgx-core.cpp"
 		"ext/python/osgx-callbacks.cpp"
+		"ext/python/osgx-rtt.cpp"
 		"ext/python/osgx-pbr.cpp"
 		"ext/python/osgx-shadow.cpp"
 		"ext/python/osgx-gbuffer.cpp"

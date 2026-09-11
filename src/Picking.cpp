@@ -1,4 +1,5 @@
 #include "osgx/Picking.hpp"
+#include "osgx/RTT.hpp"
 #include "osgx/Shader.hpp"
 
 #ifdef OSGX_PLATFORM
@@ -108,17 +109,17 @@ osg::ref_ptr<osg::Camera> makePickCamera(
 	osg::Shader* vertHook,
 	osg::Shader* fragHook
 ) {
-	auto cam = make_ref<osg::Camera>();
+	auto cam = make_ref<RTT>(w, h);
 
 	cam->setName("PickCamera");
+	// Overrides RTT's PRE_RENDER default -- this pass deliberately runs POST_RENDER (see
+	// CLAUDE.md's osgx-picking writeup for why). ABSOLUTE_RF (the sharp edge the comment below
+	// used to carry alone) is already RTT's own default, same reasoning as ever: without it the
+	// camera composes view/projection with the parent transform stack, producing a wrong cull
+	// frustum that clips all geometry.
 	cam->setRenderOrder(osg::Camera::POST_RENDER);
-	cam->setRenderTargetImplementation(osg::Camera::FRAME_BUFFER_OBJECT);
 	cam->setClearMask(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 	cam->setClearColor(osg::Vec4(0.0f, 0.0f, 0.0f, 0.0f)); // all-zero RGBA = ID 0 = no pick
-	cam->setViewport(0, 0, w, h);
-	// Without ABSOLUTE_RF the camera composes view/projection with the parent
-	// transform stack, producing a wrong cull frustum that clips all geometry.
-	cam->setReferenceFrame(osg::Transform::ABSOLUTE_RF);
 	cam->setSmallFeatureCullingPixelSize(-1.0f);
 	// Implicit renderbuffer -- no readback needed, this only exists so overlapping pickable
 	// geometry at different depths resolves nearest-wins during THIS pass instead of last-
@@ -201,15 +202,13 @@ osg::ref_ptr<osg::Camera> makePickCamera(
 	tex->setFilter(osg::Texture::MIN_FILTER, osg::Texture::NEAREST);
 	tex->setFilter(osg::Texture::MAG_FILTER, osg::Texture::NEAREST);
 
-	auto cam = make_ref<osg::Camera>();
+	auto cam = make_ref<RTT>(w, h);
 
 	cam->setName("PickCamera");
+	// Overrides RTT's PRE_RENDER default -- see the Image overload's identical override above.
 	cam->setRenderOrder(osg::Camera::POST_RENDER);
-	cam->setRenderTargetImplementation(osg::Camera::FRAME_BUFFER_OBJECT);
 	cam->setClearMask(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 	cam->setClearColor(osg::Vec4(0.0f, 0.0f, 0.0f, 0.0f)); // all-zero RGBA = ID 0 = no pick
-	cam->setViewport(0, 0, w, h);
-	cam->setReferenceFrame(osg::Transform::ABSOLUTE_RF);
 	cam->setSmallFeatureCullingPixelSize(-1.0f);
 	cam->attach(osg::Camera::COLOR_BUFFER, tex);
 	// See the Image overload's identical attachment above for why this is needed.

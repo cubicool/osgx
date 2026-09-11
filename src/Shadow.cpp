@@ -122,28 +122,30 @@ ShadowMap ShadowMap::create(
 	// GBuffer.cpp's own color/depth textures.
 	result.depthTexture->setDataVariance(osg::Object::DYNAMIC);
 
-	result.camera = osgx::make_ref<osg::Camera>();
-	result.camera->setName("osgx_shadow_DirectionalShadowMap");
-	result.camera->setRenderOrder(osg::Camera::PRE_RENDER);
-	result.camera->setRenderTargetImplementation(osg::Camera::FRAME_BUFFER_OBJECT);
-	result.camera->setReferenceFrame(osg::Transform::ABSOLUTE_RF);
-	result.camera->setClearMask(GL_DEPTH_BUFFER_BIT);
-	result.camera->setClearDepth(1.0);
-	result.camera->setViewport(0, 0, options.size, options.size);
-	result.camera->attach(osg::Camera::DEPTH_BUFFER, result.depthTexture);
+	// Locally osgx::RTT-typed (constructor + initializer-list attach()) -- but ShadowMap::camera
+	// itself stays osg::ref_ptr<osg::Camera> (see its own declaration) since it's exposed to the
+	// Python bindings and osgx::RTT isn't a registered pybind11 type.
+	auto camera = osgx::make_ref<osgx::RTT>(options.size, options.size);
+
+	camera->setName("osgx_shadow_DirectionalShadowMap");
+	camera->setClearMask(GL_DEPTH_BUFFER_BIT);
+	camera->setClearDepth(1.0);
+	camera->attach({{osg::Camera::DEPTH_BUFFER, result.depthTexture}});
 	// Depth-only: the old hand-rolled Python examples attached a dummy color texture here to work
 	// around a since-irrelevant pybind11 binding gap (Camera::setDrawBuffer/setReadBuffer weren't
 	// exposed to Python yet) -- ordinary C++ calls, no workaround needed.
-	result.camera->setDrawBuffer(GL_NONE);
-	result.camera->setReadBuffer(GL_NONE);
-	result.camera->setViewMatrix(result.lightView);
-	result.camera->setProjectionMatrix(result.lightProj);
+	camera->setDrawBuffer(GL_NONE);
+	camera->setReadBuffer(GL_NONE);
+	camera->setViewMatrix(result.lightView);
+	camera->setProjectionMatrix(result.lightProj);
 	// ON|OVERRIDE, no PROTECTED: wins over any Program a child subgraph sets on its OWN StateSet
 	// with just ON (the convention every osgx::gltf::pbribl/pyosg-lighting Program uses today) --
 	// see this function's own header comment for the full rationale.
-	result.camera->getOrCreateStateSet()->setAttributeAndModes(
+	camera->getOrCreateStateSet()->setAttributeAndModes(
 		makeDepthOnlyProgram(), osg::StateAttribute::ON | osg::StateAttribute::OVERRIDE
 	);
+
+	result.camera = camera;
 
 	result.shadowMatrix = new osg::Uniform("osgx_shadowMatrix", osg::Matrixf::identity());
 	result.bias = new osg::Uniform("osgx_shadowBias", options.bias);

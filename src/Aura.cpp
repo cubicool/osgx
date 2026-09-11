@@ -1,5 +1,6 @@
 #include "osgx/Aura.hpp"
 #include "osgx/IBL.hpp"
+#include "osgx/RTT.hpp"
 
 OSGX_DISABLE_WARNINGS
 
@@ -173,33 +174,16 @@ osg::ref_ptr<osg::Camera> makeDilationPass(
 	const char* fragmentShader,
 	int renderOrder
 ) {
-	auto camera = osgx::make_ref<osg::Camera>();
-	auto quad = osg::createTexturedQuadGeometry(
-		osg::Vec3(-1, -1, 0), osg::Vec3(2, 0, 0), osg::Vec3(0, 2, 0)
+	auto camera = osgx::RTT::fullscreenQuad(
+		output->getTextureWidth(), output->getTextureHeight(), fragmentShader
 	);
-	auto geode = osgx::make_ref<osg::Geode>();
-	auto program = osgx::make_ref<osg::Program>();
 
-	geode->addDrawable(quad);
-	program->setName(name);
-	program->addShader(new osg::Shader(osg::Shader::VERTEX, osgx::FULLSCREEN_VERT));
-	program->addShader(new osg::Shader(osg::Shader::FRAGMENT, fragmentShader));
 	camera->setName(name);
-	camera->setReferenceFrame(osg::Transform::ABSOLUTE_RF);
 	camera->setRenderOrder(osg::Camera::PRE_RENDER, renderOrder);
-	camera->setRenderTargetImplementation(osg::Camera::FRAME_BUFFER_OBJECT);
-	camera->setProjectionMatrix(osg::Matrix::identity());
-	camera->setViewMatrix(osg::Matrix::identity());
-	camera->setClearMask(GL_COLOR_BUFFER_BIT);
 	camera->setClearColor(osg::Vec4(0.0f, 0.0f, 0.0f, 0.0f));
-	camera->setViewport(0, 0, output->getTextureWidth(), output->getTextureHeight());
-	camera->attach(osg::Camera::COLOR_BUFFER0, output);
-	camera->addChild(geode);
+	camera->attach({{osg::Camera::COLOR_BUFFER0, output}});
 
 	auto* stateSet = camera->getOrCreateStateSet();
-
-	stateSet->setAttributeAndModes(program, osg::StateAttribute::ON);
-	stateSet->setMode(GL_DEPTH_TEST, osg::StateAttribute::OFF);
 
 	for(std::size_t i = 0; i < inputs.size(); i++) {
 		stateSet->setTextureAttributeAndModes(
@@ -244,21 +228,29 @@ Aura Aura::create(int width, int height, int radiusPixels) {
 	program->addShader(new osg::Shader(osg::Shader::VERTEX, SELECTION_VERTEX_SHADER));
 	program->addShader(new osg::Shader(osg::Shader::FRAGMENT, SELECTION_FRAGMENT_SHADER));
 
-	result.selectionCamera = osgx::make_ref<osg::Camera>();
-	result.selectionCamera->setName("osgx_aura_SelectionMask");
-	result.selectionCamera->setRenderOrder(osg::Camera::PRE_RENDER, 1);
-	result.selectionCamera->setRenderTargetImplementation(osg::Camera::FRAME_BUFFER_OBJECT);
-	result.selectionCamera->setClearMask(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-	result.selectionCamera->setClearColor(osg::Vec4(0.0f, 0.0f, 0.0f, 0.0f));
-	result.selectionCamera->setViewport(0, 0, width, height);
-	result.selectionCamera->attach(osg::Camera::COLOR_BUFFER0, result.originalMask);
-	result.selectionCamera->attach(osg::Camera::COLOR_BUFFER1, result.originalDepth);
+	// RELATIVE_RF (RTT's non-default reference frame -- see RTT.hpp's own comment): this camera
+	// never sets its own view/projection, so it renders the selected node from exactly the same
+	// viewpoint as whatever camera it ends up under in the scene graph, via ordinary cull-time
+	// matrix composition. Locally osgx::RTT-typed for the constructor/attach() conveniences; the
+	// Aura::selectionCamera field itself stays osg::ref_ptr<osg::Camera> (Python-bound).
+	auto selectionCamera = osgx::make_ref<osgx::RTT>(width, height, osg::Transform::RELATIVE_RF);
+
+	selectionCamera->setName("osgx_aura_SelectionMask");
+	selectionCamera->setRenderOrder(osg::Camera::PRE_RENDER, 1);
+	selectionCamera->setClearMask(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+	selectionCamera->setClearColor(osg::Vec4(0.0f, 0.0f, 0.0f, 0.0f));
+	selectionCamera->attach({
+		{osg::Camera::COLOR_BUFFER0, result.originalMask},
+		{osg::Camera::COLOR_BUFFER1, result.originalDepth}
+	});
 
 	// A selected node commonly already owns its normal material Program. PROTECTED makes this
 	// flat mask Program authoritative for this camera without mutating that visible scene state.
-	result.selectionCamera->getOrCreateStateSet()->setAttributeAndModes(
+	selectionCamera->getOrCreateStateSet()->setAttributeAndModes(
 		program, osg::StateAttribute::ON | osg::StateAttribute::OVERRIDE | osg::StateAttribute::PROTECTED
 	);
+
+	result.selectionCamera = selectionCamera;
 
 	const std::array dilateXInputs = {
 		DilationInput{ result.originalMask, "auraOriginalMask" },

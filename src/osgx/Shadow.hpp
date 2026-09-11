@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Core.hpp"
+#include "RTT.hpp"
 #include "Shader.hpp"
 
 OSGX_DISABLE_WARNINGS
