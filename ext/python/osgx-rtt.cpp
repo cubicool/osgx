@@ -9,6 +9,17 @@ OSGX_DISABLE_WARNINGS
 
 OSGX_ENABLE_WARNINGS
 
+// osgx::RTT IS-A osg::Camera, so its Python constructor should chain into Camera's own full
+// kwargs_init_own (clearColor, renderOrder, viewport, attach-relevant texture setup, children,
+// name, ... all the way up through Transform/Group/Node/Object) exactly the way osg.Camera(...)
+// already does -- see pyosg/osg/Camera.cpp's own py::init(pyx::kwargs_ctor<osg::Camera>()) for the
+// precedent this mirrors. RTT has nothing extra of its own to contribute (width/height/
+// referenceFrame are constructor-only, not re-settable properties), so no kwargs_init_own<RTT>
+// specialization is needed -- the generic no-op primary template covers it.
+namespace pybind11x {
+template<> struct kwargs_base<osgx::RTT> { using type = osg::Camera; };
+}
+
 namespace osgx_python {
 
 void bind_rtt(py::module_& m) {
@@ -37,6 +48,18 @@ void bind_rtt(py::module_& m) {
 			"the scene graph -- osgx.Aura's selectionCamera is exactly this. Every other camera "
 			"setting (clearMask/clearColor/view/projection/attach) is left to the caller, same as a "
 			"raw osg.Camera."
+		)
+		.def(
+			py::init(
+				pyx::kwargs_ctor<osgx::RTT, int, int, osg::Transform::ReferenceFrame>()
+			),
+			"width"_a,
+			"height"_a,
+			"referenceFrame"_a=osg::Transform::ABSOLUTE_RF,
+			"Same as the plain constructor above, but any additional keyword arguments are applied "
+			"via osg.Camera's own kwargs handling (and everything it chains into -- Transform/Group/"
+			"Node/Object) after construction -- e.g. "
+			"osgx.RTT(512, 512, clearColor=osg.Vec4(0, 0, 0, 1), name=\"MyRTT\")."
 		)
 		.def(
 			"attach",

@@ -336,25 +336,6 @@ struct PBRIBLLightingPassOptions {
 	const osgx::ShadowMap* shadowMap = nullptr;
 	osg::Texture2D* aoTexture = nullptr;
 	bool diagnostics = false;
-	// Where this pass draws. Left null (the default) it draws to whatever framebuffer the returned
-	// camera ends up under -- POST_RENDER to the backbuffer for a caller that adds it straight to
-	// the viewer, i.e. "the pipeline ends here", matching tonemap's own default of true.
-	//
-	// Set it, and the pass is BUILT as a PRE_RENDER/FBO camera targeting that texture, for callers
-	// chaining further passes (bloom, exposure, a tonemap-comparison composite) that need this
-	// pass's linear HDR result as a sampler input -- normally alongside tonemap=false, so the
-	// chain tonemaps once at its own end rather than here.
-	//
-	// This exists so that re-targeting is a supported, tested option rather than something each
-	// caller re-derives by mutating the returned camera. Hand-retargeting is easy to get subtly
-	// wrong (the clear mask and the implicit depth attachment both matter, and getting them wrong
-	// silently yields a flat, clear-colored texture -- see PBRIBLLightingScene::create()'s own
-	// GL_DEPTH_TEST comment), and every caller was reproducing that same guesswork independently.
-	osg::Texture2D* colorTexture = nullptr;
-	// Render order for the PRE_RENDER camera, honored only when colorTexture is set. Needs to sort
-	// AFTER the geometry pass (and any shadow/SSAO pass feeding this one) and BEFORE whatever
-	// consumes colorTexture.
-	int renderOrderNum = 0;
 };
 
 struct PBRIBLLightingScene {

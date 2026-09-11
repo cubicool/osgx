@@ -70,9 +70,8 @@ osg::Group* MeshBuilder::makeMesh(const tg3_mesh& mesh, int skinIdx) const {
 			<< " attrs=" << primitive.attributes_count << std::endl
 		;
 
-		osg::ref_ptr<osg::Geometry> geom = new osg::Geometry();
+		auto geom = osgx::make_nref<osg::Geometry>(typeid(*this).name());
 
-		geom->setName(typeid(*this).name());
 		geom->setUseVertexBufferObjects(true);
 
 		osg::Vec4 baseColorFactor(1, 1, 1, 1);

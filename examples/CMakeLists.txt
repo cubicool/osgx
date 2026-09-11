@@ -44,9 +44,6 @@ if(OSGX_BUILD_GLTF)
 	osgx_add_executable("osgx" "gbuffer-blueprint")
 	target_link_libraries(osgx-gbuffer-blueprint PRIVATE osgx::gltf_pbribl)
 
-	# osgx_add_executable("osgx" "gbuffer-watercolor")
-	# target_link_libraries(osgx-gbuffer-watercolor PRIVATE osgx::gltf_pbribl)
-
 	osgx_add_executable("osgx" "gbuffer-edgewear")
 	target_link_libraries(osgx-gbuffer-edgewear PRIVATE osgx::gltf_pbribl)
 

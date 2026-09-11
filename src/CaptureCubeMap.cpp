@@ -1,4 +1,5 @@
 #include "osgx/CaptureCubeMap.hpp"
+#include "osgx/RTT.hpp"
 
 OSGX_DISABLE_WARNINGS
 
@@ -78,15 +79,13 @@ CaptureCubeMapScene CaptureCubeMapScene::create(
 	texture->setUseHardwareMipMapGeneration(false);
 
 	for(unsigned int face = 0; face < scene.cameras.size(); face++) {
-		auto camera = new osg::Camera();
+		auto camera = osgx::make_nref<osgx::RTT>(
+			"osgx_CaptureCubeMap_f" + std::to_string(face), cubeSize, cubeSize
+		);
 
-		camera->setName("osgx_CaptureCubeMap_f" + std::to_string(face));
 		camera->setRenderOrder(osg::Camera::PRE_RENDER, static_cast<int>(face));
-		camera->setRenderTargetImplementation(osg::Camera::FRAME_BUFFER_OBJECT);
-		camera->setReferenceFrame(osg::Transform::ABSOLUTE_RF);
 		camera->setClearMask(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 		camera->setClearColor(options.clearColor);
-		camera->setViewport(0, 0, cubeSize, cubeSize);
 		camera->setProjectionMatrixAsPerspective(90.0, 1.0, nearPlane, farPlane);
 		camera->setComputeNearFarMode(osg::Camera::DO_NOT_COMPUTE_NEAR_FAR);
 		camera->attach(osg::Camera::COLOR_BUFFER0, texture, 0, face, false);

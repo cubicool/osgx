@@ -60,9 +60,7 @@ struct PickEntry {
 };
 
 osg::ref_ptr<osg::Group> createScene(std::unordered_map<uint32_t, PickEntry>& objects) {
-	auto root = osgx::make_ref<osg::Group>();
-
-	root->setName("scene");
+	auto root = osgx::make_nref<osg::Group>("scene");
 
 	for(size_t i = 0; i < std::size(OBJECTS); i++) {
 		const auto& o    = OBJECTS[i];
@@ -194,9 +192,7 @@ int main(int argc, char** argv) {
 		viewer.addEventHandler(new osgx::PickHandler(rb, true));
 	}
 
-	auto root = osgx::make_ref<osg::Group>();
-
-	root->setName("root");
+	auto root = osgx::make_nref<osg::Group>("root");
 	root->addChild(pickCam);
 	root->addChild(scene);
 

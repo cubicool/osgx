@@ -24,8 +24,8 @@ namespace {
 		constexpr std::size_t width = 64;
 		constexpr std::size_t height = 64;
 
-		auto image = osgx::make_ref<osg::Image>();
-		image->setName("ProceduralImage_" + std::to_string(index));
+		auto image = osgx::make_nref<osg::Image>("ProceduralImage_" + std::to_string(index));
+
 		image->allocateImage(
 			static_cast<int>(width),
 			static_cast<int>(height),
@@ -53,8 +53,8 @@ namespace {
 	}
 
 	osg::Texture2D* makeProceduralTexture(int index) {
-		auto texture = osgx::make_ref<osg::Texture2D>();
-		texture->setName("ProceduralTexture_" + std::to_string(index));
+		auto texture = osgx::make_nref<osg::Texture2D>("ProceduralTexture_" + std::to_string(index));
+
 		texture->setImage(makeProceduralImage(index));
 		texture->setFilter(osg::Texture::MIN_FILTER, osg::Texture::LINEAR);
 		texture->setFilter(osg::Texture::MAG_FILTER, osg::Texture::LINEAR);

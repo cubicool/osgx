@@ -24,10 +24,11 @@ OSGX_ENABLE_WARNINGS
 #include <sstream>
 
 auto createSphere(osgx::vec_t radius, osgx::vec_t pSize=1.0) {
-	auto s = osgx::make_ref<osg::ShapeDrawable>(new osg::Sphere(osg::Vec3(0.0, 0.0, 0.0), radius));
+	auto s = osgx::make_nref<osg::ShapeDrawable>(
+		"SPHERE", new osg::Sphere(osg::Vec3(0.0, 0.0, 0.0), radius)
+	);
 
 	// s->getOrCreateStateSet()->setAttribute(new osg::Point(pSize));
-	s->setName("SPHERE");
 
 	return s;
 }

@@ -1032,20 +1032,6 @@ void bind_gltf(py::module_& m_gltf) {
 			"diagnostics", &osgx::gltf::pbribl::PBRIBLLightingPassOptions::diagnostics,
 			"Enables extra debug output on the lighting pass."
 		)
-		.def_readwrite(
-			"colorTexture", &osgx::gltf::pbribl::PBRIBLLightingPassOptions::colorTexture,
-			"None (default) draws to whatever framebuffer the returned camera ends up under -- "
-			"POST_RENDER to the backbuffer for a caller adding it straight to the viewer. Set it "
-			"to instead build this pass as a PRE_RENDER/FBO camera targeting that texture, for a "
-			"caller chaining further passes (bloom, exposure, tonemap comparison) that need this "
-			"pass's linear HDR result as a sampler input -- normally paired with tonemap=False."
-		)
-		.def_readwrite(
-			"renderOrderNum", &osgx::gltf::pbribl::PBRIBLLightingPassOptions::renderOrderNum,
-			"Render order for the PRE_RENDER camera, honored only when colorTexture is set. Must "
-			"sort after the geometry pass (and any shadow/SSAO pass feeding this one) and before "
-			"whatever consumes colorTexture next."
-		)
 	;
 
 	py::class_<osgx::gltf::pbribl::PBRIBLLightingScene>(

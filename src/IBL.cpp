@@ -1,4 +1,5 @@
 #include "osgx/IBL.hpp"
+#include "osgx/RTT.hpp"
 
 namespace osgx {
 
@@ -58,40 +59,10 @@ osg::ref_ptr<osg::Camera> makeBRDFLUTCamera(int lutSize, osg::Texture2D* lut) {
 	lut->setWrap(osg::Texture::WRAP_S, osg::Texture::CLAMP_TO_EDGE);
 	lut->setWrap(osg::Texture::WRAP_T, osg::Texture::CLAMP_TO_EDGE);
 
-	auto prog = make_ref<osg::Program>();
-
-	prog->setName("osgx_ibl_brdfLutBake");
-
-	auto* vertexShader = new osg::Shader(osg::Shader::VERTEX, FULLSCREEN_VERT);
-	auto* fragmentShader = new osg::Shader(osg::Shader::FRAGMENT, BRDF_LUT_FRAG);
-
-	vertexShader->setName(prog->getName() + ".vertex");
-	fragmentShader->setName(prog->getName() + ".fragment");
-
-	prog->addShader(vertexShader);
-	prog->addShader(fragmentShader);
-
-	auto quad = osg::createTexturedQuadGeometry(
-		osg::Vec3(-1, -1, 0), osg::Vec3(2, 0, 0), osg::Vec3(0, 2, 0)
-	);
-
-	auto geode = make_ref<osg::Geode>();
-
-	geode->addDrawable(quad);
-
-	auto cam = make_ref<osg::Camera>();
+	auto cam = RTT::fullscreenQuad(lutSize, lutSize, BRDF_LUT_FRAG);
 
 	cam->setName("osgx_ibl_BRDFLUTBake");
-	cam->setRenderOrder(osg::Camera::PRE_RENDER);
-	cam->setRenderTargetImplementation(osg::Camera::FRAME_BUFFER_OBJECT);
-	cam->setReferenceFrame(osg::Transform::ABSOLUTE_RF);
-	cam->setClearMask(GL_COLOR_BUFFER_BIT);
-	cam->setViewport(0, 0, lutSize, lutSize);
-	cam->setProjectionMatrix(osg::Matrix::identity());
-	cam->setViewMatrix(osg::Matrix::identity());
 	cam->attach(osg::Camera::COLOR_BUFFER0, lut);
-	cam->getOrCreateStateSet()->setAttributeAndModes(prog, osg::StateAttribute::ON);
-	cam->addChild(geode);
 	cam->setUpdateCallback(new RunOnceCallback());
 
 	return cam;

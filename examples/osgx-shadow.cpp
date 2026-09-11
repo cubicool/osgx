@@ -141,13 +141,14 @@ osg::ref_ptr<osg::Program> makeProgram(bool shadowed) {
 	osgx::registerPBRShaderLibs();
 	osgx::registerShadowShaderLibs();
 
-	auto program = osgx::make_ref<osg::Program>();
+	auto program = osgx::make_nref<osg::Program>(
+		shadowed ? "osgx_shadow_demo_shadowed" : "osgx_shadow_demo_unshadowed"
+	);
 	auto fragmentSrc = osgx::resolveShaderLibs(std::string(FRAGMENT_SHADER));
 	auto hookSrc = osgx::resolveShaderLibs(std::string(
 		shadowed ? osgx::DIRECT_LIGHTING_HOOK_SHADOWED : osgx::DIRECT_LIGHTING_HOOK_DEFAULT
 	));
 
-	program->setName(shadowed ? "osgx_shadow_demo_shadowed" : "osgx_shadow_demo_unshadowed");
 	program->addShader(new osg::Shader(osg::Shader::VERTEX, std::string(VERTEX_SHADER)));
 	program->addShader(new osg::Shader(osg::Shader::FRAGMENT, fragmentSrc));
 	program->addShader(new osg::Shader(osg::Shader::FRAGMENT, hookSrc));

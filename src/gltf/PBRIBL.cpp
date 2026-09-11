@@ -1004,14 +1004,12 @@ PBRIBLScene PBRIBLScene::create(
 	pis.node = node;
 
 	auto* ss = node->getOrCreateStateSet();
-	auto prog = osgx::make_ref<osg::Program>();
+	auto prog = osgx::make_nref<osg::Program>("osgx_gltf_PBRIBLScene");
 
 	// The glTF loader stores glTF's optional TANGENT accessor in generic vertex attribute 7.
 	// Bind it before linking, exactly as pyosg-khronos-viewer.py does; otherwise GLSL may
 	// assign osg_Tangent to another generic attribute and normal mapping reads a default value.
 	shader::configureProgram(*prog);
-
-	prog->setName("osgx_gltf_PBRIBLScene");
 
 	auto* vertexShader = new osg::Shader(osg::Shader::VERTEX, detail::FULL_PBR_VERTEX_SHADER);
 
@@ -1150,11 +1148,9 @@ PBRIBLGBuffer PBRIBLGBuffer::create(osg::Node* node, int width, int height) {
 
 	if(!node) return result;
 
-	auto prog = osgx::make_ref<osg::Program>();
+	auto prog = osgx::make_nref<osg::Program>("osgx_gltf_PBRIBLGeometryPass");
 
 	shader::configureProgram(*prog);
-
-	prog->setName("osgx_gltf_PBRIBLGeometryPass");
 
 	auto* vertexShader = new osg::Shader(osg::Shader::VERTEX, detail::FULL_PBR_VERTEX_SHADER);
 
@@ -1246,9 +1242,7 @@ PBRIBLLightingScene PBRIBLLightingScene::create(
 
 	if(!gbuffer.valid() || !mainCamera) return result;
 
-	auto prog = osgx::make_ref<osg::Program>();
-
-	prog->setName("osgx_gltf_PBRIBLLightingPass");
+	auto prog = osgx::make_nref<osg::Program>("osgx_gltf_PBRIBLLightingPass");
 
 	auto* vertexShader = new osg::Shader(osg::Shader::VERTEX, osgx::FULLSCREEN_VERT);
 
@@ -1312,44 +1306,19 @@ PBRIBLLightingScene PBRIBLLightingScene::create(
 
 	geode->addDrawable(quad);
 
-	auto cam = osgx::make_ref<osg::Camera>();
+	auto cam = osgx::make_nref<osg::Camera>("osgx_gltf_PBRIBLLightingPass");
 
-	cam->setName("osgx_gltf_PBRIBLLightingPass");
 	cam->setReferenceFrame(osg::Transform::ABSOLUTE_RF);
 	cam->setProjectionMatrix(osg::Matrix::identity());
 	cam->setViewMatrix(osg::Matrix::identity());
 	cam->addChild(geode);
 
-	if(options.colorTexture) {
-		// Offscreen: this pass feeds a further chain rather than ending it. See
-		// PBRIBLLightingPassOptions::colorTexture for why this is an option here instead of
-		// something each caller bolts on afterwards.
-		//
-		// clearMask is COLOR only, deliberately: the quad no longer depth-tests at all (see the
-		// GL_DEPTH_TEST comment below), so the implicit depth renderbuffer OSG attaches to this
-		// FBO is irrelevant and needn't be cleared every frame.
-		const int width = options.colorTexture->getTextureWidth();
-		const int height = options.colorTexture->getTextureHeight();
-
-		cam->setRenderOrder(osg::Camera::PRE_RENDER, options.renderOrderNum);
-		cam->setRenderTargetImplementation(osg::Camera::FRAME_BUFFER_OBJECT);
-		cam->setViewport(0, 0, width, height);
-		cam->setClearMask(GL_COLOR_BUFFER_BIT);
-		cam->setClearColor(osg::Vec4(0.0f, 0.0f, 0.0f, 1.0f));
-		cam->attach(osg::Camera::COLOR_BUFFER0, options.colorTexture);
-		// Both a render target here and a sampler input in whatever pass consumes it -- without
-		// DYNAMIC, OSG's StateAttribute caching can treat it as unchanging after its first
-		// successful bind. Same fix GBuffer.cpp's own attachments needed.
-		options.colorTexture->setDataVariance(osg::Object::DYNAMIC);
-	}
-
-	else {
-		// POST_RENDER, drawing to whatever framebuffer this camera ends up under (the backbuffer,
-		// if added directly to the viewer's scene graph) -- the "pipeline ends here" default that
-		// matches options.tonemap's own default (true).
-		cam->setRenderOrder(osg::Camera::POST_RENDER);
-		cam->setClearMask(0);
-	}
+	// POST_RENDER, drawing to whatever framebuffer this camera ends up under (the backbuffer, if
+	// added directly to the viewer's scene graph) -- this pass is always the pipeline's terminal
+	// step, matching options.tonemap's own default (true). No FBO, so this is deliberately a plain
+	// osg::Camera rather than an osgx::RTT (whose contract assumes an FBO attachment).
+	cam->setRenderOrder(osg::Camera::POST_RENDER);
+	cam->setClearMask(0);
 
 	auto* ss = cam->getOrCreateStateSet();
 
@@ -1360,8 +1329,9 @@ PBRIBLLightingScene PBRIBLLightingScene::create(
 	//
 	// Leaving this to ambient state worked only by accident, and only when this camera drew to the
 	// backbuffer: the main camera clears depth to 1.0 every frame, so the quad passed GL_LESS. The
-	// moment a caller re-targets this camera to an FBO (attach() + PRE_RENDER, the documented way
-	// to chain bloom/exposure after it), OSG attaches an IMPLICIT depth renderbuffer to that FBO
+	// moment a caller hand-retargets this camera to an FBO (attach() + PRE_RENDER, to chain
+	// bloom/exposure after it -- not a built-in option here), OSG attaches an IMPLICIT depth
+	// renderbuffer to that FBO
 	// (DisplaySettings::DEFAULT_IMPLICIT_BUFFER_ATTACHMENT includes IMPLICIT_DEPTH_BUFFER_ATTACHMENT;
 	// see RenderStage.cpp's own implicit-attachment block) which nothing ever clears -- undefined
 	// depth, every fragment of this quad discarded, and the attachment left holding nothing but the

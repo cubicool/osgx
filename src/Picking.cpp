@@ -109,9 +109,7 @@ osg::ref_ptr<osg::Camera> makePickCamera(
 	osg::Shader* vertHook,
 	osg::Shader* fragHook
 ) {
-	auto cam = make_ref<RTT>(w, h);
-
-	cam->setName("PickCamera");
+	auto cam = make_nref<RTT>("PickCamera", w, h);
 	// Overrides RTT's PRE_RENDER default -- this pass deliberately runs POST_RENDER (see
 	// CLAUDE.md's osgx-picking writeup for why). ABSOLUTE_RF (the sharp edge the comment below
 	// used to carry alone) is already RTT's own default, same reasoning as ever: without it the
@@ -154,9 +152,7 @@ osg::ref_ptr<osg::Camera> makePickCamera(
 	auto* ss = cam->getOrCreateStateSet();
 
 	if(installProgram) {
-		auto prog = make_ref<osg::Program>();
-
-		prog->setName("pickProgram");
+		auto prog = make_nref<osg::Program>("pickProgram");
 
 		auto* vc = new osg::Shader(osg::Shader::VERTEX, PICK_VERT_CORE);
 		auto* vh = vertHook ? vertHook : new osg::Shader(osg::Shader::VERTEX, PICK_VERT_HOOK_NOOP);
@@ -202,9 +198,7 @@ osg::ref_ptr<osg::Camera> makePickCamera(
 	tex->setFilter(osg::Texture::MIN_FILTER, osg::Texture::NEAREST);
 	tex->setFilter(osg::Texture::MAG_FILTER, osg::Texture::NEAREST);
 
-	auto cam = make_ref<RTT>(w, h);
-
-	cam->setName("PickCamera");
+	auto cam = make_nref<RTT>("PickCamera", w, h);
 	// Overrides RTT's PRE_RENDER default -- see the Image overload's identical override above.
 	cam->setRenderOrder(osg::Camera::POST_RENDER);
 	cam->setClearMask(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -223,9 +217,7 @@ osg::ref_ptr<osg::Camera> makePickCamera(
 	auto* ss = cam->getOrCreateStateSet();
 
 	if(installProgram) {
-		auto prog = make_ref<osg::Program>();
-
-		prog->setName("pickProgram");
+		auto prog = make_nref<osg::Program>("pickProgram");
 
 		auto* vc = new osg::Shader(osg::Shader::VERTEX, PICK_VERT_CORE);
 		auto* vh = vertHook ? vertHook : new osg::Shader(osg::Shader::VERTEX, PICK_VERT_HOOK_NOOP);

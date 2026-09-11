@@ -6,11 +6,13 @@ OSGX_DISABLE_WARNINGS
 
 #include <osg/Camera>
 #include <osg/Geometry>
+#include <osg/StateSet>
 #include <osg/Texture>
 #include <osg/ref_ptr>
 
 OSGX_ENABLE_WARNINGS
 
+#include <span>
 #include <utility>
 #include <vector>
 
@@ -98,5 +100,32 @@ protected:
 private:
 	osg::ref_ptr<osg::Geometry> _quad;
 };
+
+// Internal only -- NOT part of the public API, unlike AttachmentList above. AttachmentList/
+// HookList are things a caller constructs directly (an options struct field, an attach() call);
+// TextureInput only ever gets built inside Aura.cpp/GBuffer.cpp/TemporalEdge.cpp's own private
+// fullscreen-pass helpers to bind their sampler inputs, so it stays un-bound to Python -- no
+// caller-facing get/set contract to keep honest, just three copies of the same loop collapsed to
+// one. std::span, not std::vector (unlike AttachmentList/HookList above) -- every real call site
+// already builds a fixed-size std::array literal, and there's no pybind11-casting reason here to
+// prefer std::vector, since this type never crosses into Python.
+namespace detail {
+
+// One sampler input: bound to `unit` via setTextureAttributeAndModes(), with a matching
+// int-valued `uniformName` uniform so the shader can find it. The mirror image of AttachmentList
+// (outputs).
+struct TextureInput {
+	unsigned int unit;
+	osg::Texture* texture;
+	const char* uniformName;
+};
+
+// Binds every entry in `inputs` onto `stateSet`: setTextureAttributeAndModes(unit, texture, ON)
+// plus an addUniform(uniformName, int(unit)) so the shader's sampler declaration resolves to the
+// right unit. Previously reimplemented as a private loop in Aura.cpp, GBuffer.cpp, and
+// TemporalEdge.cpp.
+void bindTextureInputs(osg::StateSet* stateSet, std::span<const TextureInput> inputs);
+
+}
 
 }

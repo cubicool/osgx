@@ -226,9 +226,8 @@ void main() {
 )GLSL";
 
 osg::ref_ptr<osg::Program> makeProgram(const char* name, const char* vertex, const char* fragment) {
-	auto program = osgx::make_ref<osg::Program>();
+	auto program = osgx::make_nref<osg::Program>(name);
 
-	program->setName(name);
 	program->addShader(new osg::Shader(osg::Shader::VERTEX, vertex));
 	program->addShader(new osg::Shader(osg::Shader::FRAGMENT, fragment));
 
@@ -260,14 +259,13 @@ osg::ref_ptr<osg::Camera> makeFullscreenComposite(
 	const char* fragmentShader,
 	int renderOrder
 ) {
-	auto camera = osgx::make_ref<osg::Camera>();
+	auto camera = osgx::make_nref<osg::Camera>(name);
 	auto quad = osg::createTexturedQuadGeometry(
 		osg::Vec3(-1, -1, 0), osg::Vec3(2, 0, 0), osg::Vec3(0, 2, 0)
 	);
 	auto geode = osgx::make_ref<osg::Geode>();
 
 	geode->addDrawable(quad);
-	camera->setName(name);
 	camera->setReferenceFrame(osg::Transform::ABSOLUTE_RF);
 	camera->setRenderOrder(osg::Camera::POST_RENDER, renderOrder);
 	camera->setClearMask(0);

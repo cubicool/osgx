@@ -161,14 +161,9 @@ osg::ref_ptr<osg::Texture2D> makeTexture(
 	return texture;
 }
 
-struct DilationInput {
-	osg::Texture2D* texture;
-	const char* uniformName;
-};
-
 osg::ref_ptr<osg::Camera> makeDilationPass(
 	const char* name,
-	std::span<const DilationInput> inputs,
+	std::span<const osgx::detail::TextureInput> inputs,
 	osg::Texture2D* output,
 	osg::Uniform* radius,
 	const char* fragmentShader,
@@ -185,13 +180,7 @@ osg::ref_ptr<osg::Camera> makeDilationPass(
 
 	auto* stateSet = camera->getOrCreateStateSet();
 
-	for(std::size_t i = 0; i < inputs.size(); i++) {
-		stateSet->setTextureAttributeAndModes(
-			static_cast<unsigned int>(i), inputs[i].texture, osg::StateAttribute::ON
-		);
-		stateSet->addUniform(new osg::Uniform(inputs[i].uniformName, static_cast<int>(i)));
-	}
-
+	osgx::detail::bindTextureInputs(stateSet, inputs);
 	stateSet->addUniform(radius);
 
 	return camera;
@@ -222,9 +211,8 @@ Aura Aura::create(int width, int height, int radiusPixels) {
 	result.expanded = makeTexture(width, height, GL_RGBA16F, GL_RGBA, GL_FLOAT);
 	result.radius = new osg::Uniform("auraRadius", std::clamp(radiusPixels, 0, 64));
 
-	auto program = osgx::make_ref<osg::Program>();
+	auto program = osgx::make_nref<osg::Program>("osgx_aura_SelectionMask");
 
-	program->setName("osgx_aura_SelectionMask");
 	program->addShader(new osg::Shader(osg::Shader::VERTEX, SELECTION_VERTEX_SHADER));
 	program->addShader(new osg::Shader(osg::Shader::FRAGMENT, SELECTION_FRAGMENT_SHADER));
 
@@ -233,9 +221,10 @@ Aura Aura::create(int width, int height, int radiusPixels) {
 	// viewpoint as whatever camera it ends up under in the scene graph, via ordinary cull-time
 	// matrix composition. Locally osgx::RTT-typed for the constructor/attach() conveniences; the
 	// Aura::selectionCamera field itself stays osg::ref_ptr<osg::Camera> (Python-bound).
-	auto selectionCamera = osgx::make_ref<osgx::RTT>(width, height, osg::Transform::RELATIVE_RF);
+	auto selectionCamera = osgx::make_nref<osgx::RTT>(
+		"osgx_aura_SelectionMask", width, height, osg::Transform::RELATIVE_RF
+	);
 
-	selectionCamera->setName("osgx_aura_SelectionMask");
 	selectionCamera->setRenderOrder(osg::Camera::PRE_RENDER, 1);
 	selectionCamera->setClearMask(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 	selectionCamera->setClearColor(osg::Vec4(0.0f, 0.0f, 0.0f, 0.0f));
@@ -252,13 +241,13 @@ Aura Aura::create(int width, int height, int radiusPixels) {
 
 	result.selectionCamera = selectionCamera;
 
-	const std::array dilateXInputs = {
-		DilationInput{ result.originalMask, "auraOriginalMask" },
-		DilationInput{ result.originalDepth, "auraOriginalDepth" }
-	};
-	const std::array dilateYInputs = {
-		DilationInput{ result.dilatedX, "auraDilatedX" }
-	};
+	const std::array<osgx::detail::TextureInput, 2> dilateXInputs = {{
+		{ 0, result.originalMask, "auraOriginalMask" },
+		{ 1, result.originalDepth, "auraOriginalDepth" }
+	}};
+	const std::array<osgx::detail::TextureInput, 1> dilateYInputs = {{
+		{ 0, result.dilatedX, "auraDilatedX" }
+	}};
 
 	result.dilateXCamera = makeDilationPass(
 		"osgx_aura_DilateX", dilateXInputs, result.dilatedX, result.radius, DILATE_X_FRAGMENT_SHADER, 2

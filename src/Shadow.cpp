@@ -45,9 +45,8 @@ void main() {
 )GLSL";
 
 osg::ref_ptr<osg::Program> makeDepthOnlyProgram() {
-	auto program = osgx::make_ref<osg::Program>();
+	auto program = osgx::make_nref<osg::Program>("osgx_shadow_DepthOnly");
 
-	program->setName("osgx_shadow_DepthOnly");
 	program->addShader(new osg::Shader(osg::Shader::VERTEX, DEPTH_ONLY_VERTEX_SHADER));
 	program->addShader(new osg::Shader(osg::Shader::FRAGMENT, DEPTH_ONLY_FRAGMENT_SHADER));
 
@@ -125,9 +124,10 @@ ShadowMap ShadowMap::create(
 	// Locally osgx::RTT-typed (constructor + initializer-list attach()) -- but ShadowMap::camera
 	// itself stays osg::ref_ptr<osg::Camera> (see its own declaration) since it's exposed to the
 	// Python bindings and osgx::RTT isn't a registered pybind11 type.
-	auto camera = osgx::make_ref<osgx::RTT>(options.size, options.size);
+	auto camera = osgx::make_nref<osgx::RTT>(
+		"osgx_shadow_DirectionalShadowMap", options.size, options.size
+	);
 
-	camera->setName("osgx_shadow_DirectionalShadowMap");
 	camera->setClearMask(GL_DEPTH_BUFFER_BIT);
 	camera->setClearDepth(1.0);
 	camera->attach({{osg::Camera::DEPTH_BUFFER, result.depthTexture}});

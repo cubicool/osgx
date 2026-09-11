@@ -62,4 +62,15 @@ osg::ref_ptr<RTT> RTT::fullscreenQuad(int width, int height, const char* fragmen
 	return rtt;
 }
 
+namespace detail {
+
+void bindTextureInputs(osg::StateSet* stateSet, std::span<const TextureInput> inputs) {
+	for(const auto& input: inputs) {
+		stateSet->setTextureAttributeAndModes(input.unit, input.texture, osg::StateAttribute::ON);
+		stateSet->addUniform(new osg::Uniform(input.uniformName, static_cast<int>(input.unit)));
+	}
+}
+
+}
+
 }

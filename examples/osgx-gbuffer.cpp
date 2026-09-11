@@ -306,9 +306,8 @@ osg::ref_ptr<osg::Geode> makeFloor(const osg::Vec3& center, float halfSize, floa
 	// are all "#version 460 core"); a 4-vertex fan is the same two triangles for a convex quad.
 	geometry->addPrimitiveSet(new osg::DrawArrays(GL_TRIANGLE_FAN, 0, 4));
 
-	auto prog = osgx::make_ref<osg::Program>();
+	auto prog = osgx::make_nref<osg::Program>("osgx_gbuffer_Floor");
 
-	prog->setName("osgx_gbuffer_Floor");
 	prog->addShader(new osg::Shader(osg::Shader::VERTEX, FLOOR_VERTEX_SHADER));
 	prog->addShader(new osg::Shader(osg::Shader::FRAGMENT, FLOOR_FRAGMENT_SHADER));
 
@@ -333,15 +332,13 @@ osg::ref_ptr<osg::Camera> makeDebugBlitCamera(osg::Uniform*& channelModeOut) {
 
 	geode->addDrawable(quad);
 
-	auto prog = osgx::make_ref<osg::Program>();
+	auto prog = osgx::make_nref<osg::Program>("osgx_gbuffer_DebugBlit");
 
-	prog->setName("osgx_gbuffer_DebugBlit");
 	prog->addShader(new osg::Shader(osg::Shader::VERTEX, osgx::FULLSCREEN_VERT));
 	prog->addShader(new osg::Shader(osg::Shader::FRAGMENT, DEBUG_BLIT_FRAGMENT_SHADER));
 
-	auto cam = osgx::make_ref<osg::Camera>();
+	auto cam = osgx::make_nref<osg::Camera>("osgx_gbuffer_DebugBlit");
 
-	cam->setName("osgx_gbuffer_DebugBlit");
 	cam->setReferenceFrame(osg::Transform::ABSOLUTE_RF);
 	cam->setRenderOrder(osg::Camera::POST_RENDER, 1);
 	cam->setClearMask(0);

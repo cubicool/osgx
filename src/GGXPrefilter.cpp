@@ -1,5 +1,6 @@
 #include "osgx/GGXPrefilter.hpp"
 #include "osgx/IBL.hpp"
+#include "osgx/RTT.hpp"
 
 OSGX_DISABLE_WARNINGS
 
@@ -223,15 +224,19 @@ osg::ref_ptr<osg::TextureCubeMap> makePrefilterBake(
 		;
 		const int mipSize = std::max(1, prefilterSize >> mip);
 
+		// Not RTT::fullscreenQuad() -- see LambertianBake.cpp's matching comment: this bake shares
+		// one `prog`/`quad` pair across every mip*face camera (a single compile+link) rather than
+		// building a fresh one per call, so the raw RTT constructor is used instead (just the
+		// PRE_RENDER/FBO/ABSOLUTE_RF/viewport boilerplate; the rest of the fullscreen-quad shape is
+		// applied manually below).
 		for(int face = 0; face < 6; face++) {
-			auto* cam = new osg::Camera();
+			auto cam = osgx::make_nref<osgx::RTT>(
+				"osgx_GGXPrefilter_m" + std::to_string(mip) + "_f" + std::to_string(face),
+				mipSize, mipSize
+			);
 
-			cam->setName("osgx_GGXPrefilter_m" + std::to_string(mip) + "_f" + std::to_string(face));
 			cam->setRenderOrder(osg::Camera::PRE_RENDER, 1);
-			cam->setRenderTargetImplementation(osg::Camera::FRAME_BUFFER_OBJECT);
-			cam->setReferenceFrame(osg::Transform::ABSOLUTE_RF);
 			cam->setClearMask(GL_COLOR_BUFFER_BIT);
-			cam->setViewport(0, 0, mipSize, mipSize);
 			cam->setProjectionMatrix(osg::Matrix::identity());
 			cam->setViewMatrix(osg::Matrix::identity());
 			cam->setComputeNearFarMode(osg::Camera::DO_NOT_COMPUTE_NEAR_FAR);

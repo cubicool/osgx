@@ -51,9 +51,7 @@ OSGX_ENABLE_WARNINGS
 // ------------------------------------------------------------------------------------------------
 
 osg::ref_ptr<osg::Group> createScene() {
-	auto root = osgx::make_ref<osg::Group>();
-
-	root->setName("scene");
+	auto root = osgx::make_nref<osg::Group>("scene");
 
 	struct Entry { osg::Vec3 pos; osg::Vec4 color; };
 
@@ -202,9 +200,7 @@ int main(int argc, char** argv) {
 
 	pickCam->setUpdateCallback(sync);
 
-	auto root = osgx::make_ref<osg::Group>();
-
-	root->setName("root");
+	auto root = osgx::make_nref<osg::Group>("root");
 	root->addChild(pickCam);
 	root->addChild(scene);
 

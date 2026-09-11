@@ -92,19 +92,13 @@ osg::ref_ptr<osg::Texture2D> makeSSAONoiseTexture() {
 	return tex;
 }
 
-struct TextureBinding {
-	unsigned int unit;
-	osg::Texture2D* texture;
-	const char* uniformName;
-};
-
 // Shared boilerplate for SSAO's two fullscreen-quad RTT passes (raw sample + blur) -- both are
 // simple single-shader single-output passes, so one helper covers both rather than duplicating
 // the camera/program/quad setup twice in create() below. osgx::RTT::fullscreenQuad() now owns
 // the camera/program/quad/depth-state boilerplate this used to hand-roll directly.
 osg::ref_ptr<osg::Camera> makeFullscreenRTTPass(
 	const char* name,
-	std::span<const TextureBinding> textures,
+	std::span<const osgx::detail::TextureInput> textures,
 	osg::Texture2D* outputTexture,
 	const char* fragmentShaderSrc,
 	int width,
@@ -116,12 +110,7 @@ osg::ref_ptr<osg::Camera> makeFullscreenRTTPass(
 	cam->setClearColor(osg::Vec4(0.0, 0.0, 0.0, 0.0));
 	cam->attach({{osg::Camera::COLOR_BUFFER0, outputTexture}});
 
-	auto* ss = cam->getOrCreateStateSet();
-
-	for(const auto& binding: textures) {
-		ss->setTextureAttributeAndModes(binding.unit, binding.texture, osg::StateAttribute::ON);
-		ss->addUniform(new osg::Uniform(binding.uniformName, static_cast<int>(binding.unit)));
-	}
+	osgx::detail::bindTextureInputs(cam->getOrCreateStateSet(), textures);
 
 	return cam;
 }
@@ -261,9 +250,8 @@ GBuffer GBuffer::create(
 	// Locally osgx::RTT-typed (constructor takes referenceFrame directly -- GBuffer's own default
 	// of RELATIVE_RF is exactly RTT's documented second shape, see RTT.hpp) -- but GBuffer::camera
 	// itself stays osg::ref_ptr<osg::Camera> (Python-bound; see ShadowMap's identical reasoning).
-	auto camera = osgx::make_ref<osgx::RTT>(width, height, referenceFrame);
+	auto camera = osgx::make_nref<osgx::RTT>("osgx_gbuffer_GeometryPass", width, height, referenceFrame);
 
-	camera->setName("osgx_gbuffer_GeometryPass");
 	camera->setClearMask(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 	camera->setClearColor(osg::Vec4(0.0, 0.0, 0.0, 0.0));
 
@@ -318,7 +306,7 @@ SSAO SSAO::create(
 	rawTex->setFilter(osg::Texture::MAG_FILTER, osg::Texture::LINEAR);
 	rawTex->setDataVariance(osg::Object::DYNAMIC);
 
-	const std::array<TextureBinding, 3> rawTextures = {{
+	const std::array<osgx::detail::TextureInput, 3> rawTextures = {{
 		{0, normalTexture, "gNormal"},
 		{1, noiseTex, "ssaoNoise"},
 		{2, positionTexture, "gPosition"}
@@ -344,7 +332,7 @@ SSAO SSAO::create(
 	result.aoTexture->setFilter(osg::Texture::MAG_FILTER, osg::Texture::LINEAR);
 	result.aoTexture->setDataVariance(osg::Object::DYNAMIC);
 
-	const std::array<TextureBinding, 1> blurTextures = {{{0, rawTex, "ssaoRawTex"}}};
+	const std::array<osgx::detail::TextureInput, 1> blurTextures = {{{0, rawTex, "ssaoRawTex"}}};
 
 	result.blurCamera = makeFullscreenRTTPass(
 		"osgx_ssao_Blur", blurTextures, result.aoTexture, SSAO_BLUR_FRAGMENT_SHADER_SRC, width, height

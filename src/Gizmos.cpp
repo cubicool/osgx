@@ -58,9 +58,8 @@ void main() {
 )GLSL";
 
 osg::ref_ptr<osg::Program> createGizmoProgram() {
-	auto program = osgx::make_ref<osg::Program>();
+	auto program = osgx::make_nref<osg::Program>("osgx_gizmo");
 
-	program->setName("osgx_gizmo");
 	program->addShader(new osg::Shader(osg::Shader::VERTEX, GIZMO_VERTEX_SHADER));
 	program->addShader(new osg::Shader(osg::Shader::FRAGMENT, GIZMO_FRAGMENT_SHADER));
 	program->addBindAttribLocation("osgx_gizmo_Vertex", 0);

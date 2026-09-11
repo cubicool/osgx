@@ -128,7 +128,7 @@ void main() {
 osg::ref_ptr<osg::Program> makeProgram() {
 	osgx::registerPBRShaderLibs();
 
-	auto program = osgx::make_ref<osg::Program>();
+	auto program = osgx::make_nref<osg::Program>("osgx_lights_demo");
 	// Only the fragment shader carries `#pragma osgx::pbr ...` directives -- matches
 	// osgx::gltf::pbribl::PBRIBLScene::create()'s own split (PBRIBL.cpp), which resolves its
 	// fragment shader but adds its vertex shader unchanged.
@@ -142,7 +142,6 @@ osg::ref_ptr<osg::Program> makeProgram() {
 	// shading without touching fragmentSrc at all -- see PBR.hpp's DIRECT_LIGHTING_DECL comment.
 	auto hookSrc = osgx::resolveShaderLibs(std::string(osgx::DIRECT_LIGHTING_HOOK_DEFAULT));
 
-	program->setName("osgx_lights_demo");
 	program->addShader(new osg::Shader(osg::Shader::VERTEX, std::string(VERTEX_SHADER)));
 	program->addShader(new osg::Shader(osg::Shader::FRAGMENT, fragmentSrc));
 	program->addShader(new osg::Shader(osg::Shader::FRAGMENT, hookSrc));

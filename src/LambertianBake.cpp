@@ -1,5 +1,6 @@
 #include "osgx/LambertianBake.hpp"
 #include "osgx/IBL.hpp"
+#include "osgx/RTT.hpp"
 
 OSGX_DISABLE_WARNINGS
 
@@ -194,15 +195,19 @@ LambertianBakeScene LambertianBakeScene::create(
 	auto quad = makeFullscreenQuad();
 	osg::ref_ptr<osg::Camera> completionCamera;
 
+	// Not RTT::fullscreenQuad() -- that bakes its own fresh Program+quad per call, whereas this bake
+	// deliberately shares one `program`/`quad` pair across all six face cameras (a single compile+
+	// link, reused by six draws) instead of six independent ones. The raw RTT constructor still
+	// removes the PRE_RENDER/FBO/ABSOLUTE_RF/viewport boilerplate; the rest of the fullscreen-quad
+	// shape (identity view/proj, NO_CULLING, depth/cull OVERRIDE) is applied manually below, same as
+	// fullscreenQuad() would but against the shared program/quad.
 	for(int face = 0; face < 6; face++) {
-		auto camera = new osg::Camera();
+		auto camera = osgx::make_nref<osgx::RTT>(
+			"osgx_LambertianBake_f" + std::to_string(face), cubeSize, cubeSize
+		);
 
-		camera->setName("osgx_LambertianBake_f" + std::to_string(face));
 		camera->setRenderOrder(osg::Camera::PRE_RENDER, face);
-		camera->setRenderTargetImplementation(osg::Camera::FRAME_BUFFER_OBJECT);
-		camera->setReferenceFrame(osg::Transform::ABSOLUTE_RF);
 		camera->setClearMask(GL_COLOR_BUFFER_BIT);
-		camera->setViewport(0, 0, cubeSize, cubeSize);
 		camera->setProjectionMatrix(osg::Matrix::identity());
 		camera->setViewMatrix(osg::Matrix::identity());
 		camera->setComputeNearFarMode(osg::Camera::DO_NOT_COMPUTE_NEAR_FAR);
