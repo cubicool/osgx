@@ -16,6 +16,12 @@ OSGX_ENABLE_WARNINGS
 // precedent this mirrors. RTT has nothing extra of its own to contribute (width/height/
 // referenceFrame are constructor-only, not re-settable properties), so no kwargs_init_own<RTT>
 // specialization is needed -- the generic no-op primary template covers it.
+//
+// This calls into osg::Camera's own kwargs_init_own<T> chain, a real, non-inline function body
+// that only exists compiled into OpenSceneGraph.py's own libOpenSceneGraph_python{d}.a --
+// osgx_python_bindings MANDATORILY links it (CMakeLists.txt: an in-tree CMake target in the
+// subsumed/wheel build, or OSGX_OPENSCENEGRAPH_PY_BUILD_DIR standalone) for exactly this reason.
+// See TODO.md's "osgx.RTT Python kwargs support" section.
 namespace pybind11x {
 template<> struct kwargs_base<osgx::RTT> { using type = osg::Camera; };
 }

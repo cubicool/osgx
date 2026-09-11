@@ -618,7 +618,27 @@ if(OSGX_BUILD_PYTHON AND Python3_Development.Module_FOUND)
 	endif()
 	set_target_properties(osgx_python_bindings PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
-	if(OSGX_OPENSCENEGRAPH_PY_BUILD_DIR)
+	# osgx's Python bindings call OpenSceneGraph.py's pybind11x::kwargs_init_own<T> specializations
+	# directly (osgx.RTT's kwargs-forwarding constructor -- see ext/python/osgx-rtt.cpp and
+	# TODO.md's "osgx.RTT Python kwargs support" section), a real, non-inline function body that
+	# only exists compiled into OpenSceneGraph.py's own libOpenSceneGraph_python{d}.a. Statically
+	# linking it in is therefore MANDATORY whenever OSGX_BUILD_PYTHON is on -- building osgx's
+	# Python bindings already hard-requires a working OpenSceneGraph.py checkout for its headers
+	# (see the OSGX_OPENSCENEGRAPH_PY_DIR check above), and nobody uses osgx.RTT without also
+	# having a working OpenSceneGraph.py install to derive osg.Camera from in the first place, so
+	# this adds no real new burden. Two ways this gets satisfied, whichever applies:
+	#
+	# (1) In-tree/subsumed build: OpenSceneGraph.py's own CMakeLists.txt add_subdirectory()s
+	#     this whole project and already defines an OpenSceneGraph_python target (its
+	#     libOpenSceneGraph_python{d}.a), ordered to build before osgx_python links. Link
+	#     directly -- no cache variable needed, and this is what wheel builds get for free.
+	# (2) Standalone build: OSGX_OPENSCENEGRAPH_PY_BUILD_DIR points at an already-built
+	#     OpenSceneGraph.py build directory; find its static lib and wrap it as IMPORTED.
+	if(TARGET OpenSceneGraph_python)
+		message(STATUS "osgx_python_bindings will link against the in-tree OpenSceneGraph_python target")
+
+		target_link_libraries(osgx_python_bindings PUBLIC OpenSceneGraph_python)
+	elseif(OSGX_OPENSCENEGRAPH_PY_BUILD_DIR)
 		find_library(OSGX_OPENSCENEGRAPH_PY_STATIC_LIB
 			NAMES OpenSceneGraph_pythond OpenSceneGraph_python
 			PATHS "${OSGX_OPENSCENEGRAPH_PY_BUILD_DIR}"
@@ -641,6 +661,13 @@ if(OSGX_BUILD_PYTHON AND Python3_Development.Module_FOUND)
 		)
 
 		target_link_libraries(osgx_python_bindings PUBLIC osgx_opensceneegraph_py_static)
+	else()
+		message(FATAL_ERROR
+			"OSGX_BUILD_PYTHON is ON, but there is no in-tree OpenSceneGraph_python target and "
+			"OSGX_OPENSCENEGRAPH_PY_BUILD_DIR is not set -- osgx.RTT's kwargs-forwarding "
+			"constructor needs a built OpenSceneGraph.py to link against. Build OpenSceneGraph.py "
+			"first and pass -DOSGX_OPENSCENEGRAPH_PY_BUILD_DIR=/path/to/its/build/dir."
+		)
 	endif()
 
 	if(OSGX_WITH_PLATFORM)
