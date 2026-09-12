@@ -34,7 +34,7 @@ namespace osgx::gltf::detail {
 
 namespace {
 
-// KHR_materials_pbrSpecularGlossiness value-tree decode helpers -- same shape as
+// KHR_materials_pbrSpecularGlossiness value-tree decode helpers - same shape as
 // PBRIBL.cpp's decodeString/decodeInt for its own (unrelated) manifest format, just against
 // tg3_value (glTF extension values) instead of tinygltf_json_c.h's tg3json_value.
 double extNumber(const tg3_value& value, const char* key, double fallback) {
@@ -95,7 +95,7 @@ void MaterialBuilder::applyMaterial(
 	// One osgx::Material StateAttribute collects every map/factor this function decides on below;
 	// it's applied to the StateSet exactly once, at the very end, replacing what used to be up to
 	// four separate setTextureAttributeAndModes() calls plus a trailing osgx::attachMaterialFactors()
-	// -- and, unlike that split, has*Map can no longer disagree with what's actually bound: it's
+	// - and, unlike that split, has*Map can no longer disagree with what's actually bound: it's
 	// osgx::Material's own texture ref_ptrs, checked at apply() time, not a separately-tracked bool.
 	osg::ref_ptr<osgx::Material> materialAttr = new osgx::Material();
 
@@ -123,7 +123,7 @@ void MaterialBuilder::applyMaterial(
 	};
 
 	// base_color_factor is now a fixed-size array, always populated with the spec default
-	// ({1,1,1,1}) by the parser (or by tg3_default_material() above) -- no presence check needed.
+	// ({1,1,1,1}) by the parser (or by tg3_default_material() above) - no presence check needed.
 	baseColorFactor.set(
 		static_cast<float>(pbr.base_color_factor[0]),
 		static_cast<float>(pbr.base_color_factor[1]),
@@ -420,7 +420,7 @@ void MaterialBuilder::applyMaterial(
 				// The bake always produces a real (at-least-1x1) baseColor + ORM image even for
 				// factor-only spec-gloss materials (see _bakeSpecGlossToMetalRough's comment), so
 				// both setters above always receive a genuine texture, regardless of what the core
-				// pbrMetallicRoughness JSON block did or didn't declare -- materialAttr's has*Map
+				// pbrMetallicRoughness JSON block did or didn't declare - materialAttr's has*Map
 				// flags (derived from these same ref_ptrs at apply() time) come along for free.
 				materialAttr->setBaseColorMap(bcTex);
 				materialAttr->setMetallicRoughnessMap(ormTex);
@@ -455,7 +455,7 @@ void MaterialBuilder::applyMaterial(
 	// built-in uniform set, so it's namespaced (block name + binding) to avoid colliding
 	// with an unrelated shader's own material uniforms.
 	//
-	// hasBaseColorMap/hasMetallicRoughnessMap/hasNormalMap are no longer set here at all -- they're
+	// hasBaseColorMap/hasMetallicRoughnessMap/hasNormalMap are no longer set here at all - they're
 	// osgx::Material's own derived state, gating a factor-only material (no texture at all - e.g.
 	// Fox's roughnessFactor=0.58 with no metallicRoughnessTexture) from having its authored factor
 	// silently discarded by an unconditional texture() read of an unbound unit, same as before,
@@ -525,7 +525,7 @@ void MaterialBuilder::applyMaterial(
 	// ancestor mode (no OVERRIDE flag was used at the root, so normal OSG
 	// StateSet inheritance already lets a more-specific child win). The
 	// matching back-face normal flip belongs in whatever fragment shader
-	// consumes this geometry (gl_FrontFacing-based) -- not this loader's
+	// consumes this geometry (gl_FrontFacing-based) - not this loader's
 	// concern, since the loader doesn't ship its own PBR shader.
 	if(mat.double_sided) {
 		geom->getOrCreateStateSet()->setMode(GL_CULL_FACE, osg::StateAttribute::OFF);

@@ -142,7 +142,7 @@ public:
 		std::erase_if(_callbacks, [&](auto& p){ return p == cb; });
 	}
 
-	// Index-based accessors -- kept alongside add()/remove() (not a replacement) so callers
+	// Index-based accessors - kept alongside add()/remove() (not a replacement) so callers
 	// with an identity-based mental model still have it, while anything wanting positional
 	// list semantics (e.g. a Python SequenceProxy binding) has a real primitive to build on
 	// instead of a linear identity-scan.

@@ -13,7 +13,7 @@ namespace osgx {
 
 namespace {
 
-// Minimum leg/path duration -- osgAnimation::Motion::getValueAt() divides by duration with no
+// Minimum leg/path duration - osgAnimation::Motion::getValueAt() divides by duration with no
 // guard of its own; a caller-supplied 0.0 (or negative) would silently produce NaN through the
 // ease function instead of a crash or a warning, corrupting the camera matrix. Floor it instead.
 constexpr float MIN_DURATION = 1e-6f;
@@ -79,7 +79,7 @@ FlyToCallback::FlyToCallback(
 		_cumulative.push_back(total);
 	}
 
-	// CompositeMotion does NOT auto-sum its children's durations into its own -- its leg-selection
+	// CompositeMotion does NOT auto-sum its children's durations into its own - its leg-selection
 	// walk normalizes against whatever duration it was constructed with, so `total` must be passed
 	// explicitly here or that walk silently breaks.
 	_timeline = new osgAnimation::CompositeMotion(0.0f, total, 1.0f, tb);
@@ -90,7 +90,7 @@ FlyToCallback::FlyToCallback(
 }
 
 bool FlyToCallback::run(osg::Object* object, osg::Object* data) {
-	if(_arrived) return false; // never re-touch _timeline once CLAMP has pinned it -- see below
+	if(_arrived) return false; // never re-touch _timeline once CLAMP has pinned it - see below
 
 	auto* camera = dynamic_cast<osg::Camera*>(data);
 	auto* host = dynamic_cast<CameraIntentHost*>(object);
@@ -107,7 +107,7 @@ bool FlyToCallback::run(osg::Object* object, osg::Object* data) {
 		_startTime = now;
 	}
 
-	// Absolute elapsed time, not an accumulated per-frame delta -- Motion::setTime() re-derives the
+	// Absolute elapsed time, not an accumulated per-frame delta - Motion::setTime() re-derives the
 	// CLAMP/LOOP-adjusted time from scratch each call, so there's no delta-accumulation drift to
 	// worry about. `t` (not raw elapsed) is what everything below must key off: under LOOP, elapsed
 	// grows unboundedly while t wraps back into [0, duration) every cycle.
@@ -117,7 +117,7 @@ bool FlyToCallback::run(osg::Object* object, osg::Object* data) {
 
 	// At the exact instant CLAMP first pins t at the path's duration, CompositeMotion's own leg
 	// walk (a strict `<` test against each child's duration fraction) falls through every child --
-	// even the last one -- and hits its "did not find the value in range" WARN + result=0 fallback.
+	// even the last one - and hits its "did not find the value in range" WARN + result=0 fallback.
 	// Arrival MUST be checked before calling getValue()/doing the leg lookup below, and _timeline
 	// must never be touched again once _arrived is set.
 	if(t >= _timeline->getDuration()) {
@@ -128,7 +128,7 @@ bool FlyToCallback::run(osg::Object* object, osg::Object* data) {
 		camera->setViewMatrix(targetView);
 
 		// Resync the manipulator's own state so control hands back to it seamlessly. `this` IS the
-		// real manipulator via CameraManipulator<Base>'s inheritance -- no separate "inner" object.
+		// real manipulator via CameraManipulator<Base>'s inheritance - no separate "inner" object.
 		// See the KNOWN LIMITATION comment in CameraIntents.hpp: this can't perfectly restore an
 		// orbit-style manipulator's pivot/distance from a single matrix.
 		if(auto* manip = dynamic_cast<osgGA::CameraManipulator*>(object)) {
@@ -142,7 +142,7 @@ bool FlyToCallback::run(osg::Object* object, osg::Object* data) {
 
 	// upper_bound, NOT lower_bound: CompositeMotion selects children with a strict `t <
 	// durationInRange` test, i.e. at an exact leg-boundary instant it picks the NEXT leg (local
-	// t == 0), not the one that just ended -- upper_bound (first cumulative sum strictly greater
+	// t == 0), not the one that just ended - upper_bound (first cumulative sum strictly greater
 	// than t) matches that; lower_bound would disagree by one leg at exact boundaries.
 	size_t activeLeg = std::min(
 		static_cast<size_t>(

@@ -1,7 +1,7 @@
 // vimrun! ./examples/osgx-gbuffer model.gltf --env env/papermill.gltf
 //
 // Proves osgx::gltf::pbribl's deferred split (PBRIBLGBuffer::create() + PBRIBLLightingScene::create())
-// renders identically to PBRIBLScene::create()'s monolithic forward shader -- same model, same
+// renders identically to PBRIBLScene::create()'s monolithic forward shader - same model, same
 // --hdr/--env environment loading osgx-gltf-viewer.cpp/osgx-turntable.cpp already use, plus a
 // THIRD camera proving osgx::shadow fits into the split too: shadow-casting only needs depth,
 // not material data, so it sits alongside the geometry pass rather than inside it, and plugs
@@ -9,20 +9,20 @@
 // PBRIBLScene::create()'s own shadowMap parameter uses.
 //
 // Press 0-6 to inspect the raw G-buffer channels (0=lit composite, 1=albedo, 2=normal,
-// 3=material(roughness/metallic), 4=emissive, 5=depth, 6=SSAO) -- the same diagnostic shape
+// 3=material(roughness/metallic), 4=emissive, 5=depth, 6=SSAO) - the same diagnostic shape
 // pyosg-mrt.py's own visualizeMode toggle uses, confirming each channel independently instead
 // of only ever looking at the final composite.
 //
-// Also the first live consumer of osgx::SSAO (GBuffer.hpp) -- the generic hemisphere-kernel
+// Also the first live consumer of osgx::SSAO (GBuffer.hpp) - the generic hemisphere-kernel
 // screen-space AO pass ported from OpenSceneGraph.py/examples/pyosg-lighting/11-sketchfab.py's
 // hand-rolled one. Feeds PBRIBLLightingPassOptions::aoTexture, the same seam a caller's own
 // hand-built SSAO (or a baked lightmap, or nothing) would use instead.
 //
-// Also proves osgx::shadow's 3 correctness fixes (same as osgx-shadow.cpp -- see that file's own
+// Also proves osgx::shadow's 3 correctness fixes (same as osgx-shadow.cpp - see that file's own
 // header comment for the full writeup) inside the deferred G-buffer pipeline specifically: the
 // shadow camera below is orthographic (not perspective), never sets its own depth-only Program
 // (ShadowMap::create() does that internally now), and its "Directional Light" ImGui
-// section drags the key light live via ShadowMap::reposition() -- watch
+// section drags the key light live via ShadowMap::reposition() - watch
 // the floor's shadow track the drag with no camera/FBO rebuild, while osgx::LightGizmos (reading
 // the same LightSet) shows the plane/arrow moving in sync.
 
@@ -90,15 +90,15 @@ std::filesystem::path findEnvironmentManifest(std::string_view filename) {
 }
 
 // Refreshes the lighting pass's view-matrix uniforms from a preDrawCallback on the shadow
-// camera -- the FIRST PRE_RENDER camera in this scene graph by render order (default order 0,
+// camera - the FIRST PRE_RENDER camera in this scene graph by render order (default order 0,
 // same as the geometry pass, but added to `root` before it). Every PRE_RENDER camera finishes
 // drawing before the main viewer camera's own preDrawCallback fires (confirmed against OSG
 // 3.6.5's RenderStage::draw()), so this is the earliest point in the frame that still sees the
-// CURRENT frame's fresh camera matrices -- calling PBRIBLLightingScene::update() from application
+// CURRENT frame's fresh camera matrices - calling PBRIBLLightingScene::update() from application
 // code after viewer.frame() returns (the previous, buggy version of this example) hands the
 // lighting pass a one-frame-stale matrix instead, which showed up live as a shadow/position
 // artifact that visibly worsened while the camera was actively orbiting/zooming.
-// `ssaoProjection` is optional (nullptr when SSAO wasn't built) -- refreshed here alongside the
+// `ssaoProjection` is optional (nullptr when SSAO wasn't built) - refreshed here alongside the
 // lighting pass's own view-matrix uniforms for the same reason: SSAO's forward re-projection
 // needs the CURRENT frame's projection matrix, not a stale one from application code running
 // after viewer.frame() returns. See osgx::SSAO::create()'s own doc comment (GBuffer.hpp).
@@ -126,7 +126,7 @@ private:
 };
 
 // Debug blit: samples any one texture into a fullscreen quad, with a small per-channel remap
-// (raw color passthrough / signed-normal-to-[0,1] / single-channel depth grayscale) -- NOT part
+// (raw color passthrough / signed-normal-to-[0,1] / single-channel depth grayscale) - NOT part
 // of osgx::gbuffer or osgx::gltf::pbribl itself, this is purely an example-level diagnostic aid,
 // same role pyosg-mrt.py's own visualizeMode branches played.
 constexpr const char DEBUG_BLIT_FRAGMENT_SHADER[] = R"GLSL(
@@ -226,13 +226,13 @@ private:
 
 // Floor: a plain procedural quad, deliberately NOT sharing the model's G-buffer Program
 // (PBRIBLGBuffer::create()'s shader reads a structured osgx_gltf_Material buffer only the
-// glTF loader ever populates -- a quad built by hand has none of that data, so reading it
+// glTF loader ever populates - a quad built by hand has none of that data, so reading it
 // unbound would be garbage, not a harmless default). Writes flat albedo/normal/roughness-
 // metallic/zero-emissive/position straight into all 5 G-buffer attachments with its own trivial
 // shader pair instead. Added as a child of the GEOMETRY pass camera, never the shadow camera --
 // it's a shadow receiver, not a caster. gPosition specifically matters: an attachment a
 // fragment shader never writes stays at the geometry pass's clear value (0,0,0,0), and
-// forgetting it here once produced a real, hard-to-diagnose bug -- every floor pixel's
+// forgetting it here once produced a real, hard-to-diagnose bug - every floor pixel's
 // reconstructed worldPos silently collapsed to a single constant point (the camera's own eye
 // position, from osgx_mainViewMatrixInverse's translation column), landing nowhere near the
 // shadow frustum and making osgx_ShadowFactor() read "unshadowed" everywhere regardless of
@@ -302,7 +302,7 @@ osg::ref_ptr<osg::Geode> makeFloor(const osg::Vec3& center, float halfSize, floa
 
 	geometry->setVertexArray(positions.get());
 	geometry->setNormalArray(normals.get(), osg::Array::BIND_OVERALL);
-	// GL_TRIANGLE_FAN, not GL_QUADS -- removed in a core-profile context (this project's shaders
+	// GL_TRIANGLE_FAN, not GL_QUADS - removed in a core-profile context (this project's shaders
 	// are all "#version 460 core"); a 4-vertex fan is the same two triangles for a convex quad.
 	geometry->addPrimitiveSet(new osg::DrawArrays(GL_TRIANGLE_FAN, 0, 4));
 
@@ -318,7 +318,7 @@ osg::ref_ptr<osg::Geode> makeFloor(const osg::Vec3& center, float halfSize, floa
 	auto* ss = geode->getOrCreateStateSet();
 
 	ss->setAttributeAndModes(prog, osg::StateAttribute::ON);
-	// Neutral warm stone -- same role as 08-shadows.py's own floor albedo default.
+	// Neutral warm stone - same role as 08-shadows.py's own floor albedo default.
 	ss->addUniform(new osg::Uniform("floorAlbedo", osg::Vec3(0.75f, 0.72f, 0.68f)));
 
 	return geode;
@@ -371,12 +371,12 @@ int main(int argc, char** argv) {
 	);
 	args.getApplicationUsage()->addCommandLineOption(
 		"--hdr <path>",
-		"Source HDR environment -- bakes diffuse irradiance, BRDF LUT, and GGX-prefiltered "
+		"Source HDR environment - bakes diffuse irradiance, BRDF LUT, and GGX-prefiltered "
 		"specular all live."
 	);
 	args.getApplicationUsage()->addCommandLineOption(
 		"--env <manifest.gltf>",
-		"Pre-baked osgx_pbribl environment manifest -- no HDR decode/bake at runtime."
+		"Pre-baked osgx_pbribl environment manifest - no HDR decode/bake at runtime."
 	);
 	args.getApplicationUsage()->addCommandLineOption(
 		"--samples <count>", "Request this many default-framebuffer MSAA samples (default: 4)"
@@ -406,7 +406,7 @@ int main(int argc, char** argv) {
 	viewer.setThreadingModel(osgViewer::Viewer::SingleThreaded);
 #endif
 
-	// Force the real window to exactly WIDTH x HEIGHT -- the G-buffer textures are that fixed
+	// Force the real window to exactly WIDTH x HEIGHT - the G-buffer textures are that fixed
 	// size, and if the actual window ends up a different size/aspect (the default, since no
 	// --window was passed), the geometry pass renders under one aspect ratio while
 	// viewer.getCamera()'s own projection matrix reflects a different one. Same fix
@@ -466,12 +466,12 @@ int main(int argc, char** argv) {
 		return 1;
 	}
 
-	// Shadow map: a THIRD, independent camera -- shadow-casting only needs depth, not material
+	// Shadow map: a THIRD, independent camera - shadow-casting only needs depth, not material
 	// data, so it has nothing to do with the G-buffer itself (the geometry pass stays completely
 	// unaware shadows exist). `model` is multi-parented under it exactly as under gbuffer's own
 	// camera; unlike 08-shadows.py's original hand-rolled version, this does NOT re-run the
 	// model's own (expensive: normal-mapped/textured) G-buffer-writing fragment shader during the
-	// depth-only pass -- ShadowMap::create() now installs its own minimal depth-only
+	// depth-only pass - ShadowMap::create() now installs its own minimal depth-only
 	// Program directly on shadowMap.camera (ON|OVERRIDE), which wins over whatever Program `model`
 	// carries for its real render. See osgx/TODO.md's old Shadow section.
 	osg::ComputeBoundsVisitor boundsVisitor;
@@ -481,7 +481,7 @@ int main(int argc, char** argv) {
 	const auto& bounds = boundsVisitor.getBoundingBox();
 	const osg::Vec3 boundCenter = bounds.valid() ? bounds.center() : osg::Vec3();
 	const float boundRadius = bounds.valid() ? bounds.radius() : 1.0f;
-	// Moderate ~45 degree angle -- offset enough to cast a clearly visible shadow without the
+	// Moderate ~45 degree angle - offset enough to cast a clearly visible shadow without the
 	// extreme grazing angles that stress-test the shadow frustum's tight, model-sized coverage.
 	// Not const: the ImGui "Directional Light" section below drags this live (see
 	// ShadowMap::reposition() further down).
@@ -497,9 +497,9 @@ int main(int argc, char** argv) {
 
 	shadowMap.camera->addChild(model);
 
-	// Floor -- sized/placed off the same bound: resting plane at the model's own true bottom
+	// Floor - sized/placed off the same bound: resting plane at the model's own true bottom
 	// (zMin, not the light rig's arbitrary center), centered under the model's actual XY
-	// position (not the world origin -- a model loaded off-center still needs a floor under IT),
+	// position (not the world origin - a model loaded off-center still needs a floor under IT),
 	// half-size generous enough to catch the shadow's tilt-driven overhang regardless of model
 	// shape (lightDir's ~26.6 degree tilt off vertical puts that overhang at roughly half the
 	// model's height above the floor; radius*3 comfortably covers that without exact trig).
@@ -507,16 +507,16 @@ int main(int argc, char** argv) {
 	const float floorHalfSize = boundRadius * 3.0f;
 	auto floor = makeFloor(boundCenter, floorHalfSize, floorZ);
 
-	// Receiver, not caster -- added to the geometry pass, never the shadow camera.
+	// Receiver, not caster - added to the geometry pass, never the shadow camera.
 	gbuffer.gbuffer.camera->addChild(floor);
 
-	// SSAO: reads gbuffer's normal/position directly (both already exist -- the geometry pass
+	// SSAO: reads gbuffer's normal/position directly (both already exist - the geometry pass
 	// wrote them, no new attachment needed), so it's built here, after the geometry pass and
 	// before the lighting pass whose aoTexture seam consumes its output below. `ssaoProjection`
-	// is a separate uniform from the lighting pass's own view-matrix ones -- SSAO needs a forward
+	// is a separate uniform from the lighting pass's own view-matrix ones - SSAO needs a forward
 	// PROJECTION matrix, refreshed the same way and for the same reason (see
 	// UpdateLightingPassCallback's own comment). Radius scaled off the model's own bound rather
-	// than a fixed constant -- same "derive from the model's own bounds" precedent
+	// than a fixed constant - same "derive from the model's own bounds" precedent
 	// osgx-gbuffer-comic.cpp's hatchFrequency uses; a fixed radius tuned for one model looks wrong
 	// at a very different scale.
 	auto ssaoProjection = osgx::make_ref<osg::Uniform>(
@@ -539,10 +539,10 @@ int main(int argc, char** argv) {
 	lightingOptions.shadowMap = &shadowMap;
 	lightingOptions.aoTexture = ssao.aoTexture.get();
 
-	// Back to 1.0/1.0 -- 11-sketchfab.py's --ibl-diffuse-intensity/--ibl-specular-intensity
+	// Back to 1.0/1.0 - 11-sketchfab.py's --ibl-diffuse-intensity/--ibl-specular-intensity
 	// default of 0.1 turned out to be a red herring here (user: "0.1 is a bug, I always
 	// override it by hand"), and reverting to 0.1 made no visible difference anyway, ruling out
-	// the IBL/direct-light balance theory entirely -- the shadow is invisible for some other
+	// the IBL/direct-light balance theory entirely - the shadow is invisible for some other
 	// reason.
 	auto lighting = osgx::gltf::pbribl::PBRIBLLightingScene::create(
 		gbuffer, environment, viewer.getCamera(), 1.0f, 1.0f, lightingOptions
@@ -554,7 +554,7 @@ int main(int argc, char** argv) {
 		return 1;
 	}
 
-	// One directional key light, shadowed (ShadowMap::casterIndex defaults to 0) -- lives on the
+	// One directional key light, shadowed (ShadowMap::casterIndex defaults to 0) - lives on the
 	// lighting pass camera's own StateSet, since that's where osgx_DirectLighting() actually
 	// runs; the geometry pass has no lighting math to feed it to.
 	auto* lightingSS = dynamic_cast<osg::Camera*>(lighting.node.get())->getOrCreateStateSet();
@@ -562,7 +562,7 @@ int main(int argc, char** argv) {
 
 	lightingSS->setAttributeAndModes(lights);
 
-	// Intensity ~3.0 (not 2.0) -- also matching 11-sketchfab.py's own tuned key-light magnitude.
+	// Intensity ~3.0 (not 2.0) - also matching 11-sketchfab.py's own tuned key-light magnitude.
 	lights->setCount(1);
 	lights->setDirectional(0, lightDir, lightColor, lightIntensity);
 
@@ -571,8 +571,8 @@ int main(int argc, char** argv) {
 	// LightGizmos overlay (plane + direction arrow) matters here, and it sizes itself off
 	// `model`'s own real bound at construction time.
 	auto gizmos = osgx::make_ref<osgx::LightGizmos>(*lights, model.get());
-	// Order 2 -- after BOTH lighting.node (POST_RENDER, order 0) and debugCamera (POST_RENDER,
-	// order 1), and unlike either of those, never nodeMask-toggled by VisualizeModeHandler -- the
+	// Order 2 - after BOTH lighting.node (POST_RENDER, order 0) and debugCamera (POST_RENDER,
+	// order 1), and unlike either of those, never nodeMask-toggled by VisualizeModeHandler - the
 	// gizmo overlay draws last every frame regardless of which view mode is active, which is what
 	// makes it the right thing to pin osgx::imgui::Widget's drawCamera to below.
 	gizmos->getOverlay()->setRenderOrder(osg::Camera::POST_RENDER, 2);
@@ -581,7 +581,7 @@ int main(int argc, char** argv) {
 
 	if(environment.root) root->addChild(environment.root);
 
-	// Installed on shadowMap.camera specifically -- see UpdateLightingPassCallback's own comment
+	// Installed on shadowMap.camera specifically - see UpdateLightingPassCallback's own comment
 	// for why it has to be the first PRE_RENDER camera in the scene graph, not a post-frame()
 	// call in the loop below (the previous, buggy version of this example).
 	shadowMap.camera->setPreDrawCallback(
@@ -618,7 +618,7 @@ int main(int argc, char** argv) {
 	viewer.getCamera()->setClearColor(osg::Vec4f(48.0f / 255.0f, 53.0f / 255.0f, 66.0f / 255.0f, 1.0f));
 
 	// Ground-truth dump: 'w' writes the shadow camera's own depth texture (what it actually
-	// captured of `model`, from the light's POV) straight to disk -- postDrawCallback so it
+	// captured of `model`, from the light's POV) straight to disk - postDrawCallback so it
 	// reads back immediately after that camera's own draw, no frame-delay guessing needed.
 	auto shadowDump = osgx::make_ref<osgx::WriteTextureCallback>(shadowMap.depthTexture.get());
 
@@ -644,14 +644,14 @@ int main(int argc, char** argv) {
 	// Proves ShadowMap::reposition() inside the deferred pipeline
 	// specifically: dragging the light live reshapes the floor's shadow (and moves
 	// osgx::LightGizmos' overlay, reading the same LightSet) without ever rebuilding shadowMap's
-	// camera/FBO/depth texture -- same mechanism osgx-shadow.cpp already proved standalone.
+	// camera/FBO/depth texture - same mechanism osgx-shadow.cpp already proved standalone.
 	//
-	// gizmos->getOverlay() pinned explicitly as the draw camera -- left at the default
+	// gizmos->getOverlay() pinned explicitly as the draw camera - left at the default
 	// (drawCamera=nullptr), the panel drew via the master camera's own PostDrawCallback, which
 	// fires BEFORE lighting.node/debugCamera (nested POST_RENDER cameras, not View slaves) ever
-	// run -- their later draw painted straight over the ImGui panel every frame. Bumped the
+	// run - their later draw painted straight over the ImGui panel every frame. Bumped the
 	// gizmo overlay's own render order above (POST_RENDER, 2) specifically so it's the one camera
-	// guaranteed to draw last regardless of which view mode is active -- see Widget's own
+	// guaranteed to draw last regardless of which view mode is active - see Widget's own
 	// constructor comment for this exact deferred-rendering scenario.
 	auto* gui = new osgx::imgui::Widget(viewer, gizmos->getOverlay());
 
@@ -665,7 +665,7 @@ int main(int argc, char** argv) {
 		changed |= ImGui::SliderFloat("Intensity", &lightIntensity, 0.0f, 10.0f);
 
 		if(changed) {
-			// A dragged slider can pass through (0,0,0) -- lookAt() (inside
+			// A dragged slider can pass through (0,0,0) - lookAt() (inside
 			// ShadowMap::reposition()) is degenerate for a zero-length direction, so
 			// hold the last valid direction instead of feeding it one.
 			if(lightDir.length2() > 1e-8f) {
@@ -680,7 +680,7 @@ int main(int argc, char** argv) {
 		}
 	}, osgx::imgui::SectionOptions::create(false, true));
 
-	// Live radius/bias tuning -- reads the CURRENT uniform value each frame rather than tracking
+	// Live radius/bias tuning - reads the CURRENT uniform value each frame rather than tracking
 	// a separate local float, since osgx::SSAO::create() already returns these as real
 	// osg::Uniform*s meant to be set at any time (no pass rebuild), not one-shot constructor
 	// arguments. Press '6' to actually see the effect while dragging these.

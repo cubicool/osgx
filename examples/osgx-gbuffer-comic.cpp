@@ -2,30 +2,30 @@
 //
 // A "comic book" cel-shaded rendering style built entirely on osgx::Hook::DeferredLighting: a
 // caller-supplied fragment shader REPLACING PBRIBLLightingScene::create()'s entire lighting-pass
-// main(), not one leaf function -- the "I know what I'm doing, rewrite the whole pipeline" escape
+// main(), not one leaf function - the "I know what I'm doing, rewrite the whole pipeline" escape
 // hatch described in Shader.hpp's own Hook::DeferredLighting comment and
 // PBRIBLLightingPassOptions' own comment (PBRIBL.hpp).
 //
-// The custom shader below never calls osgx_DirectLighting()/osgx_EvaluateIBL() at all -- it reads the
+// The custom shader below never calls osgx_DirectLighting()/osgx_EvaluateIBL() at all - it reads the
 // G-buffer via osgx_GetGBuffer() (#pragma osgx::gltf DEFERRED_LIGHTING_INPUTS, GET_GBUFFER --
 // the same structured decode PBRIBLLightingScene::create()'s own built-in default uses internally)
 // and renders: quantized diffuse bands with a warm-lit/cool-shadow color-graded tint; procedural
 // cross-hatching (scale-calibrated from the loaded model's own bounding radius, no texture asset
 // needed); a metal-aware specular highlight, anti-aliased via osgx_SpecularAA()
-// (gb.roughness/gb.metallic -- this shader looks best on non-metallic/low-reflectivity materials,
+// (gb.roughness/gb.metallic - this shader looks best on non-metallic/low-reflectivity materials,
 // since it has no real reflections to fall back on for glossy metal); black ink outlines from
 // G-buffer edge detection (comparing each fragment's view-space normal/depth against its
-// 4-neighborhood -- the standard deferred-renderer silhouette/crease technique, no extra
+// 4-neighborhood - the standard deferred-renderer silhouette/crease technique, no extra
 // geometry pass needed); and a soft-clamped emissive glow. It DOES still gamma-encode its final
-// output (a display-referred correctness requirement, not a style choice -- osgx_Tonemap() itself
+// output (a display-referred correctness requirement, not a style choice - osgx_Tonemap() itself
 // stays unused, see
 // PBRIBLLightingPassOptions' own tonemap/hooks comment for why those are two separate decisions).
 //
-// No environment/IBL, no LightSet, no ShadowMap -- PBRIBLLightingScene::create()'s `environment`
+// No environment/IBL, no LightSet, no ShadowMap - PBRIBLLightingScene::create()'s `environment`
 // parameter is OPTIONAL specifically so a Hook::DeferredLighting override like this one, which
 // never samples envMap/brdfLUT/diffuseEnv, doesn't have to pay for an HDR bake or KTX2 load that
 // would go entirely unused (see that function's own comment, PBRIBL.hpp/.cpp). The light itself is
-// a single plain `sunDirection` uniform, live-draggable via ImGui -- not a real osgx::LightSet.
+// a single plain `sunDirection` uniform, live-draggable via ImGui - not a real osgx::LightSet.
 //
 // Deliberately skips osgx-gbuffer.cpp's shadow camera, floor, and G-buffer channel viewer. DOES
 // include an ImGui panel (OSGX_IMGUI builds only) for live tuning of every knob below, same pattern
@@ -33,17 +33,17 @@
 // this is headed next.
 //
 // HATCH TECHNIQUE, 2026-08-23: replaced the old sin()-based hatchStripe() (a single perfect
-// stripe per direction, gated by the quantized `band`) with hatchFamily() -- a port of
+// stripe per direction, gated by the quantized `band`) with hatchFamily() - a port of
 // examples/pyosg-hatch.py's fullscreen-quad hatching PoC (OpenSceneGraph.py repo), confirmed
 // live there as producing genuinely hand-drawn-reading crosshatch: fbm domain warp (keeps
 // strokes from looking ruler-straight), per-row width jitter, along-the-line breaks, and fine
 // nib/dropout noise, all normalized by the stripe SPACING itself so the noise frequencies stay
-// scale-invariant across differently-sized models -- same "measure relative to the
+// scale-invariant across differently-sized models - same "measure relative to the
 // artist-controlled spacing, not raw world units" principle hatchFrequencyFor() below already
 // used for the base frequency alone. Three independently-tunable families (h1/h2/h3, each its
 // own angle/spacing-scale/thickness-scale/seed) replace the old fixed +45/-45 pair, each gated
 // by its own onset RANGE against `hatchDarkness` (continuous 1-NdotL, deliberately NOT the
-// quantized `band` -- see that variable's own comment) -- this reproduces the classic layered
+// quantized `band` - see that variable's own comment) - this reproduces the classic layered
 // crosshatch progression (one direction first, a second crossing it deeper in shadow, a third
 // fine family only in the darkest corners) driven by tone, the way a hand-inker actually
 // decides where to lay lines.
@@ -55,58 +55,58 @@
 // independent of whether light is hitting it; gating on it puts crosshatch on brightly-lit
 // crevices and reads as an error, not style. `hatchDarkness` (tone) is now the primary gate;
 // AO is a secondary GATE (see aoEraseLow/aoEraseHigh below) that only erases hatch to a clean
-// solid fill in the very deepest, most-enclosed pockets -- a much narrower, safer claim.
+// solid fill in the very deepest, most-enclosed pockets - a much narrower, safer claim.
 // `metallicSuppress` is the third signal: metal reads through its highlight, not pen strokes
-// (this file's own header always said this style "looks best on non-metallic" -- now it's an
+// (this file's own header always said this style "looks best on non-metallic" - now it's an
 // explicit multiplicative suppression instead of an unaddressed limitation).
 //
 // NOTE on "AO Mask": now combines TWO genuinely different occlusion signals, multiplicatively --
 // same convention the built-in lighting shader's own `mat.ao *= texture(aoTex, vUV).r;` uses
 // (PBRIBL.cpp). `gb.ao` is the glTF material's BAKED occlusion texture value
 // (osgx_gltf_GetMaterial()'s mat.ao, PBRIBL.cpp), defaulting to a flat 1.0 (fully unoccluded) when
-// the loaded model has no dedicated occlusion texture -- CONFIRMED 2026-08-21 as why the slider
+// the loaded model has no dedicated occlusion texture - CONFIRMED 2026-08-21 as why the slider
 // once looked dead on Batman (a non-Khronos custom asset with no occlusion texture at all), not a
 // pipeline bug: it works correctly on models that actually carry one, e.g. the Khronos
 // `CompareAmbientOcclusion` sample (purpose-built for exactly this A/B) or `DamagedHelmet`. `aoTex`
 // (gated behind `OSGX_PBRIBL_AO`, set automatically when `PBRIBLLightingPassOptions::aoTexture` is
-// non-null) is real-time screen-space AO from `osgx::SSAO::create()` (GBuffer.hpp) -- catches
+// non-null) is real-time screen-space AO from `osgx::SSAO::create()` (GBuffer.hpp) - catches
 // self/contact occlusion the static bake can't (this model resting against itself, or against
 // nothing else in this shadowless/lightless scratchpad, but the mechanism is general). Combining
 // both into one `hatch *= mix(1.0, ao, aoMask);` mask means a crevice reads as fully occluded if
 // EITHER signal says so, matching how real ink illustration treats "this area is dark" as one
 // binary decision regardless of why it's dark.
 // osgx-gbuffer.cpp's channel viewer still doesn't expose gb.ao (gAlbedo's alpha) as its own mode
-// -- worth adding once/if it's useful for debugging which models have baked occlusion.
+// - worth adding once/if it's useful for debugging which models have baked occlusion.
 //
-// NOT YET IMPLEMENTED -- "hatch cloud" outside the silhouette (design intent only, 2026-08-23):
+// NOT YET IMPLEMENTED - "hatch cloud" outside the silhouette (design intent only, 2026-08-23):
 // stylized crosshatch in a ~50px screen-space ring OUTSIDE the model's own silhouette, following
 // it like a living aura rather than stopping dead at the model's edge. Everything in this file
 // today gates hatch by data that only exists WHERE the model was actually rendered (gb.normal,
-// hatchDarkness from NdotL, etc.) -- background pixels are `discard`ed outright (the "cleared-
+// hatchDarkness from NdotL, etc.) - background pixels are `discard`ed outright (the "cleared-
 // but-never-written pixel" test at the top of main()), so extending hatch past the silhouette
 // needs a genuinely new upstream pass, not just a shader tweak to this file's existing main().
-//   1. Inside/outside itself is already free -- it's the exact same "was this pixel written by
+//   1. Inside/outside itself is already free - it's the exact same "was this pixel written by
 //      the geometry pass" test main() already discards on. No per-model bookkeeping needed for
 //      that part.
 //   2. The "how far outside, up to some pixel radius" part needs a real 2D screen-space
-//      proximity field -- raw depth-buffer comparison can't answer "how many screen pixels away
+//      proximity field - raw depth-buffer comparison can't answer "how many screen pixels away
 //      am I from the silhouette," it has no notion of 2D distance. Jump Flooding Algorithm (JFA)
 //      is the standard real-time technique: a handful of full-screen ping-pong passes
 //      (~log2(radius), so ~6 for 50px) where each pass propagates "nearest silhouette pixel"
-//      outward at doubling step sizes -- O(log radius) cost, not O(radius^2), so a 100px cloud
+//      outward at doubling step sizes - O(log radius) cost, not O(radius^2), so a 100px cloud
 //      costs one more pass, not 4x the work.
-//   3. Propagate more than a scalar distance through the JFA -- carry the nearest silhouette
+//   3. Propagate more than a scalar distance through the JFA - carry the nearest silhouette
 //      pixel's own worldPos (and maybe normal) forward too, so background pixels inside the ring
 //      have a coherent world-anchored 2D coordinate to feed hatchCoord/hatchFamily() with,
-//      instead of falling back to raw screen-space coordinates -- which would reintroduce the
+//      instead of falling back to raw screen-space coordinates - which would reintroduce the
 //      exact "decal stuck to the screen, slides as the camera orbits" bug hatchCoord's own
 //      comment in main() already documents fixing for on-model hatch.
-//   4. Reuse, don't reinvent, the existing gating -- once a per-pixel `distanceToSilhouette` (in
+//   4. Reuse, don't reinvent, the existing gating - once a per-pixel `distanceToSilhouette` (in
 //      screen pixels) exists, `smoothstep(50.0, 0.0, distance)` is a drop-in replacement for
 //      `hatchDarkness` on ring pixels, so the SAME h1/h2/h3 onset-range machinery this file
 //      already has decides how the cloud thins out toward its outer edge.
 //   5. Depth-occlusion (would a nearer, unrelated object block part of the ring?) is a non-issue
-//      for THIS single-model scratchpad specifically -- background pixels here are genuinely
+//      for THIS single-model scratchpad specifically - background pixels here are genuinely
 //      empty, nothing else is ever drawn there to be occluded by. Only relevant if this shader is
 //      ever reused in a multi-object scene with real geometry behind/around the hatched model.
 
@@ -151,10 +151,10 @@ std::filesystem::path findModelFile(std::string_view filename) {
 	);
 }
 
-// Refreshes the lighting pass's view-matrix uniforms every frame -- same requirement as
+// Refreshes the lighting pass's view-matrix uniforms every frame - same requirement as
 // osgx-gbuffer.cpp's own UpdateLightingPassCallback, just as a lambda-driven NodeCallback here
 // since there's no shadow camera in this scratchpad to hang it off of as a preDrawCallback.
-// `ssaoProjection` mirrors osgx-gbuffer.cpp's own addition -- see osgx::SSAO::create()'s doc
+// `ssaoProjection` mirrors osgx-gbuffer.cpp's own addition - see osgx::SSAO::create()'s doc
 // comment (GBuffer.hpp) for why SSAO needs its own freshly-updated forward-projection uniform.
 class UpdateLightingPassCallback: public osg::Camera::DrawCallback {
 public:
@@ -180,73 +180,73 @@ private:
 };
 
 // The osgx::Hook::DeferredLighting override itself. Requires nothing but the G-buffer contract --
-// no LightSet, no ShadowMap, no IBL environment -- see the file-level comment above.
+// no LightSet, no ShadowMap, no IBL environment - see the file-level comment above.
 constexpr const char CUSTOM_DEFERRED_LIGHTING_FRAGMENT_SHADER[] = R"GLSL(
 #version 460 core
 #pragma osgx::gltf DEFERRED_LIGHTING_INPUTS, GET_GBUFFER
-// osgx_SpecularAA() -- see its call site in main() below for why the specular highlight needs it.
+// osgx_SpecularAA() - see its call site in main() below for why the specular highlight needs it.
 #pragma osgx::pbr SPECULAR_AA
 
-// World-space "sun" direction, live-draggable via ImGui -- NOT an osgx::LightSet (this
+// World-space "sun" direction, live-draggable via ImGui - NOT an osgx::LightSet (this
 // scratchpad still has none), just a single plain uniform main() reads directly. Default matches
 // the original hardcoded value: normalize(vec3(1, 1, 2)).
 uniform vec3 sunDirection;
-// Global on/off -- skips the entire hatch computation (all three hatchFamily() calls, not just
+// Global on/off - skips the entire hatch computation (all three hatchFamily() calls, not just
 // zeroing the result afterward) so it's also a cheap A/B toggle, not merely a visual one.
 uniform bool hatchEnabled;
 const int BANDS = 4;
 const float TWO_PI = 6.28318530718;
-// Classic comic/illustration color grading -- shadow areas tint slightly cool (as if lit by
+// Classic comic/illustration color grading - shadow areas tint slightly cool (as if lit by
 // ambient sky/bounce light), lit areas tint slightly warm (as if lit by a warm key light). A
 // small, cheap multiplicative color shift on top of the existing brightness bands; NOT a real
 // ambient light source (no LightSet, see the file header), just a stylized tint.
 const vec3 SHADOW_TINT = vec3(0.55, 0.65, 0.85);
 const vec3 LIGHT_TINT = vec3(1.05, 1.0, 0.92);
-// Soft-clamp exposure for emissive -- without osgx_Tonemap() at all in this shader, a raw HDR
+// Soft-clamp exposure for emissive - without osgx_Tonemap() at all in this shader, a raw HDR
 // emissive value fed straight to the framebuffer can blow out past 1.0 and clip harshly. A
 // simple Reinhard-style 1-exp(-x) curve keeps bright glow readable without a hard clip, without
 // pulling in the full osgx_Tonemap() machinery this shader deliberately doesn't use.
 const float EMISSIVE_EXPOSURE = 1.5;
 const float EDGE_NORMAL_THRESHOLD = 0.4;
 const float EDGE_DEPTH_THRESHOLD = 0.05;
-// Outline width, in texels -- widening the neighbor-sample radius means any fragment within
+// Outline width, in texels - widening the neighbor-sample radius means any fragment within
 // this many texels of a real discontinuity has a neighbor sample that crosses it, thickening
 // the resulting ink line proportionally (not a separate blur/dilate pass).
 const float EDGE_THICKNESS = 4.0;
-// Hatch stripe spacing, in WORLD units (not screen pixels -- see hatchCoord's own comment in
+// Hatch stripe spacing, in WORLD units (not screen pixels - see hatchCoord's own comment in
 // main() for why). WORLD units means this can't be one fixed constant across models of wildly
 // different physical scale (confirmed live: DamagedHelmet vs. Fox vs. a unit Cube all needed
-// completely different values at the same raw number) -- so this is now a uniform, set once at
+// completely different values at the same raw number) - so this is now a uniform, set once at
 // startup in main() from the loaded model's own bounding radius (--hatch-density scales it).
-// hatchFamily() below reads it as 1/hatchFrequency -- a stripe PERIOD, in world units -- and
+// hatchFamily() below reads it as 1/hatchFrequency - a stripe PERIOD, in world units - and
 // normalizes every family's local coordinate by its own (period * per-family scale) so the warp/
 // break/nib noise frequencies stay scale-invariant regardless of hatchFrequency's actual value.
 uniform float hatchFrequency;
 // Base line thickness, as a fraction of one stripe period (unchanged meaning from the original
-// sin()-based version) -- each family scales this by its own h{1,2,3}ThicknessScale.
+// sin()-based version) - each family scales this by its own h{1,2,3}ThicknessScale.
 uniform float hatchThickness;
 // Darkening strength (1.0 = no darkening, i.e. an easy way to A/B hatching on/off without
-// recompiling) -- also a uniform, also CLI-fed (--hatch-thickness/--hatch-darken), same
+// recompiling) - also a uniform, also CLI-fed (--hatch-thickness/--hatch-darken), same
 // reasoning as hatchFrequency above.
 uniform float hatchDarken;
-// Erases (masks) hatching in heavily-occluded crevices, 0..1 -- 0 leaves hatching exactly as
+// Erases (masks) hatching in heavily-occluded crevices, 0..1 - 0 leaves hatching exactly as
 // hatchDarkness/per-family onset alone produces it (today's default); 1 fully gates hatch by
 // aoEraseLow/aoEraseHigh below, so a deeply occluded crevice shows solid dark fill instead of
-// crosshatch lines. This is a SECONDARY signal, not the primary gate -- see the file header for
+// crosshatch lines. This is a SECONDARY signal, not the primary gate - see the file header for
 // why AO alone is the wrong thing to drive hatch placement from.
 uniform float aoMask;
 // AO GATE thresholds (ao below aoEraseLow -> hatch fully erased; above aoEraseHigh -> untouched;
-// smooth in between) -- replaces the old `mix(1.0, ao, aoMask)` DIM with a real ERASE (see file
+// smooth in between) - replaces the old `mix(1.0, ao, aoMask)` DIM with a real ERASE (see file
 // header's fixed KNOWN ISSUE).
 uniform float aoEraseLow;
 uniform float aoEraseHigh;
-// Metal reads through its highlight, not pen strokes -- this multiplicatively suppresses hatch
+// Metal reads through its highlight, not pen strokes - this multiplicatively suppresses hatch
 // coverage by gb.metallic (0 = no suppression, 1 = fully suppress on pure metal). A blend, not a
 // hard cutoff, so a texel that's only partially metallic (common at material edges in glTF
 // assets) doesn't get a binary hatch/no-hatch seam.
 uniform float metallicSuppress;
 
-// Shared "stroke character" knobs -- every hatchFamily() call reads the SAME values here, same
+// Shared "stroke character" knobs - every hatchFamily() call reads the SAME values here, same
 // as pyosg-hatch.py's global Stroke Character section (these constants shaped that PoC's
 // hand-drawn feel directly; porting the knobs, not just the math, is the point).
 uniform float warpAmount;
@@ -256,32 +256,32 @@ uniform float breakLow;
 uniform float breakHigh;
 uniform float nibLow;
 uniform float nibHigh;
-// Minimum antialiasing band width, in units of one stripe period -- fwidth(localY) alone can
+// Minimum antialiasing band width, in units of one stripe period - fwidth(localY) alone can
 // collapse toward 0 at a glancing view angle or on a very fine hatch, aliasing the line edge;
 // this floors it. In NORMALIZED (period-relative) units, unlike pyosg-hatch.py's pixel-space
-// `max(fwidth(localY), 0.75)` -- that literal 0.75 doesn't carry over (its own spacing was
+// `max(fwidth(localY), 0.75)` - that literal 0.75 doesn't carry over (its own spacing was
 // ~10px, so 0.75/10 =~ 0.075 of a period is the equivalent floor; 0.08 below matches that).
 uniform float hatchAA;
 
-// Per-family knobs -- angle (degrees), spacing/thickness SCALE (multiplies hatchFrequency's
+// Per-family knobs - angle (degrees), spacing/thickness SCALE (multiplies hatchFrequency's
 // period / hatchThickness respectively), a noise seed (keeps each family's warp/break/nib
 // pattern independent), and the darkness RANGE (against hatchDarkness) where this family turns
 // on. Defaults: h1 turns on first (mid shadow), h2 crosses it deeper in, h3 (denser, thinner)
-// only in the darkest corners -- the classic layered crosshatch progression.
+// only in the darkest corners - the classic layered crosshatch progression.
 uniform float h1Angle, h1SpacingScale, h1ThicknessScale, h1Seed, h1OnsetLow, h1OnsetHigh;
 uniform float h2Angle, h2SpacingScale, h2ThicknessScale, h2Seed, h2OnsetLow, h2OnsetHigh;
 uniform float h3Angle, h3SpacingScale, h3ThicknessScale, h3Seed, h3OnsetLow, h3OnsetHigh;
 
-// Real-time SSAO -- see the file header's "NOTE on AO Mask" for how this combines with gb.ao.
+// Real-time SSAO - see the file header's "NOTE on AO Mask" for how this combines with gb.ao.
 // Gated the same way the built-in lighting shader gates it (OSGX_PBRIBL_AO, set automatically by
-// PBRIBLLightingPassOptions::aoTexture when non-null) -- so this shader still compiles/runs
+// PBRIBLLightingPassOptions::aoTexture when non-null) - so this shader still compiles/runs
 // unchanged if no SSAO pass is ever wired in. `#pragma import_defines` IS required here (confirmed
 // against OSG's own osg::Shader::_shaderDefines/getDefineString(): a StateSet define is only
 // written into a given Shader's compiled source if that Shader itself declares the define name via
-// import_defines -- otherwise `#ifdef OSGX_PBRIBL_AO` is always false regardless of what the
+// import_defines - otherwise `#ifdef OSGX_PBRIBL_AO` is always false regardless of what the
 // StateSet has set). Same reasoning LIGHTING_FRAGMENT_SHADER_SRC's own
 // `#pragma import_defines ( OSGX_PBRIBL_DIAGNOSTICS, OSGX_PBRIBL_NO_TONEMAP, OSGX_PBRIBL_AO )` line
-// exists (PBRIBL.cpp) -- every shader that reads a StateSet-driven define needs its own copy of
+// exists (PBRIBL.cpp) - every shader that reads a StateSet-driven define needs its own copy of
 // this pragma, not just one shader in the Program.
 #pragma import_defines ( OSGX_PBRIBL_AO )
 #ifdef OSGX_PBRIBL_AO
@@ -328,7 +328,7 @@ mat2 rot(float a) {
 }
 
 // One hand-drawn-reading crosshatch layer over whatever 2D coordinate space `p` is given
-// (world-space in main() below, see hatchCoord's own comment for why) -- ported from
+// (world-space in main() below, see hatchCoord's own comment for why) - ported from
 // pyosg-hatch.py's hatchFamily(), confirmed live there as reading as genuinely hand-inked rather
 // than mathematically perfect parallel stripes. `angleDeg` rotates the stripe direction;
 // `spacingWorld` is this family's stripe PERIOD in world units (hatchFrequency's period times
@@ -337,10 +337,10 @@ mat2 rot(float a) {
 // independent of the others. Returns 1.0 where an ink line falls, 0.0 elsewhere, with smooth
 // antialiasing in between.
 //
-// Works entirely in `qn` -- p, ROTATED then divided by spacingWorld, so one unit of qn.y is
+// Works entirely in `qn` - p, ROTATED then divided by spacingWorld, so one unit of qn.y is
 // exactly one stripe period. This is the same "measure relative to the artist-controlled
 // spacing, not raw world units" principle hatchFrequencyFor() already uses for the base
-// frequency -- without it, every noise-frequency constant below would need re-tuning per model
+// frequency - without it, every noise-frequency constant below would need re-tuning per model
 // scale, exactly the bug that function exists to avoid for spacing itself. The noise-frequency
 // constants themselves are pyosg-hatch.py's own pixel-space values, re-derived into
 // period-relative units (multiplied by ~10, that PoC's own typical spacing in pixels).
@@ -368,7 +368,7 @@ float hatchFamily(vec2 p, float angleDeg, float spacingWorld, float thicknessFra
 	float aa = max(fwidth(localY), hatchAA);
 	float line = 1.0 - smoothstep(halfWidth, halfWidth + aa, abs(localY));
 
-	// Break strokes along their length -- keeps the result from reading as mathematically
+	// Break strokes along their length - keeps the result from reading as mathematically
 	// perfect parallel stripes.
 	float along =
 		0.68 * fbm(vec2(qn.x * 0.55, row * 0.37 + seed * 7.0)) +
@@ -384,9 +384,9 @@ float hatchFamily(vec2 p, float angleDeg, float spacingWorld, float thicknessFra
 }
 
 // Ink-outline test: compares this fragment's own view-space normal/depth (N0/depth0) against its
-// 4-neighborhood in the G-buffer -- flags a silhouette (neighbor is background) or a sharp crease
+// 4-neighborhood in the G-buffer - flags a silhouette (neighbor is background) or a sharp crease
 // (neighbor's normal/depth diverges past threshold). Pure screen-space post-process, no extra
-// geometry pass -- the same shape the moodboard's own "EDGE DETECTION" pipeline-inspector panel
+// geometry pass - the same shape the moodboard's own "EDGE DETECTION" pipeline-inspector panel
 // showed. `depth0` is view-space Z (negative, camera looking down -Z), so the depth threshold
 // scales with distance from camera rather than being one fixed world-space epsilon.
 float detectEdge(vec2 uv, vec3 N0, float depth0) {
@@ -421,29 +421,29 @@ void main() {
 	vec3 N = invView * N_view_n;
 	vec3 V = normalize(invView * normalize(-gb.position));
 
-	// Quantized "toon" diffuse band -- no osgx_DirectLighting(), no osgx_EvaluateIBL(), no
+	// Quantized "toon" diffuse band - no osgx_DirectLighting(), no osgx_EvaluateIBL(), no
 	// osgx_Tonemap() anywhere in this file. Proves the override really does replace the whole
 	// pass rather than layering onto the built-in.
 	float NdotL = max(dot(N, sunDirection), 0.0);
 	float band = ceil(NdotL * float(BANDS)) / float(BANDS);
 	vec3 shaded = gb.albedo * mix(0.25, 1.0, band) * mix(SHADOW_TINT, LIGHT_TINT, band);
 
-	// Cross-hatch, applied to the base diffuse term ONLY -- deliberately computed and multiplied
+	// Cross-hatch, applied to the base diffuse term ONLY - deliberately computed and multiplied
 	// in BEFORE the rim/specular accents added below, so those stay clean, unhatched "highlight"
 	// accents instead of getting muddied by ink lines.
 	//
-	// hatchDarkness is CONTINUOUS (1-NdotL), deliberately NOT `band` -- `band` is already
+	// hatchDarkness is CONTINUOUS (1-NdotL), deliberately NOT `band` - `band` is already
 	// quantized for the flat color fill above, and gating hatch onset from an already-quantized
 	// value double-quantizes it, producing harsh onset cliffs instead of the smooth
 	// per-family onset RANGE below actually controls.
 	//
-	// hatchCoord is WORLD-space, not screen-space (gl_FragCoord) -- screen-space was the first
+	// hatchCoord is WORLD-space, not screen-space (gl_FragCoord) - screen-space was the first
 	// attempt, and it looked wrong: the pattern stayed locked to the viewport instead of the
 	// surface, visibly sliding across the model as the camera orbited (a decal stuck to the
 	// monitor, not painted on the object). World position is genuinely tied to the physical
 	// surface point, so the pattern now stays put as the camera moves. Which 2D plane to project
 	// onto (XY/XZ/YZ) is picked per-fragment by whichever world axis the surface normal points
-	// along LEAST -- a cheap "axis-dominant" trick (not full smooth-blended triplanar) that avoids
+	// along LEAST - a cheap "axis-dominant" trick (not full smooth-blended triplanar) that avoids
 	// the worst stretching a single fixed plane would cause on faces nearly perpendicular to it
 	// (e.g. the helmet's curved dome, mostly Z-facing, would smear badly under a pure XZ or YZ
 	// projection).
@@ -455,14 +455,14 @@ void main() {
 	;
 	float hatchDarkness = clamp(1.0 - NdotL, 0.0, 1.0);
 	// hatchFrequency is tuned as a sin()-style angular frequency (see its own comment and
-	// hatchFrequencyFor() in main() -- that back-solved K constant is preserved as-is), whose
-	// period is 2*PI/frequency, NOT 1/frequency -- hatchFamily() uses this as a literal world-
+	// hatchFrequencyFor() in main() - that back-solved K constant is preserved as-is), whose
+	// period is 2*PI/frequency, NOT 1/frequency - hatchFamily() uses this as a literal world-
 	// space PERIOD, so the 2*PI has to be carried through here to reproduce the same confirmed-
 	// good density hatchFrequencyFor() already tunes for.
 	float baseSpacing = TWO_PI / max(hatchFrequency, 1e-4);
 	float hatch = 0.0;
 
-	// hatchEnabled skips the three hatchFamily() calls entirely, not just their result -- a real
+	// hatchEnabled skips the three hatchFamily() calls entirely, not just their result - a real
 	// A/B toggle, not a "compute it then throw it away" one.
 	if(hatchEnabled) {
 		float h1 = hatchFamily(
@@ -479,12 +479,12 @@ void main() {
 		hatch = max(hatch, h2 * smoothstep(h2OnsetLow, h2OnsetHigh, hatchDarkness));
 		hatch = max(hatch, h3 * smoothstep(h3OnsetLow, h3OnsetHigh, hatchDarkness));
 
-		// Metal reads through its highlight, not pen strokes -- see file header and
+		// Metal reads through its highlight, not pen strokes - see file header and
 		// metallicSuppress's own comment. Blend, not a hard cutoff.
 		hatch *= mix(1.0, 1.0 - gb.metallic, metallicSuppress);
 	}
 
-	// Combined occlusion: baked (gb.ao) * real-time SSAO (aoTex, when wired in) -- same
+	// Combined occlusion: baked (gb.ao) * real-time SSAO (aoTex, when wired in) - same
 	// multiplicative convention the built-in lighting shader uses for the identical combination.
 	float ao = gb.ao;
 
@@ -492,7 +492,7 @@ void main() {
 	ao *= texture(aoTex, vUV).r;
 #endif
 
-	// AO now GATES (erases) rather than dims -- see aoEraseLow/aoEraseHigh's own comment and the
+	// AO now GATES (erases) rather than dims - see aoEraseLow/aoEraseHigh's own comment and the
 	// file header's fixed KNOWN ISSUE. aoMask still scales how strongly this applies overall,
 	// same external meaning the slider always had (0 = no AO effect, 1 = full gate).
 	float aoGate = mix(1.0, smoothstep(aoEraseLow, aoEraseHigh, ao), aoMask);
@@ -504,16 +504,16 @@ void main() {
 
 	shaded += gb.albedo * rim * 0.4;
 
-	// Metal-aware "comic shine" -- gb.roughness/gb.metallic. Roughness controls the highlight's
-	// TIGHTNESS (a Blinn-Phong exponent, not a physically exact GGX-to-Phong conversion -- this is
-	// a stylized approximation, not a PBR one); metallic controls its COLOR -- bare metal tints
+	// Metal-aware "comic shine" - gb.roughness/gb.metallic. Roughness controls the highlight's
+	// TIGHTNESS (a Blinn-Phong exponent, not a physically exact GGX-to-Phong conversion - this is
+	// a stylized approximation, not a PBR one); metallic controls its COLOR - bare metal tints
 	// its highlight by the surface's own albedo (metals have no separate "white" specular layer),
 	// while a dielectric surface gets a neutral white one. Two smoothstep-thresholded tiers (a
-	// small bright core plus a wider, dimmer rim) instead of a smooth falloff -- a hard-edged
+	// small bright core plus a wider, dimmer rim) instead of a smooth falloff - a hard-edged
 	// "graphic" highlight shape matches the flat quantized bands far better than a photorealistic
 	// soft glow would.
 	//
-	// osgx_SpecularAA(N_view_n, gb.roughness) -- NOT optional, confirmed live: at a low roughness
+	// osgx_SpecularAA(N_view_n, gb.roughness) - NOT optional, confirmed live: at a low roughness
 	// (high specPower), pow(NdotH, specPower) is extremely sensitive to the tiny per-pixel normal
 	// variation a normal map introduces, and the narrow smoothstep thresholds below then amplify
 	// that into scattered "boxy" aliased blotches instead of one smooth highlight, worst on
@@ -534,14 +534,14 @@ void main() {
 	shaded = mix(shaded, vec3(0.02), edge);
 
 	// Soft-clamped emissive (see EMISSIVE_EXPOSURE's own comment), combined BEFORE the gamma
-	// encode below -- both the shaded surface and the glow need the same linear-to-display
+	// encode below - both the shaded surface and the glow need the same linear-to-display
 	// conversion, same as the built-in default's own color = surface + direct + emissive;
 	// color = osgx_Tonemap(color); ordering (PBRIBL.cpp), just without the tonemap curve itself.
 	vec3 color = shaded + (vec3(1.0) - exp(-gb.emissive * EMISSIVE_EXPOSURE));
 
-	// This shader deliberately never calls osgx_Tonemap() (no tone CURVE -- see the file header),
+	// This shader deliberately never calls osgx_Tonemap() (no tone CURVE - see the file header),
 	// but still needs the gamma ENCODE step every display-referred fragment needs before writing
-	// to the backbuffer -- omitting it (as this shader did until now) makes midtones read
+	// to the backbuffer - omitting it (as this shader did until now) makes midtones read
 	// noticeably darker/muddier than intended. Two separate decisions, same as
 	// PBRIBLLightingPassOptions::tonemap's own comment explains for the built-in path.
 	color = pow(max(color, vec3(0.0)), vec3(1.0 / 2.2));
@@ -574,7 +574,7 @@ int main(int argc, char** argv) {
 	args.getApplicationUsage()->addCommandLineOption(
 		"--hatch-darken <factor>",
 		"How much a hatch line darkens the surface under it, 0..1 (default: 0.55). 1.0 disables "
-		"the visible effect entirely -- a quick way to A/B hatching on/off without recompiling."
+		"the visible effect entirely - a quick way to A/B hatching on/off without recompiling."
 	);
 	args.getApplicationUsage()->addCommandLineOption(
 		"--ao-mask <strength>",
@@ -624,13 +624,13 @@ int main(int argc, char** argv) {
 	}
 
 	// Target hatch stripes-per-bounding-radius, regardless of the loaded model's real-world
-	// scale -- confirmed live that a single fixed world-space frequency looks wildly different
+	// scale - confirmed live that a single fixed world-space frequency looks wildly different
 	// (huge on DamagedHelmet, invisible on Fox) across differently-scaled assets.
 	// --hatch-density scales this multiplicatively for further to-taste tuning.
 	//
 	// The 197 below is back-solved, not guessed: the very first world-space attempt used a FIXED
 	// HATCH_FREQUENCY=120 and looked genuinely good on DamagedHelmet before per-model scale
-	// differences were noticed. That model's own boundRadius, measured live, is 1.6446 -- so the
+	// differences were noticed. That model's own boundRadius, measured live, is 1.6446 - so the
 	// target this formula needs to reproduce that exact good-looking result is K = 120 * 1.6446 =
 	// 197.35. K stays constant relative to boundRadius by construction, so this reproduces the
 	// SAME visual density on every model, Fox's 53x larger boundRadius included.
@@ -646,11 +646,11 @@ int main(int argc, char** argv) {
 		return density * 197.35f / (boundRadius > 0.001f ? boundRadius : 0.001f);
 	};
 	const float hatchFrequency = hatchFrequencyFor(hatchDensity);
-	// Live-draggable via ImGui below -- default matches the shader's own original hardcoded
+	// Live-draggable via ImGui below - default matches the shader's own original hardcoded
 	// value, normalize(vec3(1, 1, 2)).
 	osg::Vec3 sunDirection(0.4082483f, 0.4082483f, 0.8164966f);
 
-	// No HDR/manifest environment loaded here at all -- this style never samples IBL, and
+	// No HDR/manifest environment loaded here at all - this style never samples IBL, and
 	// PBRIBLLightingScene::create()'s `environment` parameter is optional specifically for
 	// callers like this one (see that function's own comment). Passing a default-constructed
 	// (invalid) PBRIBLEnvironment skips the envMap/brdfLUT/diffuseEnv binding entirely rather
@@ -668,9 +668,9 @@ int main(int argc, char** argv) {
 	// aoTexture can be set on lightingOptions normally, rather than the "wire it in by hand
 	// afterward" workaround an SSAO-after-the-lighting-pass ordering would need (see
 	// PBRIBLLightingPassOptions::aoTexture's own comment, PBRIBL.hpp, for how that seam expects to
-	// be used). Reads gbuffer's normal/position directly -- both already exist once the geometry
+	// be used). Reads gbuffer's normal/position directly - both already exist once the geometry
 	// pass above is built. Radius scaled off the model's own bound, same "derive from the model's
-	// own bounds" precedent hatchFrequencyFor() above already uses -- a fixed radius tuned for one
+	// own bounds" precedent hatchFrequencyFor() above already uses - a fixed radius tuned for one
 	// model looks wrong at a very different scale.
 	auto ssaoProjection = osgx::make_ref<osg::Uniform>(
 		"projectionMatrix", osg::Matrixf::identity()
@@ -690,7 +690,7 @@ int main(int argc, char** argv) {
 	osgx::gltf::pbribl::PBRIBLLightingPassOptions lightingOptions;
 
 	// The seam CUSTOM_DEFERRED_LIGHTING_FRAGMENT_SHADER's own `#ifdef OSGX_PBRIBL_AO` block reads
-	// -- setting this here (same as any other PBRIBLLightingPassOptions consumer) is what makes
+	// - setting this here (same as any other PBRIBLLightingPassOptions consumer) is what makes
 	// PBRIBLLightingScene::create() bind aoTex/unit 8/OSGX_PBRIBL_AO on the StateSet at all; the
 	// custom shader still has to declare and sample `aoTex` itself, since Hook::DeferredLighting
 	// REPLACES main() rather than inheriting the built-in's own declarations.
@@ -701,10 +701,10 @@ int main(int argc, char** argv) {
 		new osg::Shader(
 			osg::Shader::FRAGMENT,
 			// resolveShaderLibs() is what expands `#pragma osgx::gltf DEFERRED_LIGHTING_INPUTS,
-			// GET_GBUFFER` above into real GLSL -- passing raw, un-expanded source straight to
+			// GET_GBUFFER` above into real GLSL - passing raw, un-expanded source straight to
 			// osg::Shader() leaves the literal `#pragma` line in place, which the driver then
-			// chokes on (and every symbol the pragma was supposed to declare -- gb,
-			// osgx_mainViewMatrix, fragColor -- comes back "undefined").
+			// chokes on (and every symbol the pragma was supposed to declare - gb,
+			// osgx_mainViewMatrix, fragColor - comes back "undefined").
 			osgx::gltf::pbribl::resolveShaderLibs(CUSTOM_DEFERRED_LIGHTING_FRAGMENT_SHADER)
 		)
 	}};
@@ -720,7 +720,7 @@ int main(int argc, char** argv) {
 	}
 
 	// hatchFrequency/hatchThickness/hatchDarken/aoMask/sunDirection all live on the lighting pass's
-	// own StateSet -- that's where CUSTOM_DEFERRED_LIGHTING_FRAGMENT_SHADER's `uniform`
+	// own StateSet - that's where CUSTOM_DEFERRED_LIGHTING_FRAGMENT_SHADER's `uniform`
 	// declarations expect to find them, same as any other uniform PBRIBLLightingScene::create()
 	// itself wires up (osgx_mainViewMatrix, etc.). Kept as named pointers (not fire-and-forget) so
 	// the ImGui section below can push live edits into the SAME osg::Uniform objects.
@@ -740,12 +740,12 @@ int main(int argc, char** argv) {
 	lightingSS->addUniform(sunDirectionUniform);
 
 	// Every new hatch uniform below (stroke character, per-family, gate) is created and given a
-	// default HERE, unconditionally -- the shader needs real values regardless of whether an
+	// default HERE, unconditionally - the shader needs real values regardless of whether an
 	// ImGui panel exists to tune them live (an unset GLSL uniform defaults to 0, which breaks
 	// this shader outright: zero-width onset ranges collapse every smoothstep to a hard step,
 	// zero thickness erases every line). The label/slider-range metadata used to build the ImGui
 	// panel is assembled separately, further down inside #ifdef OSGX_IMGUI, by looking these same
-	// uniforms back up by name -- keeping the single (name, default) list below as the one source
+	// uniforms back up by name - keeping the single (name, default) list below as the one source
 	// of truth avoids maintaining the numbers in two places for a build with ImGui compiled out.
 	// Mirrors examples/pyosg-hatch.py's own PARAMS/DEFAULTS split (OpenSceneGraph.py repo).
 	const std::vector<std::pair<std::string, float>> hatchDefaults = {
@@ -769,7 +769,7 @@ int main(int argc, char** argv) {
 	auto root = osgx::make_ref<osg::Group>();
 
 	// gbuffer.gbuffer.camera is the FIRST PRE_RENDER camera in this scene graph (added before
-	// lighting.node below) -- see UpdateLightingPassCallback's own comment (and
+	// lighting.node below) - see UpdateLightingPassCallback's own comment (and
 	// PBRIBLLightingScene::create()'s) for why the update() call has to land here, not on
 	// lighting.node's own preDrawCallback or as a post-frame() application call.
 	gbuffer.gbuffer.camera->setPreDrawCallback(
@@ -778,7 +778,7 @@ int main(int argc, char** argv) {
 
 	// Add order matters: gbuffer.gbuffer.camera, ssao.rawCamera, and ssao.blurCamera are all
 	// PRE_RENDER at the same default order number (0), so OSG breaks the tie by scene-graph add
-	// order -- ssao.rawCamera/blurCamera MUST come after gbuffer.gbuffer.camera (they read its
+	// order - ssao.rawCamera/blurCamera MUST come after gbuffer.gbuffer.camera (they read its
 	// normal/position output) and before lighting.node (which reads ssao.aoTexture back via
 	// aoTex, wired above through lightingOptions.aoTexture).
 	root->addChild(gbuffer.gbuffer.camera);
@@ -793,16 +793,16 @@ int main(int argc, char** argv) {
 	viewer.getCamera()->setClearColor(osg::Vec4f(180.0f / 255.0f, 180.0f / 255.0f, 180.0f / 255.0f, 1.0f));
 
 	std::cout
-		<< "osgx-gbuffer-comic: osgx::Hook::DeferredLighting comic-style shading -- quantized bands, "
+		<< "osgx-gbuffer-comic: osgx::Hook::DeferredLighting comic-style shading - quantized bands, "
 		<< "noisy hatching, ink outlines, no lights/shadow/IBL evaluation" << std::endl
 		<< " AO Mask now combines baked material AO with real-time osgx::SSAO" << std::endl
 	;
 
 #ifdef OSGX_IMGUI
-	// drawCamera pinned to lighting.node's own Camera explicitly -- lighting.node is a nested
+	// drawCamera pinned to lighting.node's own Camera explicitly - lighting.node is a nested
 	// POST_RENDER camera (a scene-graph child of root, not a viewer slave), and it draws AFTER
 	// the master camera's own PostDrawCallback fires. Left at the default (drawCamera=nullptr),
-	// the panel would draw via the master camera and then get painted over every frame -- same
+	// the panel would draw via the master camera and then get painted over every frame - same
 	// gotcha osgx-gbuffer.cpp's own Widget setup documents at its own call site.
 	auto* gui = new osgx::imgui::Widget(viewer, dynamic_cast<osg::Camera*>(lighting.node.get()));
 
@@ -833,7 +833,7 @@ int main(int argc, char** argv) {
 			aoMaskUniform->set(aoMask);
 		}
 
-		// A dragged slider can pass through (0,0,0), which normalizes to NaN -- same guard
+		// A dragged slider can pass through (0,0,0), which normalizes to NaN - same guard
 		// osgx-gbuffer.cpp/osgx-shadow.cpp's own light-drag sections use: fall back to a fixed
 		// safe direction for the UNIFORM specifically, without resetting the slider's own
 		// displayed (possibly still-degenerate) value.
@@ -850,7 +850,7 @@ int main(int argc, char** argv) {
 	}, osgx::imgui::SectionOptions::create(false, true));
 
 	// Everything below is ImGui-only PRESENTATION metadata (label, slider range) layered onto the
-	// uniforms hatchDefaults already created+registered above -- getUniform() looks the same
+	// uniforms hatchDefaults already created+registered above - getUniform() looks the same
 	// osg::Uniform* back up by name rather than re-creating it, so a build with ImGui compiled
 	// out still gets fully-initialized uniforms without ever constructing this metadata at all.
 	struct HatchParam {
@@ -897,7 +897,7 @@ int main(int argc, char** argv) {
 	std::vector<HatchParam> h2Params = familyParams("h2");
 	std::vector<HatchParam> h3Params = familyParams("h3");
 
-	// Generic slider-block draw function shared by every HatchParam table above -- reads the
+	// Generic slider-block draw function shared by every HatchParam table above - reads the
 	// CURRENT uniform value each frame rather than tracking a parallel local float (same
 	// "osg::Uniform IS the state" shape the SSAO section below already uses), so this stays
 	// correct even if something else pushes a value into one of these uniforms independently.
@@ -936,7 +936,7 @@ int main(int argc, char** argv) {
 		drawHatchParams(h3Params, "h3");
 	}, osgx::imgui::SectionOptions::create(false, false));
 
-	// Live radius/bias tuning -- same shape osgx-gbuffer.cpp's own "SSAO" section uses, reading
+	// Live radius/bias tuning - same shape osgx-gbuffer.cpp's own "SSAO" section uses, reading
 	// the CURRENT uniform value each frame rather than tracking a separate local float, since
 	// osgx::SSAO::create() already returns these as real osg::Uniform*s meant to be set at any
 	// time (no pass rebuild).

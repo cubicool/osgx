@@ -116,7 +116,7 @@ private:
 // The GLSL vertex/fragment shader source (grid-space projection; osgx_GridLine()/
 // osgx_PristineGridLine(),
 // Ben Golus' "Pristine Grid" technique: https://bgolus.medium.com/the-best-darn-grid-shader-yet-727f9278b9d8)
-// lives entirely in Grid.cpp -- nothing outside this repo's own build has ever referenced those
+// lives entirely in Grid.cpp - nothing outside this repo's own build has ever referenced those
 // strings by name.
 // ================================================================================================
 
@@ -125,7 +125,7 @@ public:
 	OSGX_META_Object(osgx, Grid)
 
 	// Boundary-line handling for lines that fall exactly on the canvas edge (pos == 0 or
-	// pos == canvasSize) -- see EDGE_ASIS/EDGE_HIDE/EDGE_NUDGE in the fragment shader (Grid.cpp)
+	// pos == canvasSize) - see EDGE_ASIS/EDGE_HIDE/EDGE_NUDGE in the fragment shader (Grid.cpp)
 	// for the full rationale.
 	using EdgeMode = GridSettings::EdgeMode;
 	using LineMode = GridSettings::LineMode;
@@ -136,14 +136,14 @@ public:
 	static constexpr LineMode LINE_SCREEN_PIXELS = GridSettings::LINE_SCREEN_PIXELS;
 	static constexpr LineMode LINE_GRID_UNITS = GridSettings::LINE_GRID_UNITS;
 
-	// Default: a fullscreen NDC quad (XY plane, z=0, -1..1) -- the most common case, meant to
+	// Default: a fullscreen NDC quad (XY plane, z=0, -1..1) - the most common case, meant to
 	// pair with orthoCamera()/createOrthoCamera() below.
 	Grid() {
 		_build(osg::Vec3(-1, -1, 0), osg::Vec3(2, 0, 0), osg::Vec3(0, 2, 0));
 	}
 
 	// `corner`/`widthVec`/`heightVec` place the quad in whatever space it ends up added to the
-	// scene graph in -- NDC for a fullscreen overlay, or world-space for a real 3D ground plane.
+	// scene graph in - NDC for a fullscreen overlay, or world-space for a real 3D ground plane.
 	Grid(const osg::Vec3& corner, const osg::Vec3& widthVec, const osg::Vec3& heightVec) {
 		_build(corner, widthVec, heightVec);
 	}
@@ -184,7 +184,7 @@ public:
 	// --- Fullscreen overlay wiring -----------------------------------------------------------
 
 	// Wraps `this` in a Geode, and that Geode in an ABSOLUTE_RF, PRE_RENDER, ortho2D(-1,1,-1,1)
-	// camera -- the "always drawn first, in the background" fullscreen NDC setup this class
+	// camera - the "always drawn first, in the background" fullscreen NDC setup this class
 	// exists for. PRE_RENDER runs before the viewer's own NESTED_RENDER camera regardless of
 	// scene graph position; the viewport is deliberately left unset so it inherits the window's
 	// current viewport and tracks resizes for free.

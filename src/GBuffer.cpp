@@ -37,10 +37,10 @@ GLint internalFormatFor(AttachmentFormat format) {
 constexpr int SSAO_KERNEL_SIZE = 16;
 constexpr int SSAO_NOISE_SIZE = 4;
 
-// Hemisphere-oriented sample kernel, quadratically clustered toward the origin -- the standard
+// Hemisphere-oriented sample kernel, quadratically clustered toward the origin - the standard
 // SSAO kernel shape (Crysis-era; still the baseline technique today). Matches
 // 11-sketchfab.py's generate_ssao_kernel() exactly, RNG choice aside (std::mt19937 here vs.
-// numpy there -- the shape is what matters, not bit-identical samples).
+// numpy there - the shape is what matters, not bit-identical samples).
 osg::ref_ptr<osg::Uniform> makeSSAOKernelUniform() {
 	std::mt19937 rng(0);
 	std::uniform_real_distribution<float> signedDist(-1.0f, 1.0f);
@@ -63,7 +63,7 @@ osg::ref_ptr<osg::Uniform> makeSSAOKernelUniform() {
 	return u;
 }
 
-// Tiny tiled texture of random tangent-space rotation vectors -- removes the visible banding a
+// Tiny tiled texture of random tangent-space rotation vectors - removes the visible banding a
 // fixed kernel would otherwise leave (every pixel sampling identical relative directions).
 osg::ref_ptr<osg::Texture2D> makeSSAONoiseTexture() {
 	std::mt19937 rng(1);
@@ -92,7 +92,7 @@ osg::ref_ptr<osg::Texture2D> makeSSAONoiseTexture() {
 	return tex;
 }
 
-// Shared boilerplate for SSAO's two fullscreen-quad RTT passes (raw sample + blur) -- both are
+// Shared boilerplate for SSAO's two fullscreen-quad RTT passes (raw sample + blur) - both are
 // simple single-shader single-output passes, so one helper covers both rather than duplicating
 // the camera/program/quad setup twice in create() below. osgx::RTT::fullscreenQuad() now owns
 // the camera/program/quad/depth-state boilerplate this used to hand-roll directly.
@@ -175,7 +175,7 @@ void main() {
 }
 )GLSL";
 
-// Small fixed-radius box blur to denoise the hemisphere-kernel noise -- deliberately not a
+// Small fixed-radius box blur to denoise the hemisphere-kernel noise - deliberately not a
 // separable/gaussian blur; a 4x4 box is cheap and the raw SSAO signal has no sharp edges worth
 // preserving.
 constexpr const char SSAO_BLUR_FRAGMENT_SHADER_SRC[] = R"GLSL(
@@ -226,11 +226,11 @@ GBuffer GBuffer::create(
 		tex->setWrap(osg::Texture::WRAP_S, osg::Texture::CLAMP_TO_EDGE);
 		tex->setWrap(osg::Texture::WRAP_T, osg::Texture::CLAMP_TO_EDGE);
 		// Every one of these is BOTH a render target (written here, every frame) AND a sampler
-		// input in a later pass (SSAO/lighting) -- without DYNAMIC, OSG's default StateAttribute
+		// input in a later pass (SSAO/lighting) - without DYNAMIC, OSG's default StateAttribute
 		// caching can treat a texture as unchanging after its first successful bind and stop
 		// correctly re-applying it on later frames (same fix already required for
 		// osgx-gbuffer.cpp's own hdr_color_tex/ao_tex-style RTT textures, and for every RTT
-		// texture in pyosg-lighting's own examples -- see 11-sketchfab.py).
+		// texture in pyosg-lighting's own examples - see 11-sketchfab.py).
 		tex->setDataVariance(osg::Object::DYNAMIC);
 
 		result.colorTextures.push_back(tex);
@@ -247,15 +247,15 @@ GBuffer GBuffer::create(
 	result.depthTexture->setWrap(osg::Texture::WRAP_T, osg::Texture::CLAMP_TO_EDGE);
 	result.depthTexture->setDataVariance(osg::Object::DYNAMIC);
 
-	// Locally osgx::RTT-typed (constructor takes referenceFrame directly -- GBuffer's own default
-	// of RELATIVE_RF is exactly RTT's documented second shape, see RTT.hpp) -- but GBuffer::camera
+	// Locally osgx::RTT-typed (constructor takes referenceFrame directly - GBuffer's own default
+	// of RELATIVE_RF is exactly RTT's documented second shape, see RTT.hpp) - but GBuffer::camera
 	// itself stays osg::ref_ptr<osg::Camera> (Python-bound; see ShadowMap's identical reasoning).
 	auto camera = osgx::make_nref<osgx::RTT>("osgx_gbuffer_GeometryPass", width, height, referenceFrame);
 
 	camera->setClearMask(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 	camera->setClearColor(osg::Vec4(0.0, 0.0, 0.0, 0.0));
 
-	// Dynamic attachment count (caller-chosen colorFormats span) -- AttachmentList's initializer-
+	// Dynamic attachment count (caller-chosen colorFormats span) - AttachmentList's initializer-
 	// list shape needs a compile-time-fixed count, so this stays a loop over RTT's inherited
 	// attach() rather than one declarative call (see ShadowMap/Aura for the fixed-count case).
 	for(std::size_t i = 0; i < result.colorTextures.size(); i++) {

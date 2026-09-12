@@ -37,7 +37,7 @@ void main() {
 )GLSL";
 
 // MRT: COLOR_BUFFER0 = originalMask (unchanged contract), COLOR_BUFFER1 = originalDepth (new).
-// One geometry pass either way -- adding a second render target here is what keeps the whole
+// One geometry pass either way - adding a second render target here is what keeps the whole
 // pipeline at 3 passes instead of a separate depth-capture pass.
 constexpr const char SELECTION_FRAGMENT_SHADER[] = R"GLSL(
 #version 430 core
@@ -53,7 +53,7 @@ void main() {
 }
 )GLSL";
 
-// Propagates mask AND depth as VALUES through the nearest-neighbor search -- not a UV to re-sample
+// Propagates mask AND depth as VALUES through the nearest-neighbor search - not a UV to re-sample
 // later. dilatedX layout: r=found, g=depth, b=X-distance-so-far, a=unused.
 constexpr const char DILATE_X_FRAGMENT_SHADER[] = R"GLSL(
 #version 430 core
@@ -216,7 +216,7 @@ Aura Aura::create(int width, int height, int radiusPixels) {
 	program->addShader(new osg::Shader(osg::Shader::VERTEX, SELECTION_VERTEX_SHADER));
 	program->addShader(new osg::Shader(osg::Shader::FRAGMENT, SELECTION_FRAGMENT_SHADER));
 
-	// RELATIVE_RF (RTT's non-default reference frame -- see RTT.hpp's own comment): this camera
+	// RELATIVE_RF (RTT's non-default reference frame - see RTT.hpp's own comment): this camera
 	// never sets its own view/projection, so it renders the selected node from exactly the same
 	// viewpoint as whatever camera it ends up under in the scene graph, via ordinary cull-time
 	// matrix composition. Locally osgx::RTT-typed for the constructor/attach() conveniences; the

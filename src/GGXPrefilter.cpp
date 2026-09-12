@@ -57,7 +57,7 @@ uniform float fireflyClamp;
 in vec2 vUV;
 out vec4 fragColor;
 
-// Rescales `color` down (preserving hue) if its luminance exceeds `maxLuminance` -- see
+// Rescales `color` down (preserving hue) if its luminance exceeds `maxLuminance` - see
 // GGXPrefilterOptions::fireflyClamp for why this exists.
 vec3 clampFirefly(vec3 color, float maxLuminance) {
 	float luminance = dot(color, vec3(0.2126, 0.7152, 0.0722));
@@ -203,7 +203,7 @@ osg::ref_ptr<osg::TextureCubeMap> makePrefilterBake(
 	// Full float, not half: a source HDR's peak radiance (e.g. a photographed sun disc) can
 	// exceed half-float's ~65504 max and silently become +Infinity on upload/write, which then
 	// poisons the importance-sampled weighted average for every texel whose sample cone touches
-	// it (see equirectTex/envTex below -- this is the same tradeoff, mirrored on the output side).
+	// it (see equirectTex/envTex below - this is the same tradeoff, mirrored on the output side).
 	prefilterTex->setInternalFormat(GL_RGB32F);
 	prefilterTex->setFilter(osg::Texture::MIN_FILTER, osg::Texture::LINEAR_MIPMAP_LINEAR);
 	prefilterTex->setFilter(osg::Texture::MAG_FILTER, osg::Texture::LINEAR);
@@ -224,7 +224,7 @@ osg::ref_ptr<osg::TextureCubeMap> makePrefilterBake(
 		;
 		const int mipSize = std::max(1, prefilterSize >> mip);
 
-		// Not RTT::fullscreenQuad() -- see LambertianBake.cpp's matching comment: this bake shares
+		// Not RTT::fullscreenQuad() - see LambertianBake.cpp's matching comment: this bake shares
 		// one `prog`/`quad` pair across every mip*face camera (a single compile+link) rather than
 		// building a fresh one per call, so the raw RTT constructor is used instead (just the
 		// PRE_RENDER/FBO/ABSOLUTE_RF/viewport boilerplate; the rest of the fullscreen-quad shape is
@@ -342,7 +342,7 @@ GGXPrefilterScene GGXPrefilterScene::create(
 	envTex->setFilter(osg::Texture::MAG_FILTER, osg::Texture::LINEAR);
 	envTex->setWrap(osg::Texture::WRAP_S, osg::Texture::CLAMP_TO_EDGE);
 	envTex->setWrap(osg::Texture::WRAP_T, osg::Texture::CLAMP_TO_EDGE);
-	// See the matching comment on prefilterTex above -- a source HDR's peak radiance can exceed
+	// See the matching comment on prefilterTex above - a source HDR's peak radiance can exceed
 	// half-float's range, so the source upload needs full float too.
 	envTex->setInternalFormat(GL_RGB32F);
 	envTex->setResizeNonPowerOfTwoHint(false);

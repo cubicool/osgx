@@ -180,7 +180,7 @@ void main() {
 
 	if(auraUseGBuffer) {
 		// sourceDepth comes straight from Aura's own propagated depth channel (expanded.g), not a
-		// UV-driven re-lookup into gPosition -- see Aura.hpp for why that distinction matters for
+		// UV-driven re-lookup into gPosition - see Aura.hpp for why that distinction matters for
 		// occlusion specifically (a separable max filter's legitimate ties are far less visible
 		// when the propagated payload is the value itself, bounded by local geometry, rather than
 		// a coordinate that can re-sample somewhere unrelated on the surface).

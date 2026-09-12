@@ -18,7 +18,7 @@ void bind_shadow(py::module_& m) {
 	m.attr("SHADOW_FACTOR") = osgx::SHADOW_FACTOR;
 	m.attr("DIRECT_LIGHTING_HOOK_SHADOWED") = osgx::DIRECT_LIGHTING_HOOK_SHADOWED;
 
-	// Python-side convenience mirroring osgx.pbr.makeDirectLightingHookShader() -- assembles
+	// Python-side convenience mirroring osgx.pbr.makeDirectLightingHookShader() - assembles
 	// DIRECT_LIGHTING_HOOK_SHADOWED as a standalone FRAGMENT osg::Shader, ready to add()/append()
 	// onto an osg::Program in place of osgx.pbr.makeDirectLightingHookShader()'s unshadowed one.
 	m.def(
@@ -29,13 +29,13 @@ void bind_shadow(py::module_& m) {
 				osgx::resolveShaderLibs(std::string(osgx::DIRECT_LIGHTING_HOOK_SHADOWED))
 			);
 
-			// Same bare role name as osgx.pbr.makeDirectLightingHookShader() -- this fills the
+			// Same bare role name as osgx.pbr.makeDirectLightingHookShader() - this fills the
 			// same logical slot, just with the shadowed implementation.
 			shader->setName("directLightingHook");
 
 			return osg::ref_ptr<osg::Shader>(shader);
 		},
-		"Builds the osgx_DirectLighting() CONTRACT's shadowed-definition FRAGMENT shader object -- "
+		"Builds the osgx_DirectLighting() CONTRACT's shadowed-definition FRAGMENT shader object - "
 		"same contract as osgx.pbr.makeDirectLightingHookShader(), but the light at "
 		"osgx_shadowCasterIndex is multiplied by osgx_ShadowFactor()."
 	);
@@ -78,7 +78,7 @@ void bind_shadow(py::module_& m) {
 		m,
 		"ShadowMap",
 		"A directional shadow map: owns the PRE_RENDER depth-only orthographic camera plus the "
-		"uniforms DIRECT_LIGHTING_HOOK_SHADOWED reads every frame. World-space, not eye-space -- "
+		"uniforms DIRECT_LIGHTING_HOOK_SHADOWED reads every frame. World-space, not eye-space - "
 		"shadowMatrix is just lightProj * lightView, with no per-frame main-camera dependency."
 	)
 		.def(py::init<>(), "Constructs an empty ShadowMap with no camera/textures set; see ShadowMap.create().")
@@ -105,7 +105,7 @@ void bind_shadow(py::module_& m) {
 		)
 		.def_readwrite(
 			"casterIndex", &osgx::ShadowMap::casterIndex,
-			"Which osgx_lights[] index this shadow map is cast by -- only that light's "
+			"Which osgx_lights[] index this shadow map is cast by - only that light's "
 			"contribution is multiplied by osgx_ShadowFactor(); every other light is unaffected."
 		)
 		.def_readwrite(
@@ -131,9 +131,9 @@ void bind_shadow(py::module_& m) {
 		.def(
 			"updateMatrix",
 			&osgx::ShadowMap::updateMatrix,
-			"Recomputes shadowMatrix from lightView/lightProj -- only needed after mutating "
+			"Recomputes shadowMatrix from lightView/lightProj - only needed after mutating "
 			"either directly; a no-op to call redundantly otherwise. Does NOT reposition the camera "
-			"itself -- see reposition() for that."
+			"itself - see reposition() for that."
 		)
 		.def(
 			"reposition",
@@ -142,7 +142,7 @@ void bind_shadow(py::module_& m) {
 			"sceneBoundCenter"_a,
 			"sceneBoundRadius"_a,
 			"options"_a=osgx::ShadowMapOptions{},
-			"Repositions this EXISTING ShadowMap for a new light direction/scene bound, in place -- "
+			"Repositions this EXISTING ShadowMap for a new light direction/scene bound, in place - "
 			"no new camera/FBO/depth-texture allocation, just recomputed view/projection matrices. "
 			"Cheap enough to call every frame (or on every GUI-slider tick) for an interactively-moving "
 			"light; create() remains correct for a light fixed at scene-build time."

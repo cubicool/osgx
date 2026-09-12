@@ -24,7 +24,7 @@ constexpr int SPOT_RING_SEGMENTS = 24;
 constexpr int SPOT_SPOKES = 8;
 // Per-light vertex budget: whichever shape needs more (three wireframe circles for a point/sphere
 // marker) sets the fixed per-slot capacity every light gets, so the backing arrays never change
-// SIZE across a rebuild -- only their contents -- letting OSG upload via glBufferSubData instead
+// SIZE across a rebuild - only their contents - letting OSG upload via glBufferSubData instead
 // of reallocating each frame (same lesson 11-sketchfab-lambertian.py's LightGizmoCallback comment
 // records: a new Array object/size every frame forces a full glBufferData reallocation).
 constexpr int MAX_VERTS_PER_LIGHT = 3 * CIRCLE_SEGMENTS;
@@ -89,7 +89,7 @@ void perpendicularBasis(const osg::Vec3& n, osg::Vec3& u, osg::Vec3& v) {
 
 // Appends a wireframe circle (verts.size() vertices, drawn as a LINE_LOOP primitive set covering
 // [start, start+verts.size())) centered at `center` in the plane spanned by `u`/`v`. `verts`/
-// `colors` are already the caller's sub-span for this circle -- indices here are span-local, only
+// `colors` are already the caller's sub-span for this circle - indices here are span-local, only
 // the primitive-set's GL start offset needs the absolute `start`.
 void appendCircle(
 	std::span<osg::Vec3> verts,
@@ -142,7 +142,7 @@ void buildPointMarker(
 	);
 }
 
-// Spot marker: a wireframe cone -- a ring at `coneLength` along `direction` (radius from the
+// Spot marker: a wireframe cone - a ring at `coneLength` along `direction` (radius from the
 // outer cone half-angle) plus SPOT_SPOKES lines from the apex to that ring. Consumes at most
 // MAX_VERTS_PER_LIGHT vertices starting at `start` (SPOT_RING_SEGMENTS + SPOT_SPOKES*2).
 void buildSpotMarker(
@@ -190,7 +190,7 @@ void buildSpotMarker(
 	geom->addPrimitiveSet(new osg::DrawArrays(GL_LINES, static_cast<GLint>(spokeStart), SPOT_SPOKES * 2));
 }
 
-// Builds the non-depth-tested POST_RENDER overlay camera for directional lights -- see
+// Builds the non-depth-tested POST_RENDER overlay camera for directional lights - see
 // LightGizmos' doc comment in Gizmos.hpp for the full rationale.
 osg::ref_ptr<osg::Camera> buildDirectionalOverlay(const osgx::LightSet& lights, osg::Node* scene) {
 	osg::BoundingSphere bound = scene ? scene->getBound() : osg::BoundingSphere(osg::Vec3(), 1.0f);
@@ -206,7 +206,7 @@ osg::ref_ptr<osg::Camera> buildDirectionalOverlay(const osgx::LightSet& lights, 
 	float arrowWidth = normalLength * 0.15f;
 
 	// 10 vertices per directional slot: 4 (plane LINE_LOOP) + 2 (direction stub, LINES) + 4
-	// (arrowhead, two LINES segments) -- exactly mirrors the Python original's per-light layout.
+	// (arrowhead, two LINES segments) - exactly mirrors the Python original's per-light layout.
 	constexpr std::size_t VERTS_PER_LIGHT = 10;
 	auto capacity = static_cast<std::size_t>(osgx::MAX_LIGHTS) * VERTS_PER_LIGHT;
 	auto verts = osgx::make_ref<osgx::Vec3Array>(capacity);
@@ -272,11 +272,11 @@ osg::ref_ptr<osg::Camera> buildDirectionalOverlay(const osgx::LightSet& lights, 
 
 				// `direction` is the ray TRAVEL direction (light -> surface; see LIGHT_UNIFORMS'
 				// comment in PBR.hpp and osgx_DirectionalLightRadiance's `L = -normalize(direction)`
-				// -- L, surface-to-light, is the negation). The plane represents the "wall of
+				// - L, surface-to-light, is the negation). The plane represents the "wall of
 				// parallel rays" and belongs on the light-SOURCE side of the object, i.e. offset
 				// against travel direction (-direction, not +direction); the arrow then points
 				// FROM that plane TOWARD the object, which is the true travel direction (+direction)
-				// -- both were flipped (offset by +direction, arrow pointing -direction) before this
+				// - both were flipped (offset by +direction, arrow pointing -direction) before this
 				// fix, which put the plane on the wrong side and made the arrow point backward.
 				float len = direction.length();
 				osg::Vec3 n = len > 1e-6f ? -direction / len : osg::Vec3(0.0f, 0.0f, -1.0f);

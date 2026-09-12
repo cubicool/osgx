@@ -23,14 +23,14 @@ inline constexpr char TANGENT_ATTRIBUTE_NAME[] = "osg_Tangent";
 inline constexpr char JOINT_INDICES_ATTRIBUTE_NAME[] = "osgx_gltf_JointIndices";
 inline constexpr char JOINT_WEIGHTS_ATTRIBUTE_NAME[] = "osgx_gltf_JointWeights";
 
-// Alias, not a separate constant -- osgx::MATERIAL_BINDING (PBR.hpp) is now the canonical value,
+// Alias, not a separate constant - osgx::MATERIAL_BINDING (PBR.hpp) is now the canonical value,
 // since the buffer it names (MATERIAL_INPUTS' `osgx_gltf_Material` block) has a glTF-independent
 // C++-side builder too (osgx::Material). Keeping the name here means existing code under
 // osgx::gltf::shader:: doesn't need to change, just what it points at.
 inline constexpr unsigned int MATERIAL_BINDING = osgx::MATERIAL_BINDING;
 inline constexpr unsigned int JOINT_MATRICES_BINDING = 2;
 
-// Aliases, not separate constants -- osgx::{BASE_COLOR,NORMAL,ORM,EMISSIVE}_TEXTURE_UNIT (PBR.hpp)
+// Aliases, not separate constants - osgx::{BASE_COLOR,NORMAL,ORM,EMISSIVE}_TEXTURE_UNIT (PBR.hpp)
 // are now the canonical values, since osgx::Material (also PBR.hpp) binds its four maps at these
 // same units independent of glTF. Same reasoning as MATERIAL_BINDING just above.
 inline constexpr int BASE_COLOR_TEXTURE_UNIT = osgx::BASE_COLOR_TEXTURE_UNIT;
@@ -85,14 +85,14 @@ uniform int osgx_gltf_hasEmissiveMap;
 // function, so a hook SUBSTITUTES the built-in, never adds alongside it).
 //
 // SKINNING_HOOK_IDENTITY is what PBRIBLScene::create() attaches when no `hooks` entry names
-// osgx::Hook::Skinning -- a pure passthrough, so an unskinned model (or a caller not yet
+// osgx::Hook::Skinning - a pure passthrough, so an unskinned model (or a caller not yet
 // exercising this) pays for nothing beyond one extra function call. SKINNING_HOOK_LINEAR_BLEND is
 // the real joint-matrix
 // linear blend skin (LBS), reading the exact JOINT_INDICES_ATTRIBUTE/JOINT_WEIGHTS_ATTRIBUTE/
 // JOINT_MATRICES_BINDING wiring the loader (Skin.cpp's SkinPaletteCallback) already populates
-// UNCONDITIONALLY for every skinned primitive, whether or not anything ever reads it -- this hook
+// UNCONDITIONALLY for every skinned primitive, whether or not anything ever reads it - this hook
 // is what proves that data path was already sound; only a consuming vertex shader was missing.
-// Deliberately whole-Program scope, not per-primitive selection -- see TODO.md's still-open
+// Deliberately whole-Program scope, not per-primitive selection - see TODO.md's still-open
 // "select skinning per primitive" item for the real, more general version of this.
 inline constexpr char SKINNING_HOOK_IDENTITY[] = R"GLSL(
 #version 460 core

@@ -33,7 +33,7 @@ osgDB::ReaderWriter::WriteResult write(
 );
 
 // Numeric values are frozen by the Vulkan spec (already hardcoded as fallback #defines in
-// KTX2.cpp) -- callers never need <vulkan/vulkan_core.h> or <ktx.h> to pick one.
+// KTX2.cpp) - callers never need <vulkan/vulkan_core.h> or <ktx.h> to pick one.
 enum class Format: uint32_t {
 	R8G8B8_UNORM = 23,
 	R8G8B8A8_UNORM = 37,
@@ -44,7 +44,7 @@ enum class Format: uint32_t {
 	R32G32B32A32_SFLOAT = 109,
 };
 
-// One (mip, face) image's raw, tightly-packed bytes -- borrowed, not owned; only needs to stay
+// One (mip, face) image's raw, tightly-packed bytes - borrowed, not owned; only needs to stay
 // valid for the duration of a single accessor call.
 struct ImageSpan {
 	const void* data;
@@ -53,7 +53,7 @@ struct ImageSpan {
 
 // Called exactly once per (mip, face) pair, in mip-major/face-minor order (mip 0 face 0 ..
 // mip 0 face N-1, mip 1 face 0, ...), immediately before that image's bytes are handed to
-// libktx -- so callers may fill a small reused scratch buffer per call (e.g. a float32->float16
+// libktx - so callers may fill a small reused scratch buffer per call (e.g. a float32->float16
 // conversion) instead of pre-materializing every mip/face up front.
 using ImageAccessor = std::function<ImageSpan(uint32_t mip, uint32_t face)>;
 

@@ -73,7 +73,7 @@ osg::ref_ptr<osg::Camera> makeBRDFLUTCamera(int lutSize, osg::Texture2D* lut) {
 // static inside a header-defined `inline` function only merges into one instance within a single
 // link unit, not across separately dlopen()'d modules. Defining SharedBRDFLUT::create() exactly
 // once here, compiled into libosgx, means `cache` is genuinely process-wide singleton state for
-// every consumer that links osgx::osgx -- the same fix, applied preemptively rather than in
+// every consumer that links osgx::osgx - the same fix, applied preemptively rather than in
 // response to an observed bug this time.
 SharedBRDFLUT SharedBRDFLUT::create(int lutSize) {
 	static std::map<int, osg::ref_ptr<osg::Texture2D>> cache;
@@ -114,7 +114,7 @@ void BRDFLUTReadback::operator()(osg::RenderInfo& ri) const {
 
 	_result = new osg::Image();
 
-	// The LUT's FBO internal format is GL_RGBA (see makeBRDFLUTCamera()) -- an unsized token
+	// The LUT's FBO internal format is GL_RGBA (see makeBRDFLUTCamera()) - an unsized token
 	// that resolves to 8-bit UNORM per channel, matching the [0,1]-ranged Fresnel scale/bias
 	// values the shader writes. Read back as GL_UNSIGNED_BYTE to match; no mip chain exists.
 	_result->readImageFromCurrentTexture(ri.getContextID(), false, GL_UNSIGNED_BYTE);
@@ -211,7 +211,7 @@ double radicalInverseVdC(std::uint32_t bits) {
 	return double(bits) * 2.3283064365386963e-10;
 }
 
-// Unnormalized direction to a texel center on a GL-convention cube face -- face index/formula
+// Unnormalized direction to a texel center on a GL-convention cube face - face index/formula
 // order matches osg::TextureCubeMap's POSITIVE_X/NEGATIVE_X/POSITIVE_Y/NEGATIVE_Y/POSITIVE_Z/
 // NEGATIVE_Z, same as cube_directions() in the Python original.
 osg::Vec3f cubeFaceDirection(int face, float s, float t) {
@@ -248,11 +248,11 @@ struct EquirectView {
 	}
 };
 
-// Bilinear sample of an equirectangular HDR image along a world-space (Z-up) direction -- same
+// Bilinear sample of an equirectangular HDR image along a world-space (Z-up) direction - same
 // theta/phi convention computeSH() uses per-texel, but continuous, since Monte Carlo sample
 // directions don't land on exact source pixels. Ported from sample_hdr() in the Python original.
 // Requires `view` to wrap a real HDR-loaded (GL_RGB/GL_FLOAT) osg::Image, same requirement
-// computeSH() already documents for its own input -- exactly what osgDB's own HDR (Radiance)
+// computeSH() already documents for its own input - exactly what osgDB's own HDR (Radiance)
 // reader always produces (see ReaderWriterHDR.cpp).
 osg::Vec3f sampleEquirect(const EquirectView& view, const osg::Vec3f& dir) {
 	const int W = view.width;

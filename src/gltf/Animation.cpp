@@ -36,7 +36,7 @@ TRS nodeBaseTRS(const tg3_node& node) {
 
 	// has_matrix is the explicit "was a matrix given" signal (v3 always populates
 	// translation/rotation/scale with spec defaults, and matrix with an identity diagonal,
-	// regardless of which the JSON actually specified) -- see Scene.cpp's _createNode for
+	// regardless of which the JSON actually specified) - see Scene.cpp's _createNode for
 	// the same pattern.
 	if(node.has_matrix) {
 		osg::Quat so;

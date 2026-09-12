@@ -38,7 +38,7 @@ enum class CullState {
 
 // Under threading models that pipeline cull and draw across threads (anything but
 // SingleThreaded), the cull traversal for frame N+1 runs concurrently with the draw
-// traversal for frame N -- so by the time draw(N) reads a path's cullFrame, cull has
+// traversal for frame N - so by the time draw(N) reads a path's cullFrame, cull has
 // typically already moved on and stamped it with N+1 (or later). cullFrame >= frameNum
 // is therefore normal, not staleness; only a cullFrame that has fallen genuinely BEHIND
 // frameNum (the path hasn't actually been visited by cull in a while) indicates the
@@ -119,7 +119,7 @@ namespace detail {
 	// scope variable only merges into one definition within a single link unit. Any separately
 	// dlopen()'d module (an osgDB plugin, most of which load via RTLD_LOCAL) that included this
 	// header directly used to get its own private copy of this state, disconnected from every
-	// other consumer's -- e.g. a ProfilerVisitor running in one module writing into a
+	// other consumer's - e.g. a ProfilerVisitor running in one module writing into a
 	// FrameAccumulator that profilerStats() in another module could never see. `extern` +
 	// exactly one definition in the compiled osgx library fixes that: every consumer that links
 	// osgx::osgx resolves to the same already-loaded symbol.
@@ -245,13 +245,13 @@ namespace detail {
 		// stats is written from the cull traversal (markCull()) and read/written from
 		// the draw traversal (_drain(), and readers via snapshot()/profilerStats()).
 		// Under any threading model that pipelines cull and draw across threads
-		// (i.e. anything but SingleThreaded), those overlap -- a plain unordered_map
+		// (i.e. anything but SingleThreaded), those overlap - a plain unordered_map
 		// isn't safe for that. unique_ptr (not a bare mutex) keeps FrameAccumulator
 		// move-constructible, which osg::buffered_object's vector needs when it grows.
 		std::unique_ptr<std::mutex> statsMutex = std::make_unique<std::mutex>();
 
 		// Thread-safe copy for readers (e.g. the ImGui profiler table) that shouldn't
-		// hold the lock -- and therefore block the cull thread -- while rendering.
+		// hold the lock - and therefore block the cull thread - while rendering.
 		Stats snapshot() const;
 
 		Entry alloc(osg::GLExtensions* ext);
@@ -286,7 +286,7 @@ namespace detail {
 		);
 	};
 
-	// Defined once in Debug.cpp -- see the comment above _pushGroup et al. for why this
+	// Defined once in Debug.cpp - see the comment above _pushGroup et al. for why this
 	// must be `extern`, not `inline`.
 	extern osg::buffered_object<FrameAccumulator> _accumulators;
 }
@@ -499,7 +499,7 @@ enum class QueryMode { SYNC, ASYNC };
 namespace detail {
 	// A drawable reachable through more than one camera/parent path (e.g. the same model
 	// attached under both a ShadowCam and a G-Buffer camera) shares ONE osg::Drawable
-	// instance and therefore one ProfilerCallback -- there is physically only one _name
+	// instance and therefore one ProfilerCallback - there is physically only one _name
 	// slot to overwrite no matter how many parents reference it. The fix is to fold in
 	// *which camera is actually rendering right now*, read at the point of use (draw time
 	// via RenderInfo::getCurrentCamera(), cull time via CullVisitor::getCurrentCamera()),

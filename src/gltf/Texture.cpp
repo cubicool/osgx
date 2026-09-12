@@ -38,11 +38,11 @@ namespace osgx::gltf::detail {
 namespace {
 
 // OSG's own image ReaderWriter plugins are this plugin's one and only image-decode path, by
-// deliberate choice -- osgDB::readImageFile() already uses them for external files, and this
+// deliberate choice - osgDB::readImageFile() already uses them for external files, and this
 // self-decodes embedded (bufferView-referenced) and base64 data-URI images the same way rather
 // than depending on tinygltf's own decoder. (tinygltf v3.0.1's decoder is unimplemented anyway --
 // confirmed by reading tg3__parse_image in tiny_gltf_v3.c, which never calls any decode callback
-// and never populates tg3_image.image -- but the choice to route everything through OSG stands
+// and never populates tg3_image.image - but the choice to route everything through OSG stands
 // regardless of whether/when a future tinygltf release wires one up.)
 
 struct DataUriPayload {
@@ -180,11 +180,11 @@ osg::Image* decodeCompressedImage(
 
 	{
 		// ReadResult holds its own internal ref_ptr<osg::Object> alongside the local `image`
-		// ref_ptr below -- two independent owners of the same refcount. Scoped so ReadResult's
+		// ref_ptr below - two independent owners of the same refcount. Scoped so ReadResult's
 		// destructor (a normal unref(), WITH delete-on-zero) runs here, while `image` still
 		// holds a live reference keeping the count above zero. Without this block, `image`'s
 		// release() (unref_nodelete(), no delete) at the bottom leaves the object relying
-		// entirely on ReadResult's own reference to stay alive -- and ReadResult's destructor
+		// entirely on ReadResult's own reference to stay alive - and ReadResult's destructor
 		// then runs during this function's unwind, deleting the object out from under the raw
 		// pointer just handed to the caller.
 		osgDB::ReaderWriter::ReadResult result = readerWriter->readImage(stream, readOptions);
@@ -195,7 +195,7 @@ osg::Image* decodeCompressedImage(
 	}
 
 	// glTF's UV convention puts v=0 at the TOP of the image, opposite OpenGL's native texture
-	// row order -- a fixed, spec-wide convention (not per-image), so every glTF-in-GL loader
+	// row order - a fixed, spec-wide convention (not per-image), so every glTF-in-GL loader
 	// flips unconditionally after decode. Mirrors what the external-file path (loadRawImage's
 	// osgDB::readImageFile branch) already does; this is the same requirement for bytes that
 	// happen to come from a bufferView or data URI instead of a standalone file.
@@ -250,7 +250,7 @@ osg::Image* TextureLoader::loadRawImage(int textureIndex) const {
 	// Deliberately never consumes source.image (tinygltf's own decoded-pixel-data field), even
 	// though tg3_image declares it. OSG's own image ReaderWriter plugins are the one and only
 	// decode path here, on purpose (user preference, not just working around v3.0.1's decoder
-	// being unimplemented) -- if a future tinygltf release starts populating source.image, that
+	// being unimplemented) - if a future tinygltf release starts populating source.image, that
 	// must NOT silently start being used in place of OSG's own decode.
 	if(
 		source.buffer_view >= 0 &&
@@ -299,7 +299,7 @@ osg::Image* TextureLoader::loadRawImage(int textureIndex) const {
 		);
 
 		// The manual read+decode below only exists to route PNG bytes through
-		// stripPNGColorMetadata() before OSG's plugin sees them -- skip it (and the file-size
+		// stripPNGColorMetadata() before OSG's plugin sees them - skip it (and the file-size
 		// copy it implies) entirely unless that stripping was actually requested; the plugin's
 		// own osgDB::readImageFile() is both simpler and faster for the common case.
 		if(
@@ -320,7 +320,7 @@ osg::Image* TextureLoader::loadRawImage(int textureIndex) const {
 				imageAlreadyFlipped = image.valid();
 
 				// decodeCompressedImage() reads via the PNG plugin's istream overload, which
-				// (unlike its filename overload -- see ReaderWriterPNG::readImage(const
+				// (unlike its filename overload - see ReaderWriterPNG::readImage(const
 				// std::string&, ...)) never calls Image::setFileName() itself. Set it here, the
 				// one call site in this function that actually has a real path, so this branch
 				// stays indistinguishable from the osgDB::readImageFile() branch below to any

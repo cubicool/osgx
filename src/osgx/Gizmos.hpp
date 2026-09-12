@@ -17,7 +17,7 @@ OSGX_ENABLE_WARNINGS
 
 namespace osgx {
 
-// Debug visualization for osgx::LightSet lights -- deliberately not part of osgx::debug, which is
+// Debug visualization for osgx::LightSet lights - deliberately not part of osgx::debug, which is
 // specifically GL_KHR_debug integration, not visual scene gizmos. Two mechanisms, since a
 // directional light and a point/spot/sphere light are genuinely different visualization problems
 // (see LightGizmos below): only the latter has a real position to place depth-tested geometry at.
@@ -31,7 +31,7 @@ namespace osgx {
 // wireframe circles sized to max(lightSourceRadius, minMarkerRadius) for a point/sphere light (so
 // an ideal point light still shows a small marker, a sphere light shows its true physical size); a
 // wireframe cone (ring + spokes from the apex) for a spot light, sized by its outer cone angle and
-// spotConeLength. A directional light has no position and is never drawn here -- see LightGizmos
+// spotConeLength. A directional light has no position and is never drawn here - see LightGizmos
 // below, which pairs this with a directional-only overlay.
 class LightMarkers: public osg::Group {
 public:
@@ -45,7 +45,7 @@ public:
 	LightMarkers(const LightMarkers& rhs, const osg::CopyOp& co=osg::CopyOp::SHALLOW_COPY):
 	osg::Group(rhs, co) {}
 
-	// Contributes nothing to any ancestor's bounding sphere -- see LightGizmos::computeBound().
+	// Contributes nothing to any ancestor's bounding sphere - see LightGizmos::computeBound().
 	osg::BoundingSphere computeBound() const override { return osg::BoundingSphere(); }
 
 private:
@@ -70,7 +70,7 @@ private:
 };
 
 // Bundles both LightMarkers (depth-tested point/spot/sphere markers) and a directional-only
-// overlay camera into one addable node -- `root->addChild(gizmos)` instead of a caller
+// overlay camera into one addable node - `root->addChild(gizmos)` instead of a caller
 // hand-wiring two separate pieces into every example. The overlay is a non-depth-tested
 // POST_RENDER child camera (a directional light has no position, so there is no real depth to
 // test its marker against); it ports create_light_gizmo()/LightGizmoCallback/
@@ -81,7 +81,7 @@ private:
 // slots. `scene`'s bounding sphere (computed once, at construction time, same as the Python
 // original) sizes and places every directional light's plane/arrow proportionally to the scene.
 //
-// `minMarkerRadius`/`spotConeLength` forward straight to LightMarkers -- their defaults are
+// `minMarkerRadius`/`spotConeLength` forward straight to LightMarkers - their defaults are
 // unit-scene-scale, and a caller whose lights sit much farther from the target than that (a spot
 // light standing well back from its subject, say) needs to size them up or the cone/sphere
 // markers draw too small/short to visually reach anything.
@@ -109,7 +109,7 @@ public:
 	// positions, so the root bound would shift every time a light is dragged.
 	//
 	// The tradeoff is explicit: a scene containing ONLY gizmos has no bound to frame. That is the
-	// correct reading -- there would be nothing being annotated.
+	// correct reading - there would be nothing being annotated.
 	osg::BoundingSphere computeBound() const override { return osg::BoundingSphere(); }
 
 	LightMarkers* getMarkers() const { return _markers.get(); }

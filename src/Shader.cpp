@@ -18,7 +18,7 @@ struct ShaderLibCatalog {
 };
 
 // Process-wide registry of shader-library catalogs, populated by registerShaderLibs() and read
-// by resolveShaderLibs(). Defined exactly once here, compiled into libosgx -- the same fix as
+// by resolveShaderLibs(). Defined exactly once here, compiled into libosgx - the same fix as
 // osgx::SharedBRDFLUT::create()'s cache: a function-local static inside a header-defined `inline`
 // function only merges into one instance within a single link unit, not across separately
 // dlopen()'d modules.
@@ -101,7 +101,7 @@ namespace {
 
 // Process-wide shader cache, keyed by (type, source text). Same "function-local static inside a
 // header-defined inline function only merges within one link unit" concern as
-// shaderLibCatalogs() above -- defined exactly once here, compiled into libosgx.
+// shaderLibCatalogs() above - defined exactly once here, compiled into libosgx.
 std::map<std::pair<osg::Shader::Type, std::string>, osg::ref_ptr<osg::Shader>>& shaderCache() {
 	static std::map<std::pair<osg::Shader::Type, std::string>, osg::ref_ptr<osg::Shader>> cache;
 	return cache;
@@ -125,7 +125,7 @@ namespace {
 
 // "<programName>.<hookName>Hook" is applyHooks()'s own half of the "<programName>.<role>" shader-
 // naming convention every osgx Program-builder follows (see PBRIBL.cpp/IBL.cpp's plain
-// setName() calls for the other half, on shaders that aren't hook slots) -- so a shader shows up
+// setName() calls for the other half, on shaders that aren't hook slots) - so a shader shows up
 // meaningfully in introspection/debug UIs (e.g. pyside6-glsl.py's tree/tab view) instead of a
 // bare "VERTEX"/"FRAGMENT". Kept here, next to the enum, so a new Hook value can't be added
 // without this switch failing to compile silently-wrong (no default: case).
@@ -154,7 +154,7 @@ void applyHooks(osg::Program* program, const HookList& hooks, const HookList& de
 
 		osg::Shader* chosen = (found != hooks.end() ? found->second : defaultShader).get();
 
-		// Only when unnamed -- never clobber a name a caller deliberately gave their own
+		// Only when unnamed - never clobber a name a caller deliberately gave their own
 		// substituted (hooks-supplied) shader.
 		if(chosen->getName().empty()) chosen->setName(program->getName() + "." + hookName(hook));
 

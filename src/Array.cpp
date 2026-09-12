@@ -1,6 +1,6 @@
 #include "osgx/Array.hpp"
 
-// The one real instantiation matching each `extern template` declaration in Array.hpp -- see
+// The one real instantiation matching each `extern template` declaration in Array.hpp - see
 // the comment there for why this exists. Every other translation unit that includes Array.hpp
 // borrows these instead of compiling its own copy.
 template class osg::MixinVector<GLbyte>;

@@ -11,17 +11,17 @@ void bind_aura(py::module_& m) {
 		"originalMask + originalDepth, then two fullscreen passes separable-max-filter both into "
 		"`expanded` (mask in .r, propagated eye-space depth in .g, Chebyshev distance in pixels in "
 		".a; .b is reserved). Depth is propagated as a value through the same nearest-neighbor "
-		"search as mask, not as a UV for a later indirect lookup -- ties can only jump between "
+		"search as mask, not as a UV for a later indirect lookup - ties can only jump between "
 		"depths already found near that pixel, bounded by local geometry. Depth-aware vs. "
 		"'x-ray' occlusion is entirely a composite-shader decision built on this same output, not "
-		"an Aura mode. Build via Aura.create() -- the plain constructor leaves every camera/texture "
+		"an Aura mode. Build via Aura.create() - the plain constructor leaves every camera/texture "
 		"field empty."
 	)
 		.def(py::init<>(), "Constructs an empty Aura with no cameras/textures set; see Aura.create().")
 		.def_readwrite(
 			"selectionCamera", &osgx::Aura::selectionCamera,
 			"Renders into originalMask + originalDepth; the first pass in the pipeline (PRE_RENDER "
-			"order 1). Starts with no children -- call selectionCamera.addChild(node) for whatever "
+			"order 1). Starts with no children - call selectionCamera.addChild(node) for whatever "
 			"should cast the aura."
 		)
 		.def_readwrite(
@@ -70,10 +70,10 @@ void bind_aura(py::module_& m) {
 			"selectionCamera: a mask+depth capture pass, then two fullscreen passes separable-max-"
 			"filter both into `expanded` (mask in .r, propagated eye-space depth in .g, Chebyshev "
 			"distance in pixels in .a). Add the three cameras to the render graph in the listed "
-			"order (PRE_RENDER order 1, 2, 3 -- order 0 is left free for a preceding G-buffer pass), "
+			"order (PRE_RENDER order 1, 2, 3 - order 0 is left free for a preceding G-buffer pass), "
 			"then call selectionCamera.addChild(node) for whatever should cast the aura. A node can "
 			"be multi-parented normally (once under the visible scene, once under selectionCamera), "
-			"and selectionCamera's children can be swapped at any time -- e.g. to retarget one "
+			"and selectionCamera's children can be swapped at any time - e.g. to retarget one "
 			"shared pipeline from a hover callback."
 		)
 	;

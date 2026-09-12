@@ -274,7 +274,7 @@ void FrameAccumulator::_drain(
 			}
 		}
 
-		// Kept outside the lock -- notify()/stdout shouldn't hold up the cull thread.
+		// Kept outside the lock - notify()/stdout shouldn't hold up the cull thread.
 		if(shouldPrint) {
 			// TODO: This is annoyingly AWFUL and should be fixed; SOON!
 			notify(

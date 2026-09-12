@@ -44,7 +44,7 @@ std::string resolveShaderLibs(std::string src);
 // identity, not source content: Program::apply() calls Shader::getPCS(state) once per attached
 // Shader object, and a PerContextShader's compile is gated by `if(!_needsCompile) return`, so N
 // Programs sharing the SAME osg::Shader* only ever trigger one real glCompileShader, while N
-// Programs each holding their OWN Shader instance -- even with byte-identical source -- recompile
+// Programs each holding their OWN Shader instance - even with byte-identical source - recompile
 // independently every time. Confirmed empirically (not just by reading OSG's source) via a
 // miscosg scratchpad proof; see slughorn/osgSlug's project_shader_object_caching memory.
 // cachedShader() makes sharing the outcome by default for source that's likely to repeat.
@@ -53,7 +53,7 @@ std::string resolveShaderLibs(std::string src);
 // Returns a cached osg::Shader for (type, src), compiling a new instance only the first time this
 // exact (type, source text) pair is requested; every later call with the same pair returns the
 // SAME instance, so Program::apply() finds it already compiled. Process-wide and never evicted --
-// same tradeoff as the shaderLibCatalogs() registry above -- which is fine for the intended use (a
+// same tradeoff as the shaderLibCatalogs() registry above - which is fine for the intended use (a
 // library's own default/no-op shader constants, or caller-supplied hook text that happens to
 // repeat across call sites), but wrong for source built fresh with caller-specific data baked in
 // as a literal every call: that source never actually repeats, so caching it only grows the map
@@ -67,11 +67,11 @@ osg::Shader* cachedShader(osg::Shader::Type type, std::string src);
 // a caller overrides only the slots it cares about via `hooks`, leaving every other slot at that
 // call site's own built-in. One shared enum/mechanism used everywhere osgx composes a Program
 // this way, instead of each call site growing its own `osg::Shader* someHook=nullptr` parameter
-// -- see TODO.md's HookList entry for the history (osgSlug's Atlas.hpp is the model).
+// - see TODO.md's HookList entry for the history (osgSlug's Atlas.hpp is the model).
 // ================================================================================================
 
 // Hook slots a Program-building call site MAY expose for shader-object substitution. Only add a
-// new enumerator once a real call site wires it up -- see TODO.md's HookList entry for slots
+// new enumerator once a real call site wires it up - see TODO.md's HookList entry for slots
 // that are still discussed but not yet real parameters anywhere (e.g. ambient lighting); don't
 // pre-populate this for hypothetical future hooks.
 //
@@ -79,20 +79,20 @@ osg::Shader* cachedShader(osg::Shader::Type type, std::string src);
 // genuinely reusable across whichever Program-building call sites happen to need that exact
 // concept (Tonemap already is, across both osgx::gltf::pbribl's forward and deferred paths).
 // DeferredLighting is different in kind: it substitutes the WHOLE shader that defines main() for
-// osgx::gltf::pbribl::PBRIBLLightingScene::create()'s fullscreen lighting pass -- an "I know what
+// osgx::gltf::pbribl::PBRIBLLightingScene::create()'s fullscreen lighting pass - an "I know what
 // I'm doing, replace the entire pipeline" escape hatch, not a leaf-function swap, and NOT
 // interchangeable with an equivalent hook on a differently-shaped Program (e.g. the forward path's
-// own main() reads vertex-interpolated PBR inputs, not G-buffer textures) -- hence the
+// own main() reads vertex-interpolated PBR inputs, not G-buffer textures) - hence the
 // pass-specific name instead of a generic one. See docs/CORE.md and docs/GLTF.md.
 //
-// DirectLighting (migrated 2026-08-21, `osgx-gbuffer-dice.cpp`) -- PBRIBLLightingScene::create()
+// DirectLighting (migrated 2026-08-21, `osgx-gbuffer-dice.cpp`) - PBRIBLLightingScene::create()
 // used to attach its osgx_DirectLighting() shader (DIRECT_LIGHTING_HOOK_DEFAULT/_SHADOWED,
 // PBR.hpp) UNCONDITIONALLY, outside applyHooks() entirely, on the assumption that a
 // DeferredLighting override simply ignores it (true, and harmless, RIGHT UP UNTIL an override
-// wants the same low-level BRDF primitives -- D_GGX/G_Schlick/G_Smith/F_Schlick/DirectSpecular/
-// DirectDiffuse/DirectLight -- for its own use, since DIRECT_LIGHTING_HOOK_DEFAULT pulls in that
+// wants the same low-level BRDF primitives - D_GGX/G_Schlick/G_Smith/F_Schlick/DirectSpecular/
+// DirectDiffuse/DirectLight - for its own use, since DIRECT_LIGHTING_HOOK_DEFAULT pulls in that
 // exact same `#pragma osgx::pbr` set to implement itself. Two shader objects in one Program then
-// define the same GLSL functions -- a link error (`function "osgx_D_GGX" is already defined`),
+// define the same GLSL functions - a link error (`function "osgx_D_GGX" is already defined`),
 // confirmed live building a worn-edge material blend that needed real osgx_DirectLight() calls
 // from inside its own DeferredLighting override). Now a real slot: a DeferredLighting override
 // that doesn't need osgx_DirectLighting() at all can supply a trivially empty
@@ -112,13 +112,13 @@ using HookList = std::vector<std::pair<Hook, osg::ref_ptr<osg::Shader>>>;
 // True if `hooks` contains an override for `hook`.
 bool hasHook(const HookList& hooks, Hook hook);
 
-// Attaches exactly one shader per slot in `defaults` to `program` -- the caller's override from
+// Attaches exactly one shader per slot in `defaults` to `program` - the caller's override from
 // `hooks` for that slot if present, otherwise `defaults`' own shader. `defaults` is the single
 // source of truth for which slots this Program actually supports; every slot in it gets EXACTLY
-// one definition attached, always -- never zero (a call with no definition is a link error only
+// one definition attached, always - never zero (a call with no definition is a link error only
 // caught at OSG's realize-time GLObjectsVisitor precompile, not at Program-build time) and never
 // two (GLSL permits one body per function, so a `hooks` entry SUBSTITUTES the default, it is
-// never attached alongside it). Throws if `hooks` names a slot absent from `defaults` -- a hook
+// never attached alongside it). Throws if `hooks` names a slot absent from `defaults` - a hook
 // this Program doesn't support, almost always a caller bug (typo, or a slot this call site
 // doesn't actually have).
 void applyHooks(osg::Program* program, const HookList& hooks, const HookList& defaults);

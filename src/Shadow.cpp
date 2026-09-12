@@ -21,9 +21,9 @@ namespace osgx {
 namespace {
 
 // Vertex-transform-only, empty-fragment Program installed on every directional shadow camera's
-// own StateSet (ON|OVERRIDE) -- see ShadowMap::create()'s own comment for why. Uses OSG's
+// own StateSet (ON|OVERRIDE) - see ShadowMap::create()'s own comment for why. Uses OSG's
 // standard osg_Vertex/osg_ModelViewProjectionMatrix names (auto-bound by OSG, same as every other
-// osgx/pyosg-lighting shader -- no explicit addBindAttribLocation() needed) so it works unmodified
+// osgx/pyosg-lighting shader - no explicit addBindAttribLocation() needed) so it works unmodified
 // against any subgraph, not just a specific vertex-attribute convention.
 constexpr const char DEPTH_ONLY_VERTEX_SHADER[] = R"GLSL(
 #version 460 core
@@ -53,7 +53,7 @@ osg::ref_ptr<osg::Program> makeDepthOnlyProgram() {
 	return program;
 }
 
-// Shared by ShadowMap::create()/ShadowMap::reposition() -- the only difference
+// Shared by ShadowMap::create()/ShadowMap::reposition() - the only difference
 // between "create" and "reposition" is whether a new camera/texture gets allocated around this
 // math, not the math itself.
 void computeDirectionalShadowMatrices(
@@ -74,7 +74,7 @@ void computeDirectionalShadowMatrices(
 	const double distance = extent * 2.0;
 	const osg::Vec3 lightPos = sceneBoundCenter - dir * float(distance);
 
-	// Up vector (0,1,0), not (0,0,1) -- a light direction nearly aligned with world-up produces a
+	// Up vector (0,1,0), not (0,0,1) - a light direction nearly aligned with world-up produces a
 	// degenerate lookAt with (0,0,1) (same failure mode 08-shadows.py/09-ibl.py both noted); (0,1,0)
 	// sidesteps it for every direction any pyosg-lighting example has used.
 	lightView = osg::Matrix::lookAt(lightPos, sceneBoundCenter, osg::Vec3(0.0, 1.0, 0.0));
@@ -82,7 +82,7 @@ void computeDirectionalShadowMatrices(
 	const double near_ = std::max(0.01, distance - extent);
 	const double far_ = distance + extent;
 
-	// Orthographic, not perspective -- a directional light's rays are parallel by construction;
+	// Orthographic, not perspective - a directional light's rays are parallel by construction;
 	// see ShadowMapOptions::extent's own comment for why a perspective frustum here is simply
 	// wrong (not a style choice) for this light type.
 	lightProj = osg::Matrix::ortho(-extent, extent, -extent, extent, near_, far_);
@@ -116,12 +116,12 @@ ShadowMap ShadowMap::create(
 	result.depthTexture->setWrap(osg::Texture::WRAP_S, osg::Texture::CLAMP_TO_EDGE);
 	result.depthTexture->setWrap(osg::Texture::WRAP_T, osg::Texture::CLAMP_TO_EDGE);
 	// Render target (shadow camera) AND sampler input (the lighting pass's osgx_ShadowFactor())
-	// -- without DYNAMIC, OSG's default StateAttribute caching can treat this as unchanging after
+	// - without DYNAMIC, OSG's default StateAttribute caching can treat this as unchanging after
 	// its first successful bind and stop correctly re-applying it later. Same fix as
 	// GBuffer.cpp's own color/depth textures.
 	result.depthTexture->setDataVariance(osg::Object::DYNAMIC);
 
-	// Locally osgx::RTT-typed (constructor + initializer-list attach()) -- but ShadowMap::camera
+	// Locally osgx::RTT-typed (constructor + initializer-list attach()) - but ShadowMap::camera
 	// itself stays osg::ref_ptr<osg::Camera> (see its own declaration) since it's exposed to the
 	// Python bindings and osgx::RTT isn't a registered pybind11 type.
 	auto camera = osgx::make_nref<osgx::RTT>(
@@ -133,7 +133,7 @@ ShadowMap ShadowMap::create(
 	camera->attach({{osg::Camera::DEPTH_BUFFER, result.depthTexture}});
 	// Depth-only: the old hand-rolled Python examples attached a dummy color texture here to work
 	// around a since-irrelevant pybind11 binding gap (Camera::setDrawBuffer/setReadBuffer weren't
-	// exposed to Python yet) -- ordinary C++ calls, no workaround needed.
+	// exposed to Python yet) - ordinary C++ calls, no workaround needed.
 	camera->setDrawBuffer(GL_NONE);
 	camera->setReadBuffer(GL_NONE);
 	camera->setViewMatrix(result.lightView);
@@ -161,7 +161,7 @@ void ShadowMap::updateMatrix() {
 	if(!shadowMatrix) return;
 
 	// OSG row-vector convention: worldPos * (lightView * lightProj) is the same composition GLSL's
-	// osgx_shadowMatrix * vec4(worldPos, 1.0) performs once uploaded -- see Shadow.hpp's file-level
+	// osgx_shadowMatrix * vec4(worldPos, 1.0) performs once uploaded - see Shadow.hpp's file-level
 	// comment for why this needs no main-camera term (unlike the eye-space hand-rolled examples).
 	shadowMatrix->set(osg::Matrixf(lightView * lightProj));
 }

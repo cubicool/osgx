@@ -20,7 +20,7 @@ void bind_ibl(py::module_& m) {
 	>(
 		m,
 		"RunOnceCallback",
-		"Disables a node after its update callback has fired exactly once -- e.g. a PRE_RENDER "
+		"Disables a node after its update callback has fired exactly once - e.g. a PRE_RENDER "
 		"bake camera that should render one frame at startup and then go idle. Call rebake() to "
 		"re-arm it."
 	)
@@ -28,7 +28,7 @@ void bind_ibl(py::module_& m) {
 		.def(
 			"rebake", &osgx::RunOnceCallback::rebake, "node"_a,
 			"Re-arms this callback so `node` updates (renders, if it's a bake camera) one more "
-			"time -- e.g. after swapping the bake's source data."
+			"time - e.g. after swapping the bake's source data."
 		)
 	;
 
@@ -86,7 +86,7 @@ void bind_ibl(py::module_& m) {
 		"samples"_a = 256,
 		py::call_guard<py::gil_scoped_release>(),
 		"Bakes a cosine-weighted Monte Carlo diffuse irradiance cubemap from an equirectangular "
-		"HDR/LDR osg.Image -- more accurate than SH9 (see computeSH), at the cost of a real bake "
+		"HDR/LDR osg.Image - more accurate than SH9 (see computeSH), at the cost of a real bake "
 		"instead of 9 coefficients. Sample with LAMBERTIAN_IRRADIANCE's osgx_LambertianIrradiance()."
 	);
 
@@ -153,7 +153,7 @@ void bind_ibl(py::module_& m) {
 		m,
 		"GGXPrefilterScene",
 		"The offscreen scene graph (PRE_RENDER cameras, one per cubemap face/mip) that "
-		"GGX-prefilters an equirectangular HDR source. Building it renders nothing -- the caller "
+		"GGX-prefilters an equirectangular HDR source. Building it renders nothing - the caller "
 		"owns adding `root` to a rendered scene graph, attaching `readback` as a post-draw "
 		"callback, and running frames until readback.done."
 	)
@@ -166,7 +166,7 @@ void bind_ibl(py::module_& m) {
 			&osgx::GGXPrefilterScene::create,
 			"equirectImage"_a,
 			"options"_a = osgx::GGXPrefilterOptions(),
-			"Builds the offscreen bake scene for `equirectImage`. Renders nothing itself -- add "
+			"Builds the offscreen bake scene for `equirectImage`. Renders nothing itself - add "
 			"`root` to the scene graph, attach `readback`, and run frames until readback.done."
 		)
 		.def(

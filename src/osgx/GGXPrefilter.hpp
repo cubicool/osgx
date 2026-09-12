@@ -24,7 +24,7 @@ struct GGXPrefilterOptions {
 
 	// Caps the luminance of any single equirect sample before it's accumulated into the
 	// weighted average. Real photographed HDRIs can have a sun disc with peak radiance in the
-	// tens of thousands -- once that's correctly finite (not clamped to +Infinity by a too-narrow
+	// tens of thousands - once that's correctly finite (not clamped to +Infinity by a too-narrow
 	// storage format), it's still ~1000x brighter than the surrounding sky, so a handful of the
 	// (deterministic, low-discrepancy) Hammersley samples that happen to land near it dominate
 	// the average and show up as visible firefly noise/sparkle instead of blending in --
@@ -32,13 +32,13 @@ struct GGXPrefilterOptions {
 	//
 	// Measured on ingwe_beach_sunny_2k.hdr (a real photographed sky with a visible sun): median
 	// luminance 0.11, p99 0.68, p99.9 4.5, p99.99 28, sun peak ~84480. The clamp has to land near
-	// that *normal* range to matter, not merely "below the sun" -- any standard display tonemap
+	// that *normal* range to matter, not merely "below the sun" - any standard display tonemap
 	// (e.g. Reinhard x/(x+1)) already saturates to near-white well before 50 (tonemap(50) = 0.98,
-	// tonemap(84480) = 0.99999 -- both read as "pure white" on screen), so a clamp value that's
+	// tonemap(84480) = 0.99999 - both read as "pure white" on screen), so a clamp value that's
 	// merely "huge but smaller than the sun" is visually indistinguishable from no clamp at all.
 	// Default (8) sits just above the top of this HDRI's *normal* sky/cloud range so the sun's
 	// outlier samples actually blend in, at the cost of flattening the very brightest highlights
-	// too -- tune per-scene if that tradeoff isn't right for a given HDRI.
+	// too - tune per-scene if that tradeoff isn't right for a given HDRI.
 	float fireflyClamp = 8.0f;
 
 	// bool configureGLContext = true;

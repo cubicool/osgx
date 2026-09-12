@@ -5,7 +5,7 @@ namespace osgx_python {
 
 namespace {
 
-// PickRule is std::function<uint32_t(const uint8_t*, int)> on the C++ side -- there's no
+// PickRule is std::function<uint32_t(const uint8_t*, int)> on the C++ side - there's no
 // automatic pybind11 caster for a raw `const uint8_t*` argument, so Python can't author a new
 // PickRule as an arbitrary callable and hand it to PickReadbackSync's constructor the way C++
 // can. Instead the constructor takes this enum and resolves it to the matching built-in free
@@ -40,11 +40,11 @@ const uint8_t* pickBufferPtr(const py::buffer& region, int n) {
 
 }
 
-// osgx::picking -- texture-based object-ID picking (RTT FBO + pick shader). See
+// osgx::picking - texture-based object-ID picking (RTT FBO + pick shader). See
 // osgx/Picking.hpp and examples/osgx-{picking,hover}.cpp for the full worked patterns this
 // mirrors; PickReadback itself (shared onPick/onEnter/onLeave state) is registered here purely
 // so PickCameraSync/PickHoverCallback/PickHandler below can accept either PickReadbackSync or
-// PickReadbackAsync through one shared `rb` parameter -- it has no public constructor exposed,
+// PickReadbackAsync through one shared `rb` parameter - it has no public constructor exposed,
 // Python never instantiates it directly.
 void bind_picking(py::module_& m) {
 	py::enum_<PickRuleKind>(
@@ -73,7 +73,7 @@ void bind_picking(py::module_& m) {
 		"registerPickShaderLibs",
 		&osgx::registerPickShaderLibs,
 		"Registers the `vec4 osgx_encodePickID(uint id)` GLSL snippet under the "
-		"'#pragma osgx::picking encode' shader-library key, matching decodePickID()'s bit layout -- "
+		"'#pragma osgx::picking encode' shader-library key, matching decodePickID()'s bit layout - "
 		"for a shader that can't reuse makePickCamera()'s own hook-based pick fragment wholesale "
 		"(e.g. one running its own coverage/discard test before it knows the final ID)."
 	);
@@ -83,7 +83,7 @@ void bind_picking(py::module_& m) {
 		"PickIDAllocator",
 		"Hands out contiguous pick-ID ranges for a drawable whose fragment shader distinguishes "
 		"more than one pickable 'part' per draw call. ID 0 stays reserved for 'nothing hit', so "
-		"the first real ID is 1. Not thread-safe -- allocate at scene-build time on a single "
+		"the first real ID is 1. Not thread-safe - allocate at scene-build time on a single "
 		"thread, same as the rest of scene construction."
 	)
 		.def(py::init<>())
@@ -100,7 +100,7 @@ void bind_picking(py::module_& m) {
 		"pickCenter",
 		[](py::buffer region, int n) { return osgx::pickCenter(pickBufferPtr(region, n), n); },
 		"region"_a, "n"_a,
-		"Center pixel wins -- semantics identical to n=1; larger n widens the rasterized region. "
+		"Center pixel wins - semantics identical to n=1; larger n widens the rasterized region. "
 		"`region` is a row-major RGBA buffer, n*n pixels, Y=0 at bottom-left (OpenGL convention)."
 	);
 
@@ -108,14 +108,14 @@ void bind_picking(py::module_& m) {
 		"pickMostCoverage",
 		[](py::buffer region, int n) { return osgx::pickMostCoverage(pickBufferPtr(region, n), n); },
 		"region"_a, "n"_a,
-		"Most-covered non-zero ID wins -- useful in dense or overlapping scenes."
+		"Most-covered non-zero ID wins - useful in dense or overlapping scenes."
 	);
 
 	m.def(
 		"pickNearestToCenter",
 		[](py::buffer region, int n) { return osgx::pickNearestToCenter(pickBufferPtr(region, n), n); },
 		"region"_a, "n"_a,
-		"Non-zero ID nearest to center wins -- good for snap-to-object / hover picking."
+		"Non-zero ID nearest to center wins - good for snap-to-object / hover picking."
 	);
 
 	m.def(
@@ -123,7 +123,7 @@ void bind_picking(py::module_& m) {
 		[](py::buffer region, int n) { return osgx::spiralPick(pickBufferPtr(region, n), n); },
 		"region"_a, "n"_a,
 		"Spirals outward from center ring by ring (Chebyshev distance), returning the first "
-		"non-zero ID found. Equivalent result to pickNearestToCenter but exits on the first hit -- "
+		"non-zero ID found. Equivalent result to pickNearestToCenter but exits on the first hit - "
 		"preferred default for all pick modes."
 	);
 
@@ -146,25 +146,25 @@ void bind_picking(py::module_& m) {
 		m,
 		"PickReadback",
 		"Shared onPick/onEnter/onLeave state and thread-safe request/update methods common to "
-		"PickReadbackSync and PickReadbackAsync. Has no public constructor -- Python never "
+		"PickReadbackSync and PickReadbackAsync. Has no public constructor - Python never "
 		"instantiates this directly, only the two concrete readback subclasses."
 	);
 
 	pickReadback
 		.def_readwrite(
 			"onPick", &osgx::PickReadback::onPick,
-			"fn(id: int, action: ActionType) -- HOVER fires when the hovered ID changes (including "
+			"fn(id: int, action: ActionType) - HOVER fires when the hovered ID changes (including "
 			"to 0=background); CLICK fires when a click resolves. May fire on any thread depending "
-			"on readback mode -- safe for logging/audio/non-scene-graph reactions only."
+			"on readback mode - safe for logging/audio/non-scene-graph reactions only."
 		)
 		.def_readwrite(
 			"onEnter", &osgx::PickReadback::onEnter,
-			"fn(id: int) -- non-zero id entered. Always fired from the update thread via "
-			"PickHoverCallback -- safe for scene graph modifications."
+			"fn(id: int) - non-zero id entered. Always fired from the update thread via "
+			"PickHoverCallback - safe for scene graph modifications."
 		)
 		.def_readwrite(
 			"onLeave", &osgx::PickReadback::onLeave,
-			"fn(id: int) -- companion to onEnter, same thread guarantee."
+			"fn(id: int) - companion to onEnter, same thread guarantee."
 		)
 		.def(
 			"requestPick", &osgx::PickReadback::requestPick, "x"_a, "y"_a,
@@ -176,13 +176,13 @@ void bind_picking(py::module_& m) {
 		)
 		.def(
 			"reportClick", &osgx::PickReadback::reportClick,
-			"Fire CLICK with the currently hovered ID -- call from a click handler in CONTINUOUS mode."
+			"Fire CLICK with the currently hovered ID - call from a click handler in CONTINUOUS mode."
 		)
 		.def(
 			"invalidate", &osgx::PickReadback::invalidate,
 			"Force the tracked pick state back to 'nothing hovered' (id 0), so PickHoverCallback's "
 			"next poll fires onLeave naturally. Call once per frame the cursor is confirmed outside "
-			"the window (osgx.platform.isCursorInWindow()) -- there is no window-leave event to "
+			"the window (osgx.platform.isCursorInWindow()) - there is no window-leave event to "
 			"drive this automatically."
 		)
 		.def_property_readonly(
@@ -200,7 +200,7 @@ void bind_picking(py::module_& m) {
 	;
 
 	// SYNC and ASYNC each pull in a second base (osg::NodeCallback / osg::Camera::DrawCallback)
-	// alongside PickReadback -- true multiple inheritance from pybind11's point of view (hence
+	// alongside PickReadback - true multiple inheritance from pybind11's point of view (hence
 	// py::multiple_inheritance() on both), even though PickReadback's `virtual osg::Object` base
 	// means there's only one shared Object/Referenced subobject underneath (see PickReadback's
 	// own comment in osgx/Picking.hpp). This is what lets PickCameraSync/PickHoverCallback/
@@ -224,7 +224,7 @@ void bind_picking(py::module_& m) {
 		pickReadbackSync,
 		"Mode",
 		"CLICK: readback resolves only in response to requestPick()/reportClick(). CONTINUOUS: "
-		"1x1 sub-frustum hover -- readback resolves every frame, driving onEnter/onLeave."
+		"1x1 sub-frustum hover - readback resolves every frame, driving onEnter/onLeave."
 	)
 		.value("CLICK", osgx::PickReadbackSync::Mode::CLICK)
 		.value("CONTINUOUS", osgx::PickReadbackSync::Mode::CONTINUOUS)
@@ -298,7 +298,7 @@ void bind_picking(py::module_& m) {
 		m,
 		"PickCameraSync",
 		"Keeps a pick camera's view/projection matched to the main viewer camera every update "
-		"traversal -- the mechanism that actually keeps the pick camera aimed correctly."
+		"traversal - the mechanism that actually keeps the pick camera aimed correctly."
 	)
 		.def(
 			py::init<osg::Camera*, bool, int, int, osgx::PickReadback*>(),
@@ -310,7 +310,7 @@ void bind_picking(py::module_& m) {
 			py::keep_alive<1, 6>(),
 			"Install via setUpdateCallback() on the pick camera; syncs its view/projection from "
 			"viewerCam every update traversal. pick1x1=True also builds a sub-frustum projection "
-			"centered on the cursor each frame (gluPickMatrix equivalent) -- requires rb for the "
+			"centered on the cursor each frame (gluPickMatrix equivalent) - requires rb for the "
 			"current mouse position. Chain other pick callbacks via setNestedCallback()."
 		)
 	;
@@ -323,13 +323,13 @@ void bind_picking(py::module_& m) {
 		m,
 		"PickHoverCallback",
 		"Polls a PickReadback's last ID on the update thread and fires onEnter/onLeave on "
-		"transitions -- the correct way to trigger scene-graph mutation from a hover event."
+		"transitions - the correct way to trigger scene-graph mutation from a hover event."
 	)
 		.def(
 			py::init<osgx::PickReadback*>(),
 			"rb"_a,
 			py::keep_alive<1, 2>(),
-			"Fires onEnter/onLeave on the update thread by polling rb.lastID() -- the correct way to "
+			"Fires onEnter/onLeave on the update thread by polling rb.lastID() - the correct way to "
 			"trigger scene graph modifications in response to hover events, regardless of which "
 			"thread the readback itself runs on."
 		)
@@ -353,7 +353,7 @@ void bind_picking(py::module_& m) {
 			"Forwards click/move events to rb. continuous=False: left-click calls rb.requestPick(x, "
 			"y) (use with CLICK mode). continuous=True: MOVE events update cursor position, left-"
 			"click calls rb.reportClick() (use with CONTINUOUS/1x1 sub-frustum picking). "
-			"consumeEvents=True stops OSG's handler chain on left-click -- use when picking must be "
+			"consumeEvents=True stops OSG's handler chain on left-click - use when picking must be "
 			"exclusive (e.g. selection that shouldn't also rotate the camera)."
 		)
 	;
@@ -371,11 +371,11 @@ void bind_picking(py::module_& m) {
 		"w"_a, "h"_a, "image"_a = nullptr, "installProgram"_a = true,
 		"vertHook"_a = nullptr, "fragHook"_a = nullptr,
 		"SYNC-friendly variant: attach an osg::Image (or leave it None for an ASYNC-style "
-		"renderbuffer-only camera with no automatic CPU readback -- install your own PBO readback "
+		"renderbuffer-only camera with no automatic CPU readback - install your own PBO readback "
 		"via a postDrawCallback). vertHook/fragHook default to a no-op vertex hook and a "
 		"'uniform uint pickID' fragment hook (see osgx/Picking.hpp's hook-based shader design). "
 		"installProgram=False skips building/installing the generic pick Program entirely (and "
-		"ignores vertHook/fragHook) -- use when a subtree under the returned camera installs its "
+		"ignores vertHook/fragHook) - use when a subtree under the returned camera installs its "
 		"own Program and would otherwise have to fight this camera's OVERRIDE with PROTECTED "
 		"(OSG resolves OVERRIDE shallowest-wins). Caller is responsible for addChild(scene), "
 		"syncing view/projection each update traversal, and installing a readback callback."
@@ -395,7 +395,7 @@ void bind_picking(py::module_& m) {
 		"vertHook"_a = nullptr, "fragHook"_a = nullptr,
 		"ASYNC variant: attaches `tex` for FBO rendering via glFramebufferTexture2D, no automatic "
 		"CPU readback. Pair with PickReadbackAsync as the pick camera's postDrawCallback. "
-		"installProgram -- see the Image overload above; same meaning here."
+		"installProgram - see the Image overload above; same meaning here."
 	);
 }
 

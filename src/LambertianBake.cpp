@@ -53,7 +53,7 @@ uniform float fireflyClamp;
 in vec2 vUV;
 out vec4 fragColor;
 
-// Rescales `color` down (preserving hue) if its luminance exceeds `maxLuminance` -- see
+// Rescales `color` down (preserving hue) if its luminance exceeds `maxLuminance` - see
 // LambertianBakeOptions::fireflyClamp for why this exists.
 vec3 clampFirefly(vec3 color, float maxLuminance) {
 	float luminance = dot(color, vec3(0.2126, 0.7152, 0.0722));
@@ -195,7 +195,7 @@ LambertianBakeScene LambertianBakeScene::create(
 	auto quad = makeFullscreenQuad();
 	osg::ref_ptr<osg::Camera> completionCamera;
 
-	// Not RTT::fullscreenQuad() -- that bakes its own fresh Program+quad per call, whereas this bake
+	// Not RTT::fullscreenQuad() - that bakes its own fresh Program+quad per call, whereas this bake
 	// deliberately shares one `program`/`quad` pair across all six face cameras (a single compile+
 	// link, reused by six draws) instead of six independent ones. The raw RTT constructor still
 	// removes the PRE_RENDER/FBO/ABSOLUTE_RF/viewport boilerplate; the rest of the fullscreen-quad

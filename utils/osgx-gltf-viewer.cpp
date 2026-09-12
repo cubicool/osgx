@@ -385,7 +385,7 @@ int main(int argc, char** argv) {
 
 	// ReaderWriterGLTF registers this same alias in its own constructor, but that
 	// constructor only runs *after* the registry has already resolved which plugin
-	// library to dlopen for a given extension -- too late for a cold ".glb" load.
+	// library to dlopen for a given extension - too late for a cold ".glb" load.
 	// Registering it here first breaks the chicken-and-egg.
 	osgDB::Registry::instance()->addFileExtensionAlias("glb", "gltf");
 

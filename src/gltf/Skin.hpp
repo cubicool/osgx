@@ -46,7 +46,7 @@ struct Skin: public osg::Referenced {
 // Reflects, not drives: every update traversal this reads whatever the CURRENT world matrices of
 // the skin's joint nodes happen to be (Skin::computeJointWorld()) and rewrites the joint-matrix
 // SSBO the vertex shader deforms the mesh against. It has no play/pause state and no idea what (if
-// anything) is moving those joints -- installSkinPaletteCallbacks() attaches this unconditionally
+// anything) is moving those joints - installSkinPaletteCallbacks() attaches this unconditionally
 // on every skinned mesh node, independent of AnimationCallback (Animation.hpp) or SimplePlayer.
 // A joint that has its own animation channels visibly deforms the mesh purely because
 // AnimationCallback moves the joint transform and this callback picks up whatever that transform

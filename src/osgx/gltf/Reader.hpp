@@ -20,7 +20,7 @@ namespace osgx::gltf {
 class Reader {
 public:
 	// Two phases for read(): Parsing (tinygltf's own single-pass parse of the glTF document,
-	// including image decode -- v3 has no separable "loading textures" phase, it happens
+	// including image decode - v3 has no separable "loading textures" phase, it happens
 	// inline) and BuildingNodes (this plugin's own post-parse walk that converts the parsed
 	// model into an osg::Node graph).
 	enum class Stage { Parsing, BuildingNodes };
@@ -35,7 +35,7 @@ public:
 	}
 
 	// During Parsing, current/total are a real (never fabricated) item index/count within
-	// `section` -- tinygltf v3's per-section stream callbacks (on_mesh/on_node/on_image/etc)
+	// `section` - tinygltf v3's per-section stream callbacks (on_mesh/on_node/on_image/etc)
 	// fire once per item, only after that section's array is fully parsed, so `total` is read
 	// directly off the already-built model rather than pre-counted. During BuildingNodes,
 	// current/total are nodes built so far / model.nodes_count (also real, free denominators),
@@ -43,7 +43,7 @@ public:
 	//
 	// `overall` is a second, complementary facet of the same tick: a monotonic 0.0-1.0 estimate
 	// of progress across the WHOLE load, always populated alongside current/total/section rather
-	// than gated behind a separate mode -- callers pick whichever facet suits them per tick. See
+	// than gated behind a separate mode - callers pick whichever facet suits them per tick. See
 	// computeOverall()'s definition for why it's a predictable fixed-weight estimate rather than
 	// an item-accurate one (that would need a pre-scan tinygltf v3's single-pass parser doesn't
 	// do).

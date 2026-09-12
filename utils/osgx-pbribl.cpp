@@ -1,4 +1,4 @@
-// osgx-pbribl -- bake a self-contained osgx_pbribl environment bundle.
+// osgx-pbribl - bake a self-contained osgx_pbribl environment bundle.
 //
 // Usage:
 //   osgx-pbribl <input.hdr> <output-basename>

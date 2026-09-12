@@ -38,7 +38,7 @@ void bind_gbuffer(py::module_& m) {
 			"The real GL_DEPTH_COMPONENT24 depth attachment."
 		)
 		.def("valid", &osgx::GBuffer::valid, "True if camera and every texture were successfully built.")
-		// GBuffer::create() takes a std::span, which pybind11 has no built-in caster for -- same
+		// GBuffer::create() takes a std::span, which pybind11 has no built-in caster for - same
 		// pattern osgx-core.cpp's findDataFile() binding uses: wrap in a lambda taking a
 		// std::vector (pybind11/stl.h converts a Python list automatically) and build the span
 		// from that inside the call.
@@ -107,10 +107,10 @@ void bind_gbuffer(py::module_& m) {
 			"bias"_a=0.02f,
 			"Generic hemisphere-kernel SSAO: reads any G-buffer's view-space normal+position "
 			"textures directly, needs nothing else. `projectionMatrix` is a caller-owned "
-			"osg.Uniform this pass reads every draw -- keep it refreshed from the same per-frame "
+			"osg.Uniform this pass reads every draw - keep it refreshed from the same per-frame "
 			"callback that updates PBRIBLLightingScene's own view-matrix uniforms (see that type's "
 			"own doc comment for why it must be a PRE_RENDER preDrawCallback). `radius`/`bias` seed "
-			"the returned live osg.Uniform-backed `radius`/`bias` attributes -- set() them at any "
+			"the returned live osg.Uniform-backed `radius`/`bias` attributes - set() them at any "
 			"time, no pass rebuild needed."
 		)
 	;

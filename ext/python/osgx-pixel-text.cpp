@@ -14,9 +14,9 @@ void bind_pixel_text(py::module_& m) {
 	>(
 		m,
 		"PixelText",
-		"A deliberately small, deliberately inflexible procedural 5x9 bitmap font -- the full "
+		"A deliberately small, deliberately inflexible procedural 5x9 bitmap font - the full "
 		"printable ASCII set (upper+lowercase, digits, space, punctuation), with a 2-row "
-		"descender band for lowercase g/j/p/q/y and a few punctuation marks -- for quick "
+		"descender band for lowercase g/j/p/q/y and a few punctuation marks - for quick "
 		"in-scene labels and decal text until slughorn/osgSlug (the real text renderer) is "
 		"wired in. One gl_InstanceID-emitted quad per character, painted from a shared, "
 		"process-wide atlas."

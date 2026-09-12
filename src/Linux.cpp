@@ -138,10 +138,10 @@ bool isCursorInWindow(osg::Camera* camera) {
 	// !gw->valid() covers window-close teardown: GraphicsWindowX11::closeImplementation()
 	// (src/osgViewer/GraphicsWindowX11.cpp) XCloseDisplay()s _eventDisplay, zeroes _window, and
 	// sets _valid = false, in that order, but PickCameraSync's update callback (the only caller
-	// of this) can still run one more traversal after close starts -- confirmed via a real
+	// of this) can still run one more traversal after close starts - confirmed via a real
 	// coredump (2026-08-22): XQueryPointer() on the by-then-dangling Display* segfaulted hard,
 	// not a catchable X error, the instant the window closed. Checked before touching
-	// getEventDisplay()/getWindow() at all, not after -- both are already zeroed by the time
+	// getEventDisplay()/getWindow() at all, not after - both are already zeroed by the time
 	// _valid flips false, so this alone is the real guard, not defense in depth.
 	if(!gw || !gw->valid()) return true;
 
@@ -152,7 +152,7 @@ bool isCursorInWindow(osg::Camera* camera) {
 	int rootX, rootY, winX, winY;
 	unsigned int mask;
 
-	// False here means "different screen," not "different window" -- win_x/win_y are always
+	// False here means "different screen," not "different window" - win_x/win_y are always
 	// reported relative to `window`'s own origin regardless of what the pointer is actually
 	// over, which is exactly the bounds check below wants.
 	if(!XQueryPointer(display, window, &root, &child, &rootX, &rootY, &winX, &winY, &mask)) {

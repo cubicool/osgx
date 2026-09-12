@@ -1,12 +1,12 @@
 // vimrun! ./examples/osgx-lights
 //
 // A standalone demo of osgx::pbr's typed direct lights (directional/point/sphere/spot) and their
-// osgx::LightGizmos visualizations, without any glTF asset or baked IBL environment -- just one shaded
-// osgx::Cube (6 flat, axis-aligned faces -- deliberately not a more "interesting" shape, so which
+// osgx::LightGizmos visualizations, without any glTF asset or baked IBL environment - just one shaded
+// osgx::Cube (6 flat, axis-aligned faces - deliberately not a more "interesting" shape, so which
 // face is lit is visually unambiguous), a hand-assembled minimal PBR fragment shader (osgx::pbr's
 // GLSL snippets composed directly, the same mechanism osgx::gltf::pbribl's
 // FULL_PBR_FRAGMENT_SHADER_SRC uses internally), and a small constant ambient term standing in for
-// real image-based lighting (see the fragment shader below -- deliberately NOT osgx::ibl's
+// real image-based lighting (see the fragment shader below - deliberately NOT osgx::ibl's
 // prefiltered-cubemap pipeline, which would need an HDR asset and a bake pass; out of scope for
 // "load nothing, just press a key").
 //
@@ -15,7 +15,7 @@
 // light occupies its own LightSet slot, so the ImGui "Enabled" checkbox in each section proves
 // that a configured slot can be toggled independently without changing the other lights.
 //
-// When built against osgx::imgui (OSGX_IMGUI -- automatic whenever the library it's linked
+// When built against osgx::imgui (OSGX_IMGUI - automatic whenever the library it's linked
 // against, osgx::osgx, was itself built with OSGX_WITH_IMGUI; no extra CMake wiring needed here),
 // an ImGui window adds one section per light type with live sliders for every parameter that
 // type's LightSet setter actually takes, including an independent enabled toggle. Without
@@ -73,16 +73,16 @@ void main() {
 constexpr std::string_view FRAGMENT_SHADER = R"GLSL(
 #version 460 core
 
-// PI must precede the pragma below -- it's textually replaced in place by the spliced snippet
+// PI must precede the pragma below - it's textually replaced in place by the spliced snippet
 // source, and D_GGX/DIRECT_DIFFUSE/etc. reference `PI` assuming it's already in scope (see
 // PBR.hpp's file-level contract note). PBRIBL.cpp's own FULL_PBR_FRAGMENT_SHADER_SRC gets this
 // ordering right; this shader originally didn't.
 const float PI = 3.14159265359;
 
-// This shader no longer touches lightCount/lightType/DIRECT_LIGHT/etc. directly -- it only needs
+// This shader no longer touches lightCount/lightType/DIRECT_LIGHT/etc. directly - it only needs
 // the osgx_DirectLighting() CONTRACT declaration (DIRECT_LIGHTING_DECL) plus a call site. The actual
 // per-light dispatch loop lives in a SEPARATE compiled shader object (see makeProgram() below,
-// DIRECT_LIGHTING_HOOK_DEFAULT), linked in at Program-link time -- see PBR.hpp's own comment on
+// DIRECT_LIGHTING_HOOK_DEFAULT), linked in at Program-link time - see PBR.hpp's own comment on
 // DIRECT_LIGHTING_DECL/DIRECT_LIGHTING_HOOK_DEFAULT for the full rationale (mirrors osgSlug's hook
 // pattern). This is the validation vehicle for that new contract, live-tested 2026-08-16.
 #pragma osgx::pbr MATERIAL_STRUCT, DIRECT_LIGHTING_DECL
@@ -129,17 +129,17 @@ osg::ref_ptr<osg::Program> makeProgram() {
 	osgx::registerPBRShaderLibs();
 
 	auto program = osgx::make_nref<osg::Program>("osgx_lights_demo");
-	// Only the fragment shader carries `#pragma osgx::pbr ...` directives -- matches
+	// Only the fragment shader carries `#pragma osgx::pbr ...` directives - matches
 	// osgx::gltf::pbribl::PBRIBLScene::create()'s own split (PBRIBL.cpp), which resolves its
 	// fragment shader but adds its vertex shader unchanged.
 	auto fragmentSrc = osgx::resolveShaderLibs(std::string(FRAGMENT_SHADER));
-	// The osgx_DirectLighting() CONTRACT's default definition -- a second, separately compiled
+	// The osgx_DirectLighting() CONTRACT's default definition - a second, separately compiled
 	// FRAGMENT shader object with no main() of its own, added alongside fragmentSrc above. GLSL
 	// cross-shader-object linking resolves fragmentSrc's forward-declared osgx_DirectLighting() call
 	// against this at Program-link time. Self-contained (carries its own #pragma), so it needs no
 	// further resolveShaderLibs() dependency wiring beyond this one call. Swap this shader object
 	// out for a different one (defining osgx_DirectLighting() differently) to override direct-light
-	// shading without touching fragmentSrc at all -- see PBR.hpp's DIRECT_LIGHTING_DECL comment.
+	// shading without touching fragmentSrc at all - see PBR.hpp's DIRECT_LIGHTING_DECL comment.
 	auto hookSrc = osgx::resolveShaderLibs(std::string(osgx::DIRECT_LIGHTING_HOOK_DEFAULT));
 
 	program->addShader(new osg::Shader(osg::Shader::VERTEX, std::string(VERTEX_SHADER)));
@@ -157,20 +157,20 @@ osg::ref_ptr<osg::Program> makeProgram() {
 // TrackballManipulator's default "home" view fits the WHOLE scene bound, gizmos included, so a
 // light placed far out pushes the camera back and makes the object itself look small/distant even
 // though nothing is actually wrong.
-// Spot's initial apex-to-target distance, in world units -- SPOT_DISTANCE below sizes
+// Spot's initial apex-to-target distance, in world units - SPOT_DISTANCE below sizes
 // LightGizmos' spotConeLength (main()) to match, so the cone gizmo reaches the object
 // instead of stopping short of it (LightMarkers' own default spotConeLength=1.0 is unit-scene-
-// scale, too short here) -- generous enough to still mostly cover the ImGui position slider's
+// scale, too short here) - generous enough to still mostly cover the ImGui position slider's
 // range (see LightsState below) as the light is dragged around live.
 constexpr float SPOT_DISTANCE = 3.5f;
 
 // Persistent, live-editable parameters for all four independently configured LightSet slots.
 struct LightsState {
 	// Axis-aligned on purpose, for unambiguous verification: travel direction (0,0,-1) means the
-	// light source is directly above (+Z), so exactly one cube face -- the top (+Z-normal) face --
+	// light source is directly above (+Z), so exactly one cube face - the top (+Z-normal) face --
 	// should receive direct light; every other face should show only the flat ambient fill.
 	// Each type gets its own strongly saturated, mutually distinct color (red/green/blue/yellow)
-	// against the now-neutral-gray shape (see the `albedo` uniform below) -- makes it immediately
+	// against the now-neutral-gray shape (see the `albedo` uniform below) - makes it immediately
 	// obvious BY EYE which light is contributing, and separates Sphere's color from Point's own
 	// (they used to share one color, making the two easy to visually conflate while comparing).
 	osg::Vec3 directionalDirection{0.0f, 0.0f, -1.0f};
@@ -225,7 +225,7 @@ void applyState(const osgx::LightSet& lights, const LightsState& state) {
 int main() {
 	auto root = osgx::make_ref<osg::Group>();
 	auto geode = osgx::make_ref<osg::Geode>();
-	// A cube, not an icosahedron -- 6 flat, axis-aligned faces make "which side is lit" visually
+	// A cube, not an icosahedron - 6 flat, axis-aligned faces make "which side is lit" visually
 	// unambiguous, unlike 20 near-identical triangular facets.
 	auto shape = osgx::make_ref<osgx::Cube>(osg::Vec3(), 1.2f);
 	auto* ss = geode->getOrCreateStateSet();
@@ -233,7 +233,7 @@ int main() {
 	geode->addDrawable(shape);
 	ss->setMode(GL_CULL_FACE, osg::StateAttribute::ON);
 	ss->setAttributeAndModes(makeProgram(), osg::StateAttribute::ON);
-	// Neutral gray (R=G=B) -- any color tint the shape shows is entirely the direct lights' own
+	// Neutral gray (R=G=B) - any color tint the shape shows is entirely the direct lights' own
 	// color, not mixed with a pre-tinted albedo.
 	ss->addUniform(new osg::Uniform("albedo", osg::Vec3(0.5f, 0.5f, 0.5f)));
 	ss->addUniform(new osg::Uniform("roughness", 0.35f));
@@ -245,7 +245,7 @@ int main() {
 
 	ss->setAttributeAndModes(lights);
 
-	// A shared_ptr, not a `mutable` lambda -- LambdaKeyHandler::_wrap() (Callbacks.hpp) invokes the
+	// A shared_ptr, not a `mutable` lambda - LambdaKeyHandler::_wrap() (Callbacks.hpp) invokes the
 	// stored callable through a const call path, so a `mutable` lambda's non-const operator() can't
 	// bind there; ImGui section callables (Panel::draw()) are likewise called through a const
 	// std::function. The pointee stays mutable through a by-value-captured (and therefore const)
@@ -277,7 +277,7 @@ int main() {
 	auto* manip = new osgGA::TrackballManipulator();
 
 	viewer.setCameraManipulator(manip);
-	// An explicit home position/orientation, not TrackballManipulator's auto-fit default -- looking
+	// An explicit home position/orientation, not TrackballManipulator's auto-fit default - looking
 	// down from above and to the side keeps the top (+Z) face and two side faces all visible at
 	// once (useful for judging which face a directional light is actually hitting), and sidesteps
 	// auto-fit's own habit of zooming out to include the light gizmos scattered around the object,
@@ -294,7 +294,7 @@ int main() {
 	// directional plane/arrow cannot paint over the panel.
 	auto* gui = new osgx::imgui::Widget(viewer, gizmos->getOverlay());
 
-	// Every section's fn() runs directly in Panel's window ID stack -- Panel::draw() (ImGui.cpp)
+	// Every section's fn() runs directly in Panel's window ID stack - Panel::draw() (ImGui.cpp)
 	// only auto-wraps `expand`-mode sections (the Profiler's scrolling table) in their own
 	// PushID(label); ours are all expand=false. Without an explicit PushID/PopID pair per section
 	// here, identical widget labels across sections ("Position", "Color", "Intensity", "Source
@@ -306,7 +306,7 @@ int main() {
 		ImGui::PushID("Directional");
 		bool changed = ImGui::Checkbox("Enabled", &state->directionalEnabled);
 		ImGui::SameLine();
-		ImGui::TextDisabled("no position, no falloff -- parallel rays");
+		ImGui::TextDisabled("no position, no falloff - parallel rays");
 
 		changed |= ImGui::SliderFloat3("Direction", state->directionalDirection.ptr(), -1.0f, 1.0f);
 		changed |= ImGui::ColorEdit3("Color", state->directionalColor.ptr());
@@ -336,7 +336,7 @@ int main() {
 		ImGui::PushID("Sphere");
 		bool changed = ImGui::Checkbox("Enabled", &state->sphereEnabled);
 		ImGui::SameLine();
-		ImGui::TextDisabled("a Point light with sourceRadius > 0 -- not a separate light type");
+		ImGui::TextDisabled("a Point light with sourceRadius > 0 - not a separate light type");
 
 		changed |= ImGui::SliderFloat3("Position", state->spherePosition.ptr(), -5.0f, 5.0f);
 		changed |= ImGui::ColorEdit3("Color", state->sphereColor.ptr());
@@ -362,7 +362,7 @@ int main() {
 		changed |= ImGui::SliderFloat("Outer Cone (deg)", &state->spotOuterDegrees, 0.0f, 89.0f);
 		changed |= ImGui::SliderFloat("Source Radius", &state->spotSourceRadius, 0.0f, 2.0f);
 
-		// GLSL's smoothstep() has undefined results if edge0 >= edge1 -- SPOT_LIGHT_RADIANCE
+		// GLSL's smoothstep() has undefined results if edge0 >= edge1 - SPOT_LIGHT_RADIANCE
 		// (PBR.hpp) calls it as smoothstep(cos(outer), cos(inner), ...), so inner must stay
 		// strictly less than outer here (cosine is decreasing, so this ordering is what keeps
 		// cos(outer) < cos(inner) true no matter what the sliders above just did).

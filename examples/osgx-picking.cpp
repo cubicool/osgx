@@ -2,13 +2,13 @@
 //
 // Texture-based (object ID) picking via RTT FBO, with two readback modes:
 //
-// SYNC (default): osg::Image attachment -- OSG calls glReadPixels internally during
+// SYNC (default): osg::Image attachment - OSG calls glReadPixels internally during
 // RenderStage::drawImplementation while the FBO is still bound.
 // PickReadbackSync (NodeCallback) samples image->data() one frame later.
 //
 // ASYNC (--async): Texture2D attachment + PBO glGetTexImage, one-frame lag.
 // postDrawCallback fires after FBO unbind; glGetTexImage reads from the texture
-// object (FBO binding irrelevant) -- async DMA with a PBO, zero stall.
+// object (FBO binding irrelevant) - async DMA with a PBO, zero stall.
 //
 // The SYNC/ASYNC split mirrors the pattern in osgx::debug::FinalDrawCallback (timer queries).
 //
@@ -56,11 +56,11 @@ osg::ref_ptr<osg::Group> createScene() {
 	struct Entry { osg::Vec3 pos; osg::Vec4 color; };
 
 	static const Entry OBJECTS[] = {
-		{{ -8.0f, 0.0f, 0.0f }, { 1.0f, 0.2f, 0.2f, 1.0f }}, // ID 1 -- red
-		{{ -4.0f, 0.0f, 0.0f }, { 0.2f, 1.0f, 0.2f, 1.0f }}, // ID 2 -- green
-		{{  0.0f, 0.0f, 0.0f }, { 0.2f, 0.2f, 1.0f, 1.0f }}, // ID 3 -- blue
-		{{  4.0f, 0.0f, 0.0f }, { 1.0f, 1.0f, 0.2f, 1.0f }}, // ID 4 -- yellow
-		{{  8.0f, 0.0f, 0.0f }, { 1.0f, 0.2f, 1.0f, 1.0f }}, // ID 5 -- magenta
+		{{ -8.0f, 0.0f, 0.0f }, { 1.0f, 0.2f, 0.2f, 1.0f }}, // ID 1 - red
+		{{ -4.0f, 0.0f, 0.0f }, { 0.2f, 1.0f, 0.2f, 1.0f }}, // ID 2 - green
+		{{  0.0f, 0.0f, 0.0f }, { 0.2f, 0.2f, 1.0f, 1.0f }}, // ID 3 - blue
+		{{  4.0f, 0.0f, 0.0f }, { 1.0f, 1.0f, 0.2f, 1.0f }}, // ID 4 - yellow
+		{{  8.0f, 0.0f, 0.0f }, { 1.0f, 0.2f, 1.0f, 1.0f }}, // ID 5 - magenta
 	};
 
 	for(size_t i = 0; i < std::size(OBJECTS); i++) {
@@ -135,7 +135,7 @@ int main(int argc, char** argv) {
 			                      "SYNC (osg::Image, full FBO)"
 		) << std::endl
 		<< "   region: " << pickSize << "x" << pickSize
-		<< " -- left-click to pick"
+		<< " - left-click to pick"
 		<< std::endl;
 
 	auto scene = createScene();
@@ -204,7 +204,7 @@ int main(int argc, char** argv) {
 	root->addChild(pickCam);
 	root->addChild(scene);
 
-	// osgx::platform::CursorState/CursorHandler/CursorCallback quick smoke test -- the general
+	// osgx::platform::CursorState/CursorHandler/CursorCallback quick smoke test - the general
 	// cursor-tracking primitive TODO.md just gained, unrelated to picking itself. Dumps to the
 	// console only when the position (or in-window state) actually changes, since a plain
 	// per-frame print would flood the terminal.

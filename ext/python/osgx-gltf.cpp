@@ -2,7 +2,7 @@
 
 // This whole file only compiles (and is only added to the source list, see CMakeLists.txt) when
 // OSGX_BUILD_GLTF is on. It deliberately owns its tinygltf/osgx::gltf includes locally instead of
-// pulling them into the shared osgx-python.hpp umbrella header -- tinygltf's headers are heavy
+// pulling them into the shared osgx-python.hpp umbrella header - tinygltf's headers are heavy
 // and previously forced every single binding file in the old monolithic ext/osgx-python.cpp to
 // pay their parse cost, even ones that never touch glTF at all.
 #ifdef OSGX_GLTF
@@ -125,7 +125,7 @@ py::dict textureInfo(const tg3_model& model, int textureIdx, int texCoord) {
 			out["imageUri"] = maybeString(image.uri);
 			out["imageWidth"] = image.width;
 			out["imageHeight"] = image.height;
-			// tinygltf v3.0.1 never populates image.image itself (see Texture.cpp -- osgx
+			// tinygltf v3.0.1 never populates image.image itself (see Texture.cpp - osgx
 			// self-decodes embedded/data-URI images via OSG's own plugins instead), so
 			// "embedded" here means "has no external uri", not "tinygltf already decoded it".
 			out["embedded"] = image.uri.len == 0;
@@ -445,7 +445,7 @@ py::dict animationInfo(const tg3_model& model, int animationIdx) {
 	return out;
 }
 
-py::dict inspectGLTF(const std::string& path, bool /* loadImages -- tinygltf v3.0.1 never decodes
+py::dict inspectGLTF(const std::string& path, bool /* loadImages - tinygltf v3.0.1 never decodes
 	image pixel data regardless of this flag (see Texture.cpp's self-decode comment); kept for
 	Python API source compatibility only, no effect here */) {
 	tinygltf3::Model model;
@@ -456,7 +456,7 @@ py::dict inspectGLTF(const std::string& path, bool /* loadImages -- tinygltf v3.
 
 	// inspectGLTF() doesn't go through osgx::gltf::Reader, so it needs its own fs.read_file
 	// (tg3_parse_file has no fallback beyond TINYGLTF3_ENABLE_FS-style opt-in macros this
-	// project doesn't define) -- reuse the same plain-read implementation ReaderImpl.cpp uses.
+	// project doesn't define) - reuse the same plain-read implementation ReaderImpl.cpp uses.
 	opts.fs.read_file = &osgx::gltf::detail::tg3_read_file;
 	opts.fs.free_file = &osgx::gltf::detail::tg3_free_file;
 
@@ -542,7 +542,7 @@ py::dict inspectGLTF(const std::string& path, bool /* loadImages -- tinygltf v3.
 		nodeDict["children"] = children;
 
 		// v3 always populates translation/rotation/scale/matrix with spec defaults, plus an
-		// explicit has_matrix flag -- see Scene.cpp's _createNode for the same convention.
+		// explicit has_matrix flag - see Scene.cpp's _createNode for the same convention.
 		nodeDict["hasMatrix"] = static_cast<bool>(node.has_matrix);
 		nodeDict["hasTranslation"] = !node.has_matrix;
 		nodeDict["hasRotation"] = !node.has_matrix;
@@ -645,17 +645,17 @@ std::string inspectGLTFJson(const std::string& path, bool loadImages, int indent
 // Owns both the pyx::PollableProgress<Stage> a background thread writes into and the poller's
 // own "last seen generation" cursor. Kept as one Python-visible object (rather than exposing
 // PollableProgress directly) so a caller never has to thread a generation variable through
-// itself -- construct one, hand it to readNodeFile(), and call .poll() from a loop with a real
+// itself - construct one, hand it to readNodeFile(), and call .poll() from a loop with a real
 // sleep between checks (see pyosg_async.run_with_progress()). The call itself is free of GIL
 // contention (see pybind11x.hpp's PollableProgress docs), but the loop calling it still needs a
-// real cadence -- a zero-delay busy-loop caused a genuine, measured slowdown; see
+// real cadence - a zero-delay busy-loop caused a genuine, measured slowdown; see
 // run_with_progress()'s docstring.
 struct AsyncProgress {
 	pyx::PollableProgress<osgx::gltf::Reader::Stage> progress;
 	std::uint64_t seen = 0;
 
 	// Returns None when nothing changed since the last poll() call, otherwise
-	// (stage_name, current, total, section, overall) -- the same shape readNodeFileAsync used to
+	// (stage_name, current, total, section, overall) - the same shape readNodeFileAsync used to
 	// push through a queue, just pulled instead of pushed. `overall` is a monotonic 0.0-1.0
 	// estimate of progress across the whole load (see Reader::computeOverall()), reported
 	// alongside the per-section (current, total) detail rather than in place of it.
@@ -679,20 +679,20 @@ struct AsyncProgress {
 
 // glTF load off the GIL: releases the GIL and calls osgx::gltf::Reader directly (bypassing the
 // generic osgDB::readNodeFile plugin dispatch, which has no hook for a progress callback). This
-// function is a plain blocking call -- run it via asyncio.to_thread(...) from Python to get it
+// function is a plain blocking call - run it via asyncio.to_thread(...) from Python to get it
 // off the render thread; see examples/pyosg_async.py's run_with_progress() for the awaiting
-// side. Progress is written into `progress` (an AsyncProgress) purely through atomics -- this
+// side. Progress is written into `progress` (an AsyncProgress) purely through atomics - this
 // function never touches Python once it starts, not even to report progress, which is what
 // makes it safe to poll from the main thread as tightly as that thread likes without
 // contending with it for the GIL (see aipython/25-async-loading.md).
 //
-// The final osg::ref_ptr<osg::Node> is returned normally, not pushed anywhere -- when called via
+// The final osg::ref_ptr<osg::Node> is returned normally, not pushed anywhere - when called via
 // asyncio.to_thread(...), asyncio's own machinery delivers it back to the awaiting coroutine
 // through its Future, touching the GIL exactly once, at completion. That single unavoidable
 // touch was never the problem; the repeated per-tick progress touches were.
 //
 // Cancellation via `stop` is cooperative and can only take effect between osgx::gltf::Reader's own
-// checkpoints (see osgx::gltf::Reader::ProgressCallback) -- it cannot interrupt tinygltf's own file
+// checkpoints (see osgx::gltf::Reader::ProgressCallback) - it cannot interrupt tinygltf's own file
 // parse/decode, which is a single opaque blocking call. If a stop was requested by the time
 // read() returns, nullptr is returned instead of the loaded node.
 osg::ref_ptr<osg::Node> readNodeFile(
@@ -707,7 +707,7 @@ osg::ref_ptr<osg::Node> readNodeFile(
 	// osgDB::readNodeFile() path. Without this, the reader's three cache-checking call sites
 	// (occlusion/metallic-roughness bake, base color, normal map) all skip their cache lookup and
 	// silently reload+redecode any texture referenced by more than one material in the
-	// model -- measured 4.5x slower (13.5s vs 2.96s) on a real multi-material asset
+	// model - measured 4.5x slower (13.5s vs 2.96s) on a real multi-material asset
 	// before this was added.
 	static osgx::gltf::Reader::TextureCache s_asyncTextureCache;
 
@@ -735,7 +735,7 @@ osg::ref_ptr<osg::Node> readNodeFile(
 
 namespace osgx_python {
 
-// osgx::gltf -- glTF 2.0 loader plus its optional osgx::gltf::pbribl PBR/IBL adapter, merged from
+// osgx::gltf - glTF 2.0 loader plus its optional osgx::gltf::pbribl PBR/IBL adapter, merged from
 // the formerly-separate osgGLTF repo/Python module 2026-07-30. Nested exactly like the C++
 // namespace (osgx::gltf::shader, osgx::gltf::pbribl).
 void bind_gltf(py::module_& m_gltf) {
@@ -815,7 +815,7 @@ void bind_gltf(py::module_& m_gltf) {
 		"Prepared IBL resources: a GGX-prefiltered specular cubemap, a Lambertian diffuse "
 		"cubemap, a BRDF LUT, plus the KTX/OpenGL cubemap lookup basis relative to the loader's "
 		"Z-up world. `root`, when present, holds PRE_RENDER bake passes still populating a "
-		"texture -- add it to a rendered scene graph before relying on that texture's contents; "
+		"texture - add it to a rendered scene graph before relying on that texture's contents; "
 		"a fully pre-baked environment has no root and leaves it None."
 	)
 		.def(py::init<>(), "Constructs an empty, invalid PBRIBLEnvironment.")
@@ -854,7 +854,7 @@ void bind_gltf(py::module_& m_gltf) {
 			"hdrPath"_a,
 			"lutSize"_a=1024,
 			"Bake diffuse irradiance, the BRDF LUT, and GGX-prefiltered specular all live from hdrPath "
-			"alone -- no pre-baked KTX2 required. Add root to the rendered scene graph so its "
+			"alone - no pre-baked KTX2 required. Add root to the rendered scene graph so its "
 			"PRE_RENDER passes can populate the generated textures."
 		)
 		.def_static(
@@ -864,7 +864,7 @@ void bind_gltf(py::module_& m_gltf) {
 			),
 			"hdrPath"_a,
 			"lutSize"_a=1024,
-			"Same as prepare(), but never GGX-prefilters a specular cubemap from hdrPath -- for a "
+			"Same as prepare(), but never GGX-prefilters a specular cubemap from hdrPath - for a "
 			"caller whose specular reflection always comes from somewhere else (e.g. a live "
 			"procedural rebake) and would otherwise pay for a real bake only to discard it before "
 			"it's ever sampled. envMap comes back as a small, valid, unbaked placeholder; supply "
@@ -882,7 +882,7 @@ void bind_gltf(py::module_& m_gltf) {
 	py::class_<osgx::gltf::pbribl::PBRIBLScene>(
 		m_gltf_pbribl,
 		"PBRIBLScene",
-		"The result of applying osgx::gltf::pbribl's renderer to a node -- the node itself plus "
+		"The result of applying osgx::gltf::pbribl's renderer to a node - the node itself plus "
 		"live debug/intensity osg.Uniform refs a caller can tune after scene creation."
 	)
 		.def(py::init<>(), "Constructs an empty, invalid PBRIBLScene.")
@@ -939,10 +939,10 @@ void bind_gltf(py::module_& m_gltf) {
 			"hooks: an osgx.HookList (a list of (osgx.Hook, osg.Shader) pairs) substituting this "
 			"Program's built-in shader for a slot. This Program supports osgx.Hook.Skinning (a "
 			"VERTEX osg.Shader defining osgx_gltf_ApplySkin(vec4, vec3, vec3), REPLACING the default "
-			"identity passthrough -- pass osgx.gltf.shader.SKINNING_HOOK_LINEAR_BLEND, wrapped in "
+			"identity passthrough - pass osgx.gltf.shader.SKINNING_HOOK_LINEAR_BLEND, wrapped in "
 			"osgx.gltf.pbribl.resolveShaderLibs(), to enable standard glTF joint-matrix skinning) and "
 			"osgx.Hook.Tonemap (a FRAGMENT osg.Shader defining osgx_Tonemap(vec3), REPLACING the "
-			"built-in PBR Neutral curve). Each hook substitutes rather than adds -- GLSL permits one "
+			"built-in PBR Neutral curve). Each hook substitutes rather than adds - GLSL permits one "
 			"body per function, so attaching a second definition alongside the built-in is a link "
 			"error, not an override."
 		)
@@ -1013,7 +1013,7 @@ void bind_gltf(py::module_& m_gltf) {
 		)
 		.def_readwrite(
 			"hooks", &osgx::gltf::pbribl::PBRIBLLightingPassOptions::hooks,
-			"An osgx.HookList substituting this pass's built-in shader for a slot -- "
+			"An osgx.HookList substituting this pass's built-in shader for a slot - "
 			"osgx.Hook.DeferredLighting (the whole fragment main()), osgx.Hook.DirectLighting, "
 			"and osgx.Hook.Tonemap are supported. Each REPLACES its default, it does not add "
 			"alongside it."
@@ -1025,7 +1025,7 @@ void bind_gltf(py::module_& m_gltf) {
 		.def_readwrite(
 			"aoTexture", &osgx::gltf::pbribl::PBRIBLLightingPassOptions::aoTexture,
 			"Optional ambient-occlusion texture, multiplied into the ambient term. This pass does "
-			"not bake SSAO itself -- feed osgx.gbuffer.SSAO.create()'s result here, or any other "
+			"not bake SSAO itself - feed osgx.gbuffer.SSAO.create()'s result here, or any other "
 			"occlusion source."
 		)
 		.def_readwrite(
@@ -1058,7 +1058,7 @@ void bind_gltf(py::module_& m_gltf) {
 		.def_readwrite(
 			"mainViewMatrix",
 			&osgx::gltf::pbribl::PBRIBLLightingScene::mainViewMatrix,
-			"mainCamera's view matrix, refreshed by update() -- the quad's own camera is "
+			"mainCamera's view matrix, refreshed by update() - the quad's own camera is "
 			"ABSOLUTE_RF, so OSG's automatic osg_ViewMatrix resolves to identity, not mainCamera's "
 			"real matrix."
 		)
@@ -1088,7 +1088,7 @@ void bind_gltf(py::module_& m_gltf) {
 			"osgx_DirectLighting() definition), and osgx.Hook.Tonemap. Each replaces its default "
 			"shader object. Call .update() from a preDrawCallback on the "
 			"FIRST PRE_RENDER camera in the scene graph every frame to keep it in sync as mainCamera "
-			"moves -- NOT from mainCamera's own preDrawCallback or from application code after "
+			"moves - NOT from mainCamera's own preDrawCallback or from application code after "
 			"frame() returns, both of which hand this pass a stale matrix."
 		)
 		.def(
@@ -1097,7 +1097,7 @@ void bind_gltf(py::module_& m_gltf) {
 			"mainCamera"_a,
 			"Refreshes this scene's manually-maintained view-matrix uniforms from mainCamera's "
 			"current matrices. Call from a preDrawCallback on the FIRST PRE_RENDER camera in the "
-			"scene graph (by render order) every frame -- every PRE_RENDER camera finishes drawing "
+			"scene graph (by render order) every frame - every PRE_RENDER camera finishes drawing "
 			"before mainCamera's own preDrawCallback fires, so calling this from mainCamera's "
 			"callback (or from application code after viewer.frame() returns) hands the lighting "
 			"pass a one-frame-stale matrix relative to what the geometry pass just rendered with, "
@@ -1181,9 +1181,9 @@ void bind_gltf(py::module_& m_gltf) {
 			"(stage, current, total, section, overall). current/total/section are real, "
 			"never-fabricated detail within the current section; overall is a monotonic 0.0-1.0 "
 			"estimate of progress across the whole load, reported alongside that detail rather "
-			"than in place of it -- see osgx::gltf::Reader::computeOverall() for how it's "
+			"than in place of it - see osgx::gltf::Reader::computeOverall() for how it's "
 			"weighted. The call itself is cheap (no GIL contention, since readNodeFile() never "
-			"touches Python to report progress) -- but still call it from a loop with a real "
+			"touches Python to report progress) - but still call it from a loop with a real "
 			"sleep between checks (e.g. pyosg_async.run_with_progress()), never from a "
 			"zero-delay busy-loop; see that function's docstring for the real slowdown a "
 			"busy-loop caused."
@@ -1198,11 +1198,11 @@ void bind_gltf(py::module_& m_gltf) {
 			"stop_event"_a,
 			"progress"_a,
 			"options"_a=nullptr,
-			"Load a glTF/GLB file off the GIL. A plain blocking call -- run it via "
+			"Load a glTF/GLB file off the GIL. A plain blocking call - run it via "
 			"asyncio.to_thread(...) from Python; see examples/pyosg_async.py's "
 			"run_with_progress() and examples/pyosg-async-gltf.py for the awaiting side. "
 			"Progress is written into `progress` (an AsyncProgress) purely through atomics, "
-			"polled rather than pushed -- this function never touches Python once it starts. "
+			"polled rather than pushed - this function never touches Python once it starts. "
 			"`options` is a plain osgDB.Options (its optionString reaches the same "
 			"gltfSkipNormals/gltfZUp/gltfSkipSpecGlossBake/gltfSkipAnimation/"
 			"gltfStripPNGColorMetadata flags osgDB.readNodeFile()'s options honor)."

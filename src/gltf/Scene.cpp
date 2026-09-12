@@ -130,7 +130,7 @@ private:
 		osg::MatrixTransform* transform = new osg::MatrixTransform();
 
 		// v3 always populates translation/rotation/scale with spec defaults (and matrix with
-		// an identity diagonal) regardless of whether the JSON specified them -- has_matrix is
+		// an identity diagonal) regardless of whether the JSON specified them - has_matrix is
 		// the real, explicit "was a matrix given" signal, replacing the old size()==16/3/3/4
 		// presence-check idiom entirely.
 		if(node.has_matrix) {

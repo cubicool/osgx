@@ -11,7 +11,7 @@ void bind_debug(py::module_& m_debug) {
 	>(
 		m_debug,
 		"GraphicsOperation",
-		"A GraphicsContext realize operation that calls osgx.debug.initialize() -- install via "
+		"A GraphicsContext realize operation that calls osgx.debug.initialize() - install via "
 		"viewer.setRealizeOperation() to bind the GL_KHR_debug function pointers as soon as the "
 		"context is ready, instead of calling initialize() by hand."
 	)

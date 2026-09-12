@@ -6,9 +6,9 @@
 // With no arguments, renders a grid of colored boxes in the XY plane.
 // Pass "orbit" to use OrbitAxisManipulator instead of Ortho2DManipulator.
 // Pass "intents" to use osgx::CameraManipulator<> (defaults to TrackballManipulator) wrapped with
-// one-shot camera intents -- press '1' for a FlyToCallback to an alternate viewpoint, '2' for a
+// one-shot camera intents - press '1' for a FlyToCallback to an alternate viewpoint, '2' for a
 // ShakeCallback. Normal trackball orbit/pan/zoom/Home all still work exactly as plain
-// TrackballManipulator would, proving Base inheritance is transparent -- this is the C++-only
+// TrackballManipulator would, proving Base inheritance is transparent - this is the C++-only
 // verification step for osgx::CameraManipulator<Base>, no Python involved.
 // Pass a model path (after "orbit"/"intents", if present) to load and inspect it instead of the
 // grid.
@@ -16,7 +16,7 @@
 // In "orbit" mode, press 'c' to toggle osgx::platform::PointerCapture: the cursor hides and
 // warps back to window-center every frame, feeding accumulated deltas into
 // OrbitAxisManipulator::orbitByDelta() instead of the manipulator's own raw-cursor-position
-// tracking (which is bounded by the physical screen edge -- this is the actual motivating test
+// tracking (which is bounded by the physical screen edge - this is the actual motivating test
 // for PointerCapture, see TODO.md's "osgx::platform later work"). The manipulator's own
 // MOVE/DRAG-driven orbit is disabled for the duration via setLiveOrbitEnabled(false), since OSG
 // delivers every event to both the manipulator and every other GUIEventHandler unconditionally
@@ -81,8 +81,8 @@ static osg::ref_ptr<osg::Node> createDefaultScene() {
 }
 
 // Bridges osgx::platform::PointerCapture into OrbitAxisManipulator::orbitByDelta(): toggles
-// capture on 'c', and while captured, feeds each frame's accumulated pixel delta -- normalized by
-// the window's half-width/half-height to match orbitByDelta()'s [-1, 1]-ish scale -- into the
+// capture on 'c', and while captured, feeds each frame's accumulated pixel delta - normalized by
+// the window's half-width/half-height to match orbitByDelta()'s [-1, 1]-ish scale - into the
 // manipulator instead of letting it track the raw cursor itself.
 class OrbitCaptureBridge: public osgGA::GUIEventHandler {
 public:
@@ -117,12 +117,12 @@ public:
 		double w = ea.getXmax() - ea.getXmin();
 		double h = ea.getYmax() - ea.getYmin();
 
-		// PointerCapture reports raw ea.getX()/getY() units by design (see osgx/Cursor.hpp) -- it
+		// PointerCapture reports raw ea.getX()/getY() units by design (see osgx/Cursor.hpp) - it
 		// doesn't know or care what those units mean to a caller. orbitByDelta()'s dy, though,
 		// matches getYnormalized() (up-positive), the same convention OrbitAxisManipulator's own
 		// live MOVE/DRAG tracking uses internally. Raw Y is up-positive or down-positive depending on
 		// the window's mouse orientation (X11 defaults to Y_INCREASING_DOWNWARDS), so it must be
-		// flipped to match here -- otherwise height responds backwards relative to the uncaptured
+		// flipped to match here - otherwise height responds backwards relative to the uncaptured
 		// feel. X has no such flip: getXnormalized() has no orientation dependence.
 		double dy = ea.getMouseYOrientation() == osgGA::GUIEventAdapter::Y_INCREASING_DOWNWARDS
 			? -delta.y()
@@ -198,10 +198,10 @@ int main(int argc, char** argv) {
 		};
 
 		// Two viewpoints swept ~80 degrees apart across the SAME side of the model (not diametrically
-		// opposite) -- '3' patrols between them forever via a single multi-waypoint FlyToCallback
+		// opposite) - '3' patrols between them forever via a single multi-waypoint FlyToCallback
 		// under osgAnimation::Motion::LOOP, no hand-rolled C++ ping-pong driver needed.
 		// FlyToCallback's orientation interpolation is a plain slerp between two fixed lookAt()
-		// quaternions, not an arc/orbit -- two viewpoints ~180 degrees apart (e.g. directly opposite
+		// quaternions, not an arc/orbit - two viewpoints ~180 degrees apart (e.g. directly opposite
 		// sides, both looking at the same center) makes that slerp degenerate: the rotation angle
 		// being interpolated is maximal/near-ambiguous, so partway through the flight the camera can
 		// face some arbitrary perpendicular direction, losing the model out of the view frustum
@@ -209,11 +209,11 @@ int main(int argc, char** argv) {
 		// 180 degrees of each other keeps the model in frame throughout the whole flight.
 		//
 		// The camera's own current pose becomes the implicit leg-0 start, and LOOP wraps the WHOLE
-		// path (including that captured start) back to t=0 every cycle -- per FlyToCallback's own
+		// path (including that captured start) back to t=0 every cycle - per FlyToCallback's own
 		// documented convention (matching osg::AnimationPath's LOOP), a seamless loop is the caller's
 		// job. Pressing '3' from near patrolA/patrolB keeps that wrap unnoticeable in practice;
 		// pressing it from an arbitrary orbit position will visibly snap back through that starting
-		// pose once per cycle -- expected, not a bug.
+		// pose once per cycle - expected, not a bug.
 		osgx::Viewpoint patrolA{
 			osg::Vec3d(bs.center()) + osg::Vec3d(bs.radius() * 2.0, -bs.radius() * 1.8, bs.radius() * 0.5),
 			osg::Vec3d(bs.center()),
@@ -225,8 +225,8 @@ int main(int argc, char** argv) {
 			osg::Vec3d(0.0, 0.0, 1.0)
 		};
 
-		// Tracks the currently-running patrol (if any) so '3' TOGGLES it -- press once to start,
-		// press again to stop -- rather than stacking a new LOOP FlyToCallback (which never
+		// Tracks the currently-running patrol (if any) so '3' TOGGLES it - press once to start,
+		// press again to stop - rather than stacking a new LOOP FlyToCallback (which never
 		// finishes on its own) on every press. Captured by value + mutable: the LambdaKeyHandler
 		// owns one persistent copy of this lambda, so the ref_ptr genuinely persists across calls.
 		osg::ref_ptr<osgx::FlyToCallback> patrol;
@@ -257,7 +257,7 @@ int main(int argc, char** argv) {
 						// happened to arrive meanwhile (Base::handle() is never intercepted, only
 						// peeked at). Without this resync, removing the patrol would snap the view to
 						// that stale hidden state instead of resuming smoothly from wherever the
-						// patrol left the camera -- same resync FlyToCallback already does on normal
+						// patrol left the camera - same resync FlyToCallback already does on normal
 						// CLAMP arrival, just triggered by an interrupt instead of completion.
 						manip->setByMatrix(osg::Matrixd::inverse(camera->getViewMatrix()));
 
@@ -272,7 +272,7 @@ int main(int argc, char** argv) {
 							osgAnimation::Motion::LOOP
 						);
 
-						// LOOP never finishes on its own -- runOnce is inert here either way; the
+						// LOOP never finishes on its own - runOnce is inert here either way; the
 						// toggle above is what actually stops it.
 						manip->addUpdateCameraCallback(patrol, false);
 					}
@@ -288,7 +288,7 @@ int main(int argc, char** argv) {
 			<< " '1' FlyToCallback to an alternate viewpoint (1.5s)" << std::endl
 			<< " '2' ShakeCallback (0.4s)" << std::endl
 			<< " '3' toggle a multi-waypoint FlyToCallback LOOP patrol between two viewpoints" << std::endl
-			<< " '1'/'2' both compose cleanly on top of an active '3' patrol -- try it" << std::endl
+			<< " '1'/'2' both compose cleanly on top of an active '3' patrol - try it" << std::endl
 		;
 	}
 

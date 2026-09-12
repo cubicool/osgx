@@ -15,19 +15,19 @@ namespace osgx {
 namespace {
 
 // ------------------------------------------------------------------------------------------------
-// Pick shader strings -- hook-based design, multi-shader-object linking
+// Pick shader strings - hook-based design, multi-shader-object linking
 //
 // Two shader objects per stage: core declares the hook prototype, hook provides the definition.
 // Swap only the hook to change picking behavior without recompiling the core.
 //
-// pickVertexHook() -- end of vertex stage; forward per-vertex attributes to the frag stage.
+// pickVertexHook() - end of vertex stage; forward per-vertex attributes to the frag stage.
 // Default: no-op (PICK_VERT_HOOK_NOOP).
 //
-// getPickID() -- fragment stage; return the pick ID for this fragment.
+// getPickID() - fragment stage; return the pick ID for this fragment.
 // Default: reads uniform uint pickID (PICK_FRAG_HOOK_UNIFORM).
 //
 // makePickCamera() assembles these into a program and installs it with OVERRIDE, unless
-// installProgram=false -- see its own doc comment in osgx/Picking.hpp.
+// installProgram=false - see its own doc comment in osgx/Picking.hpp.
 // ------------------------------------------------------------------------------------------------
 
 // Core: declares the hook prototypes and provides the main() implementations.
@@ -60,10 +60,10 @@ void main() {
 // Default hooks: no vertex forwarding; fragment reads uniform uint pickID.
 //
 // Each osg::Shader source is compiled as its OWN translation unit (glCompileShader runs on
-// every shader object individually, before linking) -- GLSL requires #version to be the first
+// every shader object individually, before linking) - GLSL requires #version to be the first
 // token if present at all, and defaults to 1.10 when absent. PICK_VERT_CORE/PICK_FRAG_CORE
 // above declare #version 430 core, but these hook strings didn't, so `uint` (GLSL 1.30+) failed
-// to compile despite the core shaders being fine -- driver-dependent whether that's enforced
+// to compile despite the core shaders being fine - driver-dependent whether that's enforced
 // per-object or only at link time, which is why this didn't necessarily fail everywhere.
 constexpr const char* PICK_VERT_HOOK_NOOP = R"GLSL(
 #version 430 core
@@ -110,7 +110,7 @@ osg::ref_ptr<osg::Camera> makePickCamera(
 	osg::Shader* fragHook
 ) {
 	auto cam = make_nref<RTT>("PickCamera", w, h);
-	// Overrides RTT's PRE_RENDER default -- this pass deliberately runs POST_RENDER (see
+	// Overrides RTT's PRE_RENDER default - this pass deliberately runs POST_RENDER (see
 	// CLAUDE.md's osgx-picking writeup for why). ABSOLUTE_RF (the sharp edge the comment below
 	// used to carry alone) is already RTT's own default, same reasoning as ever: without it the
 	// camera composes view/projection with the parent transform stack, producing a wrong cull
@@ -119,7 +119,7 @@ osg::ref_ptr<osg::Camera> makePickCamera(
 	cam->setClearMask(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 	cam->setClearColor(osg::Vec4(0.0f, 0.0f, 0.0f, 0.0f)); // all-zero RGBA = ID 0 = no pick
 	cam->setSmallFeatureCullingPixelSize(-1.0f);
-	// Implicit renderbuffer -- no readback needed, this only exists so overlapping pickable
+	// Implicit renderbuffer - no readback needed, this only exists so overlapping pickable
 	// geometry at different depths resolves nearest-wins during THIS pass instead of last-
 	// drawn-wins. setClearMask() above already asked for GL_DEPTH_BUFFER_BIT; without an actual
 	// attachment here that clear (and any depth test) is a silent no-op against a buffer that
@@ -130,11 +130,11 @@ osg::ref_ptr<osg::Camera> makePickCamera(
 		cam->attach(osg::Camera::COLOR_BUFFER, image);
 
 		// CONTINUOUS/hover-mode readbacks (PickReadbackSync) poll this image every update
-		// traversal, including before the pick camera has ever actually rendered -- an
+		// traversal, including before the pick camera has ever actually rendered - an
 		// already-allocated image's memory is whatever allocateImage() left it as (garbage,
 		// not zero), which decodes as a bogus nonzero pick ID and fires a spurious onEnter.
 		// Zero it here, once, so ID 0 (background) holds until the first real render --
-		// matching the camera's own all-zero clear color -- instead of relying on every
+		// matching the camera's own all-zero clear color - instead of relying on every
 		// caller to memset() it themselves (found independently in both the C++ and Python
 		// hover examples).
 		if(image->valid() && image->data()) {
@@ -145,7 +145,7 @@ osg::ref_ptr<osg::Camera> makePickCamera(
 
 	if(!installProgram && (vertHook || fragHook)) {
 		osg::notify(osg::WARN) <<
-			"osgx::makePickCamera: vertHook/fragHook ignored -- installProgram=false means no "
+			"osgx::makePickCamera: vertHook/fragHook ignored - installProgram=false means no "
 			"core program exists for them to attach to" << std::endl;
 	}
 
@@ -170,7 +170,7 @@ osg::ref_ptr<osg::Camera> makePickCamera(
 
 	// BlendFunc(ONE,ZERO) with PROTECTED: osg::Text re-enables blend without
 	// respecting OVERRIDE alone; PROTECTED prevents any child from overriding it. Kept
-	// regardless of installProgram -- correct pick-buffer semantics (opaque write, no
+	// regardless of installProgram - correct pick-buffer semantics (opaque write, no
 	// blending) apply no matter whose Program is actually running.
 	auto* bf = new osg::BlendFunc(
 		osg::BlendFunc::ONE, osg::BlendFunc::ZERO,
@@ -199,7 +199,7 @@ osg::ref_ptr<osg::Camera> makePickCamera(
 	tex->setFilter(osg::Texture::MAG_FILTER, osg::Texture::NEAREST);
 
 	auto cam = make_nref<RTT>("PickCamera", w, h);
-	// Overrides RTT's PRE_RENDER default -- see the Image overload's identical override above.
+	// Overrides RTT's PRE_RENDER default - see the Image overload's identical override above.
 	cam->setRenderOrder(osg::Camera::POST_RENDER);
 	cam->setClearMask(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 	cam->setClearColor(osg::Vec4(0.0f, 0.0f, 0.0f, 0.0f)); // all-zero RGBA = ID 0 = no pick
@@ -210,7 +210,7 @@ osg::ref_ptr<osg::Camera> makePickCamera(
 
 	if(!installProgram && (vertHook || fragHook)) {
 		osg::notify(osg::WARN) <<
-			"osgx::makePickCamera: vertHook/fragHook ignored -- installProgram=false means no "
+			"osgx::makePickCamera: vertHook/fragHook ignored - installProgram=false means no "
 			"core program exists for them to attach to" << std::endl;
 	}
 
@@ -483,7 +483,7 @@ void PickCameraSync::operator()(osg::Node* node, osg::NodeVisitor* nv) {
 		// Transparent, no caller opt-in needed: OSG's own event stream has no "pointer left the
 		// window" event at all (see platform::isCursorInWindow()'s own comment), so continuous/
 		// hover picking has no way to notice on its own that the cursor is gone and clear
-		// itself -- the sub-frustum below would otherwise keep re-aiming at the last MOVE
+		// itself - the sub-frustum below would otherwise keep re-aiming at the last MOVE
 		// event's position forever, reporting stale hover indefinitely. Checked every update
 		// traversal, right here, since this callback already runs every frame regardless of
 		// whether anything is actually picking-relevant that frame. isCursorInWindow() fails
@@ -493,7 +493,7 @@ void PickCameraSync::operator()(osg::Node* node, osg::NodeVisitor* nv) {
 
 		// Same shape as the isCursorInWindow() case just above, for a different reason: some
 		// other UI (ImGui) currently has mouse capture, so PickHandler stopped updating
-		// mouseX()/mouseY() and they're frozen at the last real 3D-viewport position -- see
+		// mouseX()/mouseY() and they're frozen at the last real 3D-viewport position - see
 		// PickReadback::setSuspended()'s own comment for why a single invalidate() at the moment
 		// capture started isn't enough. Called every frame, unconditionally, for as long as
 		// isSuspended() stays true, so the sub-frustum below re-aiming at that frozen (but still
@@ -504,16 +504,16 @@ void PickCameraSync::operator()(osg::Node* node, osg::NodeVisitor* nv) {
 		// are window-absolute, and nothing guarantees they land inside THIS camera's own
 		// viewport just because they came from a real, freshly-handled event. Concretely:
 		// osgx::imgui::Widget::handle() reads io.WantCaptureMouse in the SAME call where it
-		// just fed the new position to io.AddMousePosEvent() -- Dear ImGui only recomputes
+		// just fed the new position to io.AddMousePosEvent() - Dear ImGui only recomputes
 		// WantCaptureMouse inside NewFrame() (run later, from Widget's own PreDraw callback),
 		// so that read is one ImGui frame stale. The very first MOVE event whose coordinates
 		// land on an ImGui panel is still evaluated against the PREVIOUS frame's hover result
 		// (still false), so it comes through with ea.getHandled()==false, isSuspended() never
 		// gets set for it, and PickHandler stores that real-but-out-of-viewport coordinate as
-		// mouseX()/mouseY() -- not frozen at the last good 3D position at all, but pinned to
+		// mouseX()/mouseY() - not frozen at the last good 3D position at all, but pinned to
 		// that one bad sample, indefinitely if no further MOVE event happens to correct it.
 		// Checking the coordinate directly against the viewport has no such lag, since it
-		// doesn't depend on any other handler's state -- only on this frame's own geometry.
+		// doesn't depend on any other handler's state - only on this frame's own geometry.
 		bool cursorInViewport = false;
 
 		if(_rb && width > 0 && height > 0) {
@@ -529,7 +529,7 @@ void PickCameraSync::operator()(osg::Node* node, osg::NodeVisitor* nv) {
 			// mouseX()/mouseY() are window-absolute; the sub-frustum below is built relative
 			// to THIS camera's own viewport, so the cursor position has to be viewport-local
 			// too, or the sub-frustum aims at the wrong point whenever the main viewport's
-			// origin isn't (0, 0) -- see PickReadback::setWindowOrigin's own comment.
+			// origin isn't (0, 0) - see PickReadback::setWindowOrigin's own comment.
 			double cx = (_rb->mouseX() - originX) + 0.5;
 			double cy = (_rb->mouseY() - originY) + 0.5;
 			double W = static_cast<double>(width);
@@ -564,11 +564,11 @@ void PickHoverCallback::operator()(osg::Node* node, osg::NodeVisitor* nv) {
 
 bool PickHandler::handle(const osgGA::GUIEventAdapter& ea, osgGA::GUIActionAdapter&) {
 	// Some earlier handler (osgx::imgui::Widget, which registers itself at the FRONT of the
-	// handler list -- see Widget's own constructor) already claimed this event, e.g. the cursor
+	// handler list - see Widget's own constructor) already claimed this event, e.g. the cursor
 	// is over an ImGui panel. Match the convention every other OSG handler follows (see
 	// StatsHandler/HelpHandler/the stock manipulators) and bail immediately, instead of also
 	// updating pick state from a mouse position that isn't really "over the 3D scene". Recorded
-	// via setSuspended() rather than a one-shot invalidate() here -- PickCameraSync re-invalidates
+	// via setSuspended() rather than a one-shot invalidate() here - PickCameraSync re-invalidates
 	// continuously every frame for as long as this stays true, which is what actually prevents
 	// the sub-frustum from re-detecting a hover at the now-frozen mouseX()/mouseY() a frame
 	// later; see PickReadback::setSuspended()'s own comment.

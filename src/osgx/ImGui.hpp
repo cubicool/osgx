@@ -28,7 +28,7 @@ namespace imgui {
 // IMGUI_HAS_DOCK/DockSpaceOverViewport), so there's no drag-to-dock here the way
 // osgEarth's ImGuiEventHandler does it with its own vendored docking-branch imgui.h.
 // Dock::LEFT/RIGHT instead just pins the "osgx::imgui" window to that edge, full
-// viewport height, every frame -- no dragging, but no extra build surface either.
+// viewport height, every frame - no dragging, but no extra build surface either.
 enum class Dock { NONE, LEFT, RIGHT };
 
 // Controls what the Widget window shows.
@@ -39,7 +39,7 @@ struct Options {
 	float dockWidth = 340.0f;
 };
 
-// Per-section knobs for Widget::addSection() -- a growable bag of named options
+// Per-section knobs for Widget::addSection() - a growable bag of named options
 // rather than more positional bools, since this is expected to grow (a size
 // hint beyond expand/constrain, tooltips, etc.). Public/namespace-scope on
 // purpose: this is what a caller constructs directly (Python included), unlike
@@ -137,10 +137,10 @@ void drawTexture2DArray(
 // sampler2D shader). All display goes through live GL texture objects.
 class TextureSection {
 public:
-	// Takes osgViewer::View (not the full Viewer) -- this is the only Section that
+	// Takes osgViewer::View (not the full Viewer) - this is the only Section that
 	// genuinely needs a live reference held across frames, because getSceneData()
 	// must reflect whatever the scene root CURRENTLY is (it can change after this
-	// is constructed -- see the async-load pattern where the scene starts empty
+	// is constructed - see the async-load pattern where the scene starts empty
 	// and a real model attaches seconds later). Everything else this class could
 	// possibly want is either one-time (nothing here is) or cacheable, so View is
 	// the narrowest type that still lets refresh() ask that question live.
@@ -164,7 +164,7 @@ private:
 // useful parts of osgViewer::StatsHandler without installing its HUD camera.
 class StatsSection {
 public:
-	// osgViewer::Viewer& is only a CONSTRUCTOR parameter, never stored -- both
+	// osgViewer::Viewer& is only a CONSTRUCTOR parameter, never stored - both
 	// getViewerStats() and getCameras() are ViewerBase-only (not on osg::View), but
 	// both are one-time setup here, and the osg::Stats*/master osg::Camera* they
 	// return are stable for the Viewer's whole lifetime, so they're captured once
@@ -208,7 +208,7 @@ private:
 // Pass to Widget::addSection() or use Widget::addProfilerSection() shortcut.
 class ProfilerSection {
 public:
-	// Only ever touches view.getCamera(), transiently, right here -- nothing to
+	// Only ever touches view.getCamera(), transiently, right here - nothing to
 	// hold onto afterward, so this never stored a Viewer/View reference at all.
 	// printEvery forwards to ProfilerFinalCallback (0 = never print to the log;
 	// SYNC/ASYNC is still toggleable live via the section's own radio buttons,
@@ -247,7 +247,7 @@ public:
 
 	// Forces a section's CollapsingHeader open/closed every frame (ImGui::SetNextItemOpen,
 	// ImGuiCond_Always), overriding both the user's own manual toggling and the one-time
-	// SectionOptions::defaultOpen seed -- SectionOptions::defaultOpen only ever applies the
+	// SectionOptions::defaultOpen seed - SectionOptions::defaultOpen only ever applies the
 	// FIRST time ImGui sees a given label's ID, so it can't express "reopen this section
 	// whenever the app selects it again" on its own. Meant for exactly that app-driven case
 	// (e.g. a gallery that expands the section for whatever item was just clicked); not a
@@ -295,7 +295,7 @@ private:
 // Owns the ImGui lifecycle for one viewer window.
 // Requires the viewer already be osgViewer::Viewer::SingleThreaded (Dear ImGui's
 // single global ImGuiContext/IO state isn't safe to touch from more than one OSG
-// draw thread) -- same requirement as osgEarth's own ImGuiEventHandler, which
+// draw thread) - same requirement as osgEarth's own ImGuiEventHandler, which
 // likewise leaves it entirely to the caller (see its applications/osgearth_imgui
 // example: setThreadingModel is called before the handler is ever constructed).
 // We used to check-and-force this ourselves, but that required holding a
@@ -310,11 +310,11 @@ public:
 	// camera instead of the default master-camera/slave-0 guess (see handle()
 	// below). Needed by deferred-rendering apps with their own downstream
 	// POST_RENDER compositing camera nested under the scene graph (not a View
-	// slave) -- that camera draws AFTER the master camera's own
+	// slave) - that camera draws AFTER the master camera's own
 	// PostDrawCallback, so ImGui's draw would render then be immediately
 	// overwritten by the later fullscreen composite, while its mouse-capture
 	// bookkeeping (computed in NewFrame(), independent of what's actually
-	// still visible on screen) stays live -- an invisible rectangle that eats
+	// still visible on screen) stays live - an invisible rectangle that eats
 	// mouse input. Pass that camera explicitly to fix it.
 	Widget(osgViewer::View& view, osg::Camera* drawCamera=nullptr, Options opts={}):
 	_masterCamera(view.getCamera()),

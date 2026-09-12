@@ -55,7 +55,7 @@ public:
 		// Computes origin/normal/right/up together, each intermediate reused rather than
 		// rederived, for callers that would otherwise chain 4 separate calls that redundantly
 		// redo each other's work (up() alone recomputes both normal() and right()).
-		// Order: origin, normal, right, up -- a tuple has no field names, so callers should
+		// Order: origin, normal, right, up - a tuple has no field names, so callers should
 		// unpack it with a structured binding at the call site (or std::tie into existing
 		// variables, which a structured binding cannot do).
 		std::tuple<osg::Vec3, osg::Vec3, osg::Vec3, osg::Vec3> basis(

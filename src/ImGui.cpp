@@ -12,8 +12,8 @@ namespace {
 // ImTextureID's underlying type isn't portable across Dear ImGui versions: older
 // (and the default backend-compat) builds define it as `void*`; newer builds
 // (system imgui on Ubuntu 26 among them) define it as a plain `ImU64`. A single
-// std::bit_cast handles both uniformly -- no reinterpret_cast, no if constexpr,
-// no template-dependency games -- since it doesn't care whether the destination
+// std::bit_cast handles both uniformly - no reinterpret_cast, no if constexpr,
+// no template-dependency games - since it doesn't care whether the destination
 // is a pointer or an integer, only that the sizes match. Requires
 // sizeof(ImTextureID) == sizeof(std::uintptr_t), true whenever ImTextureID is a
 // pointer (by definition) and true for ImU64 on any 64-bit target; this project
@@ -698,7 +698,7 @@ void Widget::newFrame(osg::RenderInfo& ri) {
 
 	ImGui_ImplOpenGL3_NewFrame();
 
-	// A nested (non-slave) drawCamera -- e.g. an app's own downstream
+	// A nested (non-slave) drawCamera - e.g. an app's own downstream
 	// POST_RENDER compositing camera, see the Widget constructor comment --
 	// generally never gets an explicit GraphicsContext of its own; fall back
 	// to the viewer's master camera, which always has the real one.

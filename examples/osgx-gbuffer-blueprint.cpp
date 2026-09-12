@@ -3,9 +3,9 @@
 //
 // A "blueprint / hologram" technical-visualization style, built the same way
 // osgx-gbuffer-comic.cpp is: an osgx::Hook::DeferredLighting override REPLACING
-// PBRIBLLightingScene::create()'s entire lighting-pass main() -- see that file's own header
+// PBRIBLLightingScene::create()'s entire lighting-pass main() - see that file's own header
 // comment for why the environment/LightSet/ShadowMap stay unused (this style mostly ignores the
-// loaded material entirely, even more than comic does -- see GBUFFER.md's "Blueprint / Holographic
+// loaded material entirely, even more than comic does - see GBUFFER.md's "Blueprint / Holographic
 // Renderer" experiment, which is the design brief this file implements).
 //
 // The shader reads the G-buffer via osgx_GetGBuffer() and renders: a Fresnel/rim glow (the
@@ -15,20 +15,20 @@
 // smoothstep antialiasing used in comic, just over view-space depth instead of a world-space
 // stripe coordinate); and an animated scan plane sweeping along a world-space axis, wrapping every
 // `scanRange` world units. Everything composites additively onto a near-black base in a single
-// flat cyan/emissive palette -- no albedo, no specular, no lighting bands.
+// flat cyan/emissive palette - no albedo, no specular, no lighting bands.
 //
-// Deliberately skips osgx::SSAO (unlike osgx-gbuffer-comic.cpp) -- this style doesn't shade
+// Deliberately skips osgx::SSAO (unlike osgx-gbuffer-comic.cpp) - this style doesn't shade
 // contact/crevice occlusion at all, so there's nothing for it to feed.
 //
-// No environment/IBL, no LightSet, no ShadowMap -- same reasoning as osgx-gbuffer-comic.cpp's own
+// No environment/IBL, no LightSet, no ShadowMap - same reasoning as osgx-gbuffer-comic.cpp's own
 // file header: PBRIBLLightingScene::create()'s `environment` parameter is optional specifically
 // for a Hook::DeferredLighting override like this one.
 //
-// NOT YET IMPLEMENTED -- "soft" contour/edge glow (design intent only, 2026-08-21). The moodboard's
+// NOT YET IMPLEMENTED - "soft" contour/edge glow (design intent only, 2026-08-21). The moodboard's
 // own Blueprint/Holographic reference has its contour/edge lines visibly BLURRED into a soft halo;
 // this file's rangeRing()/detectEdge() are deliberately crisp (a couple-pixel smoothstep
 // antialias only), which reads noticeably sharper/thinner than the reference. A true version of
-// that blur can't happen inside this single fullscreen-quad fragment shader -- it needs a real
+// that blur can't happen inside this single fullscreen-quad fragment shader - it needs a real
 // spatial blur, which means sampling a PRE-blurred texture, not more per-pixel math. Likely
 // approach: render the edge/contour/scan mask(s) to a small offscreen target (same shape as
 // osgx::SSAO's rawCamera->blurCamera two-pass split, GBuffer.hpp), box/gaussian-blur it in a
@@ -37,11 +37,11 @@
 // current one.
 //
 // `--shape <name>` (added 2026-08-21) feeds a bare osgx::Polyhedron through this exact same
-// pipeline instead of loading a glTF asset -- see attachFlatMaterial()/buildShapeNode() below.
+// pipeline instead of loading a glTF asset - see attachFlatMaterial()/buildShapeNode() below.
 // First concrete step on TODO.md's "Generic vs. glTF-specific layering" goal: proves the deferred
 // G-buffer + Hook::DeferredLighting pipeline doesn't actually require glTF-sourced geometry, only
 // the shader-side material CONTRACT (which was already glTF-independent, just never had a non-glTF
-// C++ producer before now). Deliberately the plainest possible non-glTF consumer -- no decals, no
+// C++ producer before now). Deliberately the plainest possible non-glTF consumer - no decals, no
 // per-face materials, no dice-specific anything (see [[project_gltf_generic_layering_audit]] in
 // the agent's memory for the larger dice/osgSlug motivation this is a first step toward).
 
@@ -91,18 +91,18 @@ std::filesystem::path findModelFile(std::string_view filename) {
 }
 
 // Feeds a hand-authored, non-glTF-sourced geometry (a bare osgx::Polyhedron below) into
-// PBRIBLGBuffer::create()'s geometry pass -- a first concrete step toward TODO.md's "Generic vs.
+// PBRIBLGBuffer::create()'s geometry pass - a first concrete step toward TODO.md's "Generic vs.
 // glTF-specific layering" goal: the shader-side contract (osgx_gltf_Material/GET_MATERIAL) was
 // already glTF-INDEPENDENT (every field is a plain factor, gated behind has*Map flags this call
 // leaves false), it just had no non-glTF C++-side producer yet. osgx::Material (PBR.hpp/PBR.cpp)
-// is that producer now -- the exact same StateAttribute the glTF loader's own Material.cpp builds
-// for a factor-only material (e.g. Fox's roughnessFactor=0.58 with no textures at all) -- so
+// is that producer now - the exact same StateAttribute the glTF loader's own Material.cpp builds
+// for a factor-only material (e.g. Fox's roughnessFactor=0.58 with no textures at all) - so
 // PBRIBLGBuffer::create()'s Program (which always declares MATERIAL_INPUTS/GET_MATERIAL) has
 // something valid to read regardless of what built the geometry. No textures are bound at any
 // unit: every texture read in GET_MATERIAL/AlphaCoverage is already conditioned on its own
 // has*Map flag being false here (osgx::Material derives them from its unset texture ref_ptrs), and
 // osgx_gltf_Emissive() (the one unconditional sample) safely reads GL's well-defined (0,0,0,1)
-// incomplete-texture fallback for an unbound sampler -- exactly the same as any real glTF material
+// incomplete-texture fallback for an unbound sampler - exactly the same as any real glTF material
 // with no emissive texture.
 void attachFlatMaterial(
 	osg::Geometry* geometry, const osg::Vec4& baseColor, float roughness, float metallic
@@ -123,7 +123,7 @@ void attachFlatMaterial(
 	ss->addUniform(new osg::Uniform(osgx::gltf::shader::ALPHA_CUTOFF_UNIFORM, 0.5f));
 }
 
-// `nullptr` on an unrecognized name -- caller prints usage and exits, same contract
+// `nullptr` on an unrecognized name - caller prints usage and exits, same contract
 // osgDB::readRefNodeFile() has for a bad path.
 osg::ref_ptr<osg::Node> buildShapeNode(const std::string& name) {
 	osg::ref_ptr<osgx::Polyhedron> shape;
@@ -136,7 +136,7 @@ osg::ref_ptr<osg::Node> buildShapeNode(const std::string& name) {
 	else if(name == "d10") shape = new osgx::PentagonalTrapezohedron();
 	else return nullptr;
 
-	// Deliberately plain -- this style barely looks at albedo/roughness/metallic anyway (see the
+	// Deliberately plain - this style barely looks at albedo/roughness/metallic anyway (see the
 	// file header: blueprint "mostly ignores normal surface materials"), so there's nothing to
 	// tune here; the point is proving the material CONTRACT round-trips, not picking a look.
 	attachFlatMaterial(shape.get(), osg::Vec4(0.6f, 0.6f, 0.65f, 1.0f), 0.4f, 0.0f);
@@ -150,7 +150,7 @@ osg::ref_ptr<osg::Node> buildShapeNode(const std::string& name) {
 
 // Refreshes the lighting pass's view-matrix uniforms every frame (same requirement as
 // osgx-gbuffer-comic.cpp's own UpdateLightingPassCallback) and pushes the current simulation time
-// into `time`, which the shader's scanBand() uses to animate the scan plane -- no other per-frame
+// into `time`, which the shader's scanBand() uses to animate the scan plane - no other per-frame
 // state is needed for this style (no SSAO projection, unlike comic's variant of this class).
 class UpdateLightingPassCallback: public osg::Camera::DrawCallback {
 public:
@@ -178,7 +178,7 @@ private:
 };
 
 // The osgx::Hook::DeferredLighting override itself. Requires nothing but the G-buffer contract --
-// no LightSet, no ShadowMap, no IBL environment -- see the file-level comment above.
+// no LightSet, no ShadowMap, no IBL environment - see the file-level comment above.
 constexpr const char CUSTOM_DEFERRED_LIGHTING_FRAGMENT_SHADER[] = R"GLSL(
 #version 460 core
 #pragma osgx::gltf DEFERRED_LIGHTING_INPUTS, GET_GBUFFER
@@ -193,7 +193,7 @@ uniform vec3 contourCenter;
 // distance-from-contourCenter so they read as shells fixed to the object; true (view-space) uses
 // raw camera-relative depth instead, which visibly slides across the surface as the camera moves --
 // see rangeRing()'s own comment for the full swimming-vs-fixed tradeoff. Both are legitimate looks,
-// not a bug/fix pair -- exposed as a live toggle rather than picking one.
+// not a bug/fix pair - exposed as a live toggle rather than picking one.
 uniform bool contourViewSpace;
 uniform float edgeThickness;
 uniform float translucency;
@@ -207,7 +207,7 @@ uniform vec3 scanAxis;
 const float EDGE_NORMAL_THRESHOLD = 0.35;
 const float EDGE_DEPTH_THRESHOLD = 0.05;
 
-// Silhouette + crease outline test -- same shape as osgx-gbuffer-comic.cpp's own detectEdge(),
+// Silhouette + crease outline test - same shape as osgx-gbuffer-comic.cpp's own detectEdge(),
 // just parameterized by a live `edgeThickness` uniform instead of a compile-time constant (this
 // style has no hatch/band pass competing for ImGui real estate, so exposing it costs nothing).
 float detectEdge(vec2 uv, vec3 N0, float depth0) {
@@ -231,7 +231,7 @@ float detectEdge(vec2 uv, vec3 N0, float depth0) {
 	return edge;
 }
 
-// Periodic "range ring" isolines -- distance-to-nearest-integer-boundary, antialiased by the
+// Periodic "range ring" isolines - distance-to-nearest-integer-boundary, antialiased by the
 // screen-space derivative of `coord` so line width stays roughly constant in pixels regardless of
 // how fast `coord` changes across the surface (a fixed width alone goes razor-thin on near-
 // parallel/glancing geometry and thick on head-on faces).
@@ -240,10 +240,10 @@ float detectEdge(vec2 uv, vec3 N0, float depth0) {
 // model's own center gives rings that read as concentric shells fixed to the object, immune to
 // camera movement; raw view-space depth (`-gb.position.z`) instead visibly slides the same rings
 // across the surface as the camera orbits/dollies, since the same physical point reports different
-// view depth from different viewpoints -- the identical swimming-vs-fixed tradeoff
+// view depth from different viewpoints - the identical swimming-vs-fixed tradeoff
 // osgx-gbuffer-comic.cpp's own hatchCoord ran into with a screen-space coordinate before switching
 // to world position, except here BOTH looks are kept as a live toggle rather than one replacing the
-// other -- confirmed live as two genuinely different, both-useful effects (a "sonar shell" read vs.
+// other - confirmed live as two genuinely different, both-useful effects (a "sonar shell" read vs.
 // a "depth-of-field rangefinder" read), not a bug/fix pair.
 float rangeRing(float coord) {
 	float f = fract(coord);
@@ -279,10 +279,10 @@ void main() {
 
 	float fresnel = pow(1.0 - max(dot(N, V), 0.0), fresnelPower);
 	float edge = detectEdge(vUV, N_view_n, gb.position.z);
-	// See contourViewSpace's own comment above and rangeRing()'s -- both coordinate choices are
+	// See contourViewSpace's own comment above and rangeRing()'s - both coordinate choices are
 	// kept live-toggleable rather than one replacing the other.
 	float ringCoord = contourViewSpace ? -gb.position.z : length(worldPos - contourCenter);
-	// Suppress the ring pattern right on top of a silhouette/crease line -- otherwise the two
+	// Suppress the ring pattern right on top of a silhouette/crease line - otherwise the two
 	// signals visually compete exactly where the outline is already carrying the read.
 	float contour = rangeRing(ringCoord * contourFrequency) * (1.0 - edge);
 	float scan = scanBand(worldPos);
@@ -295,7 +295,7 @@ void main() {
 
 	// Silhouette/creases/scan band read as fully opaque; interior surface fades toward
 	// `translucency` so the hologram reads as see-through rather than a solid model recolored
-	// cyan -- the "optional transparency" GBUFFER.md's Blueprint/Holographic brief calls for.
+	// cyan - the "optional transparency" GBUFFER.md's Blueprint/Holographic brief calls for.
 	float alpha = clamp(max(max(fresnel, edge), max(contour * 0.5, scan)), translucency, 1.0);
 
 	fragColor = vec4(color, alpha * gb.alphaCoverage);
@@ -316,7 +316,7 @@ int main(int argc, char** argv) {
 	);
 	args.getApplicationUsage()->addCommandLineOption(
 		"--shape <name>",
-		"Use a bare osgx::Polyhedron instead of loading <model.gltf> -- one of: cube, tetrahedron, "
+		"Use a bare osgx::Polyhedron instead of loading <model.gltf> - one of: cube, tetrahedron, "
 		"octahedron, icosahedron, dodecahedron, d10. Proves this deferred pipeline against a "
 		"hand-authored, non-glTF-sourced geometry (see attachFlatMaterial()'s own comment)."
 	);
@@ -397,7 +397,7 @@ int main(int argc, char** argv) {
 	}
 
 	// Same "derive from the model's own bounds" precedent osgx-gbuffer-comic.cpp's own
-	// hatchFrequencyFor() and osgx::SSAO::create()'s radius/bias arguments use -- a fixed
+	// hatchFrequencyFor() and osgx::SSAO::create()'s radius/bias arguments use - a fixed
 	// depth-ring frequency or scan range tuned for one model looks wrong at a wildly different
 	// scale (DamagedHelmet vs. Fox, same as comic's own note).
 	osg::ComputeBoundsVisitor boundsVisitor;
@@ -407,7 +407,7 @@ int main(int argc, char** argv) {
 	const auto& bounds = boundsVisitor.getBoundingBox();
 	const float boundRadius = bounds.valid() ? bounds.radius() : 1.0f;
 	const float safeRadius = boundRadius > 0.001f ? boundRadius : 0.001f;
-	// World-space, assumed == model space here -- the loaded model is parented directly under the
+	// World-space, assumed == model space here - the loaded model is parented directly under the
 	// G-buffer geometry pass with no further transform, same assumption scanAxis's dot(worldPos,
 	// scanAxis) above already relies on. Fixed once at load time; the model itself never moves
 	// (only the camera does, via TrackballManipulator), so this never needs a per-frame update.
@@ -426,7 +426,7 @@ int main(int argc, char** argv) {
 	const osg::Vec3 baseColor(0.15f, 0.65f, 1.0f);
 	const osg::Vec3 edgeColor(0.35f, 0.95f, 1.0f);
 
-	// No HDR/manifest environment loaded here at all -- this style never samples IBL, and
+	// No HDR/manifest environment loaded here at all - this style never samples IBL, and
 	// PBRIBLLightingScene::create()'s `environment` parameter is optional specifically for
 	// callers like this one (see that function's own comment).
 	osgx::gltf::pbribl::PBRIBLEnvironment environment;
@@ -445,7 +445,7 @@ int main(int argc, char** argv) {
 		new osg::Shader(
 			osg::Shader::FRAGMENT,
 			// resolveShaderLibs() is what expands `#pragma osgx::gltf DEFERRED_LIGHTING_INPUTS,
-			// GET_GBUFFER` above into real GLSL -- see osgx-gbuffer-comic.cpp's own comment at
+			// GET_GBUFFER` above into real GLSL - see osgx-gbuffer-comic.cpp's own comment at
 			// this exact call site for why raw un-expanded source can't be passed directly.
 			osgx::gltf::pbribl::resolveShaderLibs(CUSTOM_DEFERRED_LIGHTING_FRAGMENT_SHADER)
 		)
@@ -461,21 +461,21 @@ int main(int argc, char** argv) {
 		return 1;
 	}
 
-	// All of these live on the lighting pass's own StateSet -- that's where
+	// All of these live on the lighting pass's own StateSet - that's where
 	// CUSTOM_DEFERRED_LIGHTING_FRAGMENT_SHADER's `uniform` declarations expect to find them, same
 	// as osgx-gbuffer-comic.cpp's own uniform wiring. Kept as named pointers (not fire-and-forget)
 	// so the ImGui section below can push live edits into the SAME osg::Uniform objects.
 	auto* lightingSS = dynamic_cast<osg::Camera*>(lighting.node.get())->getOrCreateStateSet();
 
 	// PBRIBLLightingScene::create()'s composite quad turns GL_DEPTH_TEST off but never touches
-	// GL_BLEND (PBRIBL.cpp) -- ambient GL_BLEND defaults to OFF, so `translucency`'s alpha was
+	// GL_BLEND (PBRIBL.cpp) - ambient GL_BLEND defaults to OFF, so `translucency`'s alpha was
 	// being computed correctly and then silently dropped at the framebuffer write. This is plain
 	// blending, not depth peeling: the quad only ever carries the single nearest-surface G-buffer
-	// sample per pixel, so there's no second surface to reveal by peeling -- "translucent" here
+	// sample per pixel, so there's no second surface to reveal by peeling - "translucent" here
 	// means fading that one known surface toward whatever the framebuffer already holds behind it
 	// (the viewer's clear color for an empty scene, or real opaque geometry if this style is ever
 	// layered on top of another pass). A genuine see-through-the-mesh x-ray would need multiple
-	// depth layers -- that's GBUFFER.md's separate X-Ray/Cutaway experiment, not this fix.
+	// depth layers - that's GBUFFER.md's separate X-Ray/Cutaway experiment, not this fix.
 	lightingSS->setAttributeAndModes(
 		new osg::BlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA), osg::StateAttribute::ON
 	);
@@ -486,7 +486,7 @@ int main(int argc, char** argv) {
 	auto* contourFrequencyUniform = new osg::Uniform("contourFrequency", contourFrequency);
 	auto* contourWidthUniform = new osg::Uniform("contourWidth", contourWidth);
 	auto* contourCenterUniform = new osg::Uniform("contourCenter", contourCenter);
-	// Model-space by default (rings fixed to the object) -- see contourViewSpace's own comment in
+	// Model-space by default (rings fixed to the object) - see contourViewSpace's own comment in
 	// the shader above for why view-space is kept as a toggle rather than dropped.
 	auto* contourViewSpaceUniform = new osg::Uniform("contourViewSpace", false);
 	auto* edgeThicknessUniform = new osg::Uniform("edgeThickness", 4.0f);
@@ -517,7 +517,7 @@ int main(int argc, char** argv) {
 	auto root = osgx::make_ref<osg::Group>();
 
 	// gbuffer.gbuffer.camera is the FIRST PRE_RENDER camera in this scene graph (added before
-	// lighting.node below) -- see osgx-gbuffer-comic.cpp's own UpdateLightingPassCallback comment
+	// lighting.node below) - see osgx-gbuffer-comic.cpp's own UpdateLightingPassCallback comment
 	// (and PBRIBLLightingScene::create()'s) for why the update() call has to land here.
 	gbuffer.gbuffer.camera->setPreDrawCallback(
 		new UpdateLightingPassCallback(&lighting, viewer.getCamera(), timeUniform)
@@ -529,18 +529,18 @@ int main(int argc, char** argv) {
 	viewer.setSceneData(root);
 	viewer.setCameraManipulator(new osgGA::TrackballManipulator());
 	viewer.addEventHandler(new osgViewer::StatsHandler());
-	// Near-black navy, not pure black -- keeps the dark background from crushing to nothing
+	// Near-black navy, not pure black - keeps the dark background from crushing to nothing
 	// against the cyan glow, same "deep blue-black" the moodboard's own blueprint panel uses.
 	viewer.getCamera()->setClearColor(osg::Vec4f(3.0f / 255.0f, 6.0f / 255.0f, 12.0f / 255.0f, 1.0f));
 
 	std::cout
-		<< "osgx-gbuffer-blueprint: osgx::Hook::DeferredLighting blueprint/holographic style -- "
+		<< "osgx-gbuffer-blueprint: osgx::Hook::DeferredLighting blueprint/holographic style - "
 		<< "Fresnel rim, depth-ring contours, ink outlines, animated scan plane; "
 		<< "no lights/shadow/IBL evaluation" << std::endl
 	;
 
 #ifdef OSGX_IMGUI
-	// drawCamera pinned to lighting.node's own Camera explicitly -- see osgx-gbuffer-comic.cpp's
+	// drawCamera pinned to lighting.node's own Camera explicitly - see osgx-gbuffer-comic.cpp's
 	// own comment at this exact call site for why the default (nullptr) gets painted over.
 	auto* gui = new osgx::imgui::Widget(viewer, dynamic_cast<osg::Camera*>(lighting.node.get()));
 
@@ -576,7 +576,7 @@ int main(int argc, char** argv) {
 		// Model-space rings only ever range over [0, boundRadius] (contourFrequencyFor's own
 		// K=5*density formula), so reaching a dense "topographic map" look there needs a much
 		// higher density than view-space rings (which range over raw camera-distance depth, a
-		// generally larger number) ever did -- 60 gives up to 300 rings across the model's own
+		// generally larger number) ever did - 60 gives up to 300 rings across the model's own
 		// radius at max, comfortably past what looked "maxed out" at the old 5.0 ceiling.
 		if(ImGui::SliderFloat("Contour Density", &contourDensity_, 0.1f, 60.0f)) {
 			contourFrequencyUniform->set(contourFrequencyFor(contourDensity_));
@@ -586,7 +586,7 @@ int main(int argc, char** argv) {
 			contourWidthUniform->set(contourWidth_);
 		}
 
-		// See contourViewSpace's own comment in the shader source above -- both looks are kept,
+		// See contourViewSpace's own comment in the shader source above - both looks are kept,
 		// not one replacing the other.
 		if(ImGui::Checkbox("View-Space Contours", &contourViewSpace_)) {
 			contourViewSpaceUniform->set(contourViewSpace_);

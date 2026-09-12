@@ -156,13 +156,13 @@ public:
 	void setRotateSensitivity(double s) { _rotateSensitivity = s; }
 	double getRotateSensitivity() const { return _rotateSensitivity; }
 
-	// Inverts the Y axis used by the Ctrl+drag 3D pitch/yaw tilt ONLY -- plain (non-Ctrl) pan is
+	// Inverts the Y axis used by the Ctrl+drag 3D pitch/yaw tilt ONLY - plain (non-Ctrl) pan is
 	// unaffected. Default true: dragging up tilts the view up. Set false to restore the raw,
 	// uninverted feel.
 	void setInvertY(bool invert) { _invertY = invert; }
 	bool getInvertY() const { return _invertY; }
 
-	// Inverts the X axis used by the Ctrl+drag 3D yaw ONLY -- plain (non-Ctrl) pan is unaffected.
+	// Inverts the X axis used by the Ctrl+drag 3D yaw ONLY - plain (non-Ctrl) pan is unaffected.
 	// Default false: dragging right rotates the model's near side to the right (matching a
 	// direct-manipulation "grab and drag" feel). Set true to restore the raw, uninverted feel.
 	void setInvertX(bool invert) { _invertX = invert; }
@@ -233,7 +233,7 @@ private:
 	osg::Vec3d _screenUp{0.0, 1.0, 0.0};
 
 	osg::Quat _rotation; // identity = pure top-down 2D
-	double _yawAngle{0.0}; // screenUp; independent of _pitchAngle -- see handle()'s ctrl branch
+	double _yawAngle{0.0}; // screenUp; independent of _pitchAngle - see handle()'s ctrl branch
 	double _pitchAngle{0.0}; // screen right, clamped short of +-90 degrees
 	osg::ref_ptr<osg::Node> _node;
 
@@ -258,19 +258,19 @@ private:
 // State is cylindrical: yaw around the guide line, axial height along it (clamped to the bound's
 // extent along the configured up axis), and distance from it (clamped
 // so the model can't be zoomed past ~50% visible or zoomed out past a ~5% viewport margin, in
-// terms of the camera's current vertical FOV -- see updateCamera()).
+// terms of the camera's current vertical FOV - see updateCamera()).
 //
-// The manipulator does NOT own the projection matrix (unlike Ortho2DManipulator) -- it reads the
+// The manipulator does NOT own the projection matrix (unlike Ortho2DManipulator) - it reads the
 // camera's existing perspective FOV each frame to recompute the distance clamp, but leaves
 // near/far/FOV to the caller.
 //
 // v1 tracks raw mouse position deltas (bounded by the window edges, like a trackpad) rather than
-// true relative/captured motion -- no cursor hide or pointer warp/confine. That's real OS-specific
+// true relative/captured motion - no cursor hide or pointer warp/confine. That's real OS-specific
 // plumbing (X11 XGrabPointer/XWarpPointer and friends); see TODO.md for the planned move of the
 // existing pyosg/linux platform helpers into osgx before adding it here.
 //
 // TODO: add optional "gate action X behind button Y" modes (e.g. require LEFT_MOUSE_BUTTON held
-// for orbit/height) once the always-active feel is validated -- deliberately left out for now.
+// for orbit/height) once the always-active feel is validated - deliberately left out for now.
 // ================================================================================================
 class OrbitAxisManipulator: public osgGA::CameraManipulator {
 public:
@@ -378,11 +378,11 @@ public:
 	double getDistance() const { return _distance; }
 
 	// Applies a pre-computed (dx, dy) directly, in the same normalized (roughly [-1, 1] per axis)
-	// units as GUIEventAdapter::getXnormalized()/getYnormalized() -- the same units handle()
+	// units as GUIEventAdapter::getXnormalized()/getYnormalized() - the same units handle()
 	// itself derives internally via _orbit(). This is the hook for driving orbit/height from
 	// something other than raw MOVE/DRAG events, e.g. osgx::platform::PointerCapture's
 	// accumulated delta (normalize its pixel delta by the window's half-width/half-height first
-	// to match this scale). Deliberately NOT wired to PointerCapture internally -- see the
+	// to match this scale). Deliberately NOT wired to PointerCapture internally - see the
 	// layering note on osgx::platform::PointerCapture in osgx/Cursor.hpp.
 	void orbitByDelta(double dx, double dy);
 
@@ -467,7 +467,7 @@ private:
 // CameraManipulator<Base>
 //
 // CRTP mixin (same idiom as osgx::Array<T>, see osgx/Array.hpp) that lets a manipulator merge
-// one-shot or persistent "camera intents" -- a fly-to animation, a shake, agent-driven nudges --
+// one-shot or persistent "camera intents" - a fly-to animation, a shake, agent-driven nudges --
 // onto itself, without a caller needing a second manipulator object or to know/care which concrete
 // manipulator type is in play. osgx::CameraManipulator<osgGA::TrackballManipulator> genuinely IS a
 // TrackballManipulator: every interaction method (handle, home, getMatrix, setNode, ...) is
@@ -482,19 +482,19 @@ private:
 // baseline pose, then runs each attached callback in attachment order, letting each one further
 // mutate camera.viewMatrix (a ShakeCallback composes on top of whatever's already there; a
 // FlyToCallback unconditionally overwrites it with an interpolated pose while active). This is
-// NOT SUPPORTED when Base is osgx::MultiCameraManipulator -- MultiCameraManipulator::updateCamera()
+// NOT SUPPORTED when Base is osgx::MultiCameraManipulator - MultiCameraManipulator::updateCamera()
 // can route its real output to a DIFFERENT osg::Camera than the one passed in (see its own
 // per-target camera), which would silently desync from this mixin's callback loop.
 //
 // NOTE: no OSGX_META_Object / copy constructor (matches MultiCameraManipulator, not
-// Ortho2DManipulator/OrbitAxisManipulator) -- clone()/copy-construction will NOT propagate the
+// Ortho2DManipulator/OrbitAxisManipulator) - clone()/copy-construction will NOT propagate the
 // attached callback list. Manipulators are rarely cloned; not solved here.
 // ================================================================================================
 template<typename T>
 concept OSGCameraManipulator = std::derived_from<T, osgGA::CameraManipulator>;
 
-// Type-erases CameraManipulator<Base>'s extra surface so a generic osg::Callback -- which only
-// ever receives a plain osg::Object* -- can reach back into "whatever manipulator it's attached
+// Type-erases CameraManipulator<Base>'s extra surface so a generic osg::Callback - which only
+// ever receives a plain osg::Object* - can reach back into "whatever manipulator it's attached
 // to" without needing to know Base. dynamic_cast across this is safe regardless of Base: OSG never
 // disables RTTI, and osg::Object has a virtual destructor, so it stays live throughout.
 class CameraIntentHost {
@@ -522,11 +522,11 @@ public:
 		_pendingRemoves.push_back(cb);
 	}
 
-	// Read-only introspection of what's currently attached -- reflects _callbacks as of the last
+	// Read-only introspection of what's currently attached - reflects _callbacks as of the last
 	// completed updateCamera() call: an addUpdateCameraCallback()/removeUpdateCameraCallback() made
 	// from outside a frame (e.g. from a Python REPL between frames) only lands in _pendingAdds/
 	// _pendingRemoves until the NEXT updateCamera(), so these can lag by up to one frame behind a
-	// call that was just made -- not a bug, the same async-apply design that protects the callback
+	// call that was just made - not a bug, the same async-apply design that protects the callback
 	// loop in updateCamera() from mutating _callbacks mid-iteration.
 	unsigned int getNumUpdateCameraCallbacks() const {
 		return static_cast<unsigned int>(_callbacks.size());
@@ -543,7 +543,7 @@ public:
 	// Peeks at FRAME events to cache the current time for intents to read via currentTime() --
 	// matches how OSG's own animated manipulators source time (from the FRAME event, not a polled
 	// osg::Timer), and keeps intent timing deterministically testable later by injecting FRAME
-	// events. Always forwards to Base -- this is a peek, never an interception.
+	// events. Always forwards to Base - this is a peek, never an interception.
 	bool handle(const osgGA::GUIEventAdapter& ea, osgGA::GUIActionAdapter& aa) override {
 		if(ea.getEventType() == osgGA::GUIEventAdapter::FRAME) _currentTime = ea.getTime();
 
@@ -558,16 +558,16 @@ public:
 		// Iterate by index, not range-for/iterators: a callback's own run() may call
 		// addUpdateCameraCallback()/removeUpdateCameraCallback() on `this` (e.g. a finishing
 		// FlyToCallback chaining into a persistent effect), which must not mutate _callbacks while
-		// it's being iterated -- those calls only stage into _pendingAdds/_pendingRemoves, applied
+		// it's being iterated - those calls only stage into _pendingAdds/_pendingRemoves, applied
 		// after this loop finishes.
 		for(size_t i = 0; i < _callbacks.size(); i++) {
 			auto& entry = _callbacks[i];
 
 			// Local convention for this call site only (not OSG's generic traverse-continuation
 			// meaning): true = still active, keep in the list; false = done. A false return only
-			// causes removal if runOnce is true -- a persistent entry (runOnce=false) stays
+			// causes removal if runOnce is true - a persistent entry (runOnce=false) stays
 			// regardless of what it returns. So runOnce means "auto-remove when I signal done," not
-			// literally "called exactly once" -- a FlyToCallback legitimately runs across many
+			// literally "called exactly once" - a FlyToCallback legitimately runs across many
 			// frames before finally returning false.
 			bool active = entry.callback->run(this, &camera);
 

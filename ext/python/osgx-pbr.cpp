@@ -41,14 +41,14 @@ void bind_pbr(py::module_& m) {
 	m.attr("TONEMAP_HOOK_DEFAULT") = osgx::TONEMAP_HOOK_DEFAULT;
 	m.attr("MATERIAL_BINDING") = osgx::MATERIAL_BINDING;
 
-	// osgx::MaterialFactors/attachMaterialFactors() are gone -- collapsed into osgx::Material, a
+	// osgx::MaterialFactors/attachMaterialFactors() are gone - collapsed into osgx::Material, a
 	// real osg::StateAttribute (PBR.hpp/PBR.cpp). Bound the same way osgx-callbacks.cpp already
 	// binds osgx::NodeCallbacksGroup et al. against a real pyosg-registered OSG base
-	// (osg::StateAttribute is bound in pyosg/osg/State.cpp) -- cross-module inheritance works here
+	// (osg::StateAttribute is bound in pyosg/osg/State.cpp) - cross-module inheritance works here
 	// because both modules link the identical vendored pybind11 (same ABI tag), so pybind11's
 	// process-wide type registry (populated at import time, not link time) already has
 	// osg::StateAttribute by the time this module's own init runs. Requires `import osg` (pyosg)
-	// to have already happened in this interpreter -- pybind11 has no way to resolve a base class
+	// to have already happened in this interpreter - pybind11 has no way to resolve a base class
 	// it hasn't seen registered yet.
 	py::class_<osgx::Material, osg::StateAttribute, osg::ref_ptr<osgx::Material>>(
 		m,
@@ -56,7 +56,7 @@ void bind_pbr(py::module_& m) {
 		"A real osg.StateAttribute carrying PBR material factors (base color/roughness/metallic/"
 		"occlusion) and texture maps (base color/normal/metallicRoughness/emissive), applied via "
 		"a std430 shader storage buffer. Attach with setAttributeAndModes() like any "
-		"StateAttribute -- two drawables sharing an equal Material dedup automatically."
+		"StateAttribute - two drawables sharing an equal Material dedup automatically."
 	)
 		.def(py::init<>(), "Constructs a default-white, fully-rough, fully-metallic Material with no maps set.")
 		.def_property(
@@ -73,7 +73,7 @@ void bind_pbr(py::module_& m) {
 		)
 		.def_property(
 			"hasOcclusion", &osgx::Material::getHasOcclusion, &osgx::Material::setHasOcclusion,
-			"Whether metallicRoughnessMap's R channel carries real per-pixel occlusion -- unlike "
+			"Whether metallicRoughnessMap's R channel carries real per-pixel occlusion - unlike "
 			"the other has*Map flags, this has no dedicated texture of its own to derive from."
 		)
 		.def_property(
@@ -98,14 +98,14 @@ void bind_pbr(py::module_& m) {
 	m.def(
 		"snippets", &osgx::snippets,
 		"Returns the five core BRDF snippets (D_GGX, G_SCHLICK, G_SMITH, F_SCHLICK, "
-		"F_SCHLICK_ROUGHNESS) concatenated in dependency order -- convenience for a caller that "
+		"F_SCHLICK_ROUGHNESS) concatenated in dependency order - convenience for a caller that "
 		"wants the whole toolkit at once; use the individual constants if only part is needed."
 	);
 
 	// Assembles the osgx_DirectLighting() CONTRACT's default definition as a standalone FRAGMENT
 	// osg::Shader, ready to add()/append() onto an osg::Program alongside a consumer's own
 	// fragment shader (which only needs DIRECT_LIGHTING_DECL spliced in via #pragma osgx::pbr, plus a
-	// call site) -- so a Python caller doesn't have to hand-assemble
+	// call site) - so a Python caller doesn't have to hand-assemble
 	// osg.Shader(osg.Shader.FRAGMENT, osgx.resolveShaderLibs(osgx.pbr.DIRECT_LIGHTING_HOOK_DEFAULT))
 	// itself. See PBR.hpp's DIRECT_LIGHTING_DECL/DIRECT_LIGHTING_HOOK_DEFAULT comment for the full
 	// rationale.
@@ -118,7 +118,7 @@ void bind_pbr(py::module_& m) {
 			);
 
 			// No Program exists yet at this call site (unlike applyHooks(), which knows
-			// program->getName() and can prefix with it) -- a bare role name is the best this
+			// program->getName() and can prefix with it) - a bare role name is the best this
 			// convenience function can do on its own; a caller with more context is always free
 			// to overwrite shader.name afterward. See osgx::applyHooks()'s own naming (Shader.cpp)
 			// for the "<programName>.<role>" convention this deliberately matches the tail of.
@@ -126,12 +126,12 @@ void bind_pbr(py::module_& m) {
 
 			return osg::ref_ptr<osg::Shader>(shader);
 		},
-		"Builds the osgx_DirectLighting() CONTRACT's default-definition FRAGMENT shader object -- "
+		"Builds the osgx_DirectLighting() CONTRACT's default-definition FRAGMENT shader object - "
 		"add it to a Program alongside a consumer fragment shader that only declares "
 		"DIRECT_LIGHTING_DECL plus a call site."
 	);
 
-	// osgx_AmbientLighting() CONTRACT's Python-side convenience -- same shape as
+	// osgx_AmbientLighting() CONTRACT's Python-side convenience - same shape as
 	// makeDirectLightingHookShader() above. See PBR.hpp's AMBIENT_LIGHTING_DECL/
 	// AMBIENT_LIGHTING_HOOK_DEFAULT comment: specular-only default (no SH-9 diffuse yet).
 	m.def(
@@ -147,11 +147,11 @@ void bind_pbr(py::module_& m) {
 			return osg::ref_ptr<osg::Shader>(shader);
 		},
 		"Builds the osgx_AmbientLighting() CONTRACT's default-definition FRAGMENT shader object "
-		"(specular-only IBL, via osgx_IBLSpecular) -- add it to a Program alongside a consumer "
+		"(specular-only IBL, via osgx_IBLSpecular) - add it to a Program alongside a consumer "
 		"fragment shader that only declares AMBIENT_LIGHTING_DECL plus a call site."
 	);
 
-	// osgx_Tonemap() CONTRACT's Python-side convenience -- same shape as
+	// osgx_Tonemap() CONTRACT's Python-side convenience - same shape as
 	// makeDirectLightingHookShader() above. See PBR.hpp's TONEMAP_DECL/TONEMAP_HOOK_DEFAULT comment.
 	m.def(
 		"makeTonemapHookShader",
@@ -166,7 +166,7 @@ void bind_pbr(py::module_& m) {
 			return osg::ref_ptr<osg::Shader>(shader);
 		},
 		"Builds the osgx_Tonemap() CONTRACT's default-definition FRAGMENT shader object "
-		"(osgx_TonemapPBRNeutral) -- add it to a Program alongside a consumer fragment shader "
+		"(osgx_TonemapPBRNeutral) - add it to a Program alongside a consumer fragment shader "
 		"that only declares TONEMAP_DECL plus a call site."
 	);
 
@@ -265,7 +265,7 @@ void bind_pbr(py::module_& m) {
 		.def(
 			"setPosition", &osgx::LightSet::setPosition, "index"_a, "position"_a, "intensity"_a,
 			"Sets only light `index`'s position/intensity, leaving color/type/direction/"
-			"spotAngles/sourceRadius untouched -- the primitive OrbitLightRig uses to animate an "
+			"spotAngles/sourceRadius untouched - the primitive OrbitLightRig uses to animate an "
 			"already-configured light every frame."
 		)
 		.def("getPosIntensity", &osgx::LightSet::getPosIntensity, "index"_a, "Returns light `index`'s (position.xyz, intensity.w).")
@@ -294,7 +294,7 @@ void bind_pbr(py::module_& m) {
 		"Animates a handful of point lights orbiting a center point, writing world-space "
 		"position+intensity into an attached LightSet's posIntensity field every update "
 		"traversal. `lights` must already have at least len(orbits) lights configured via "
-		"setPoint()/setSpot() for their color/type/etc. -- this callback only ever touches "
+		"setPoint()/setSpot() for their color/type/etc. - this callback only ever touches "
 		"position/intensity."
 	)
 		.def(py::init<>(), "Constructs a rig with the default three-orbit badge-lighting setup; set `lights` before use.")

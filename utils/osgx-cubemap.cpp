@@ -1,4 +1,4 @@
-// osgx-cubemap -- convert an equirectangular panorama into a raw visual cubemap KTX2.
+// osgx-cubemap - convert an equirectangular panorama into a raw visual cubemap KTX2.
 //
 // Usage:
 //   osgx-cubemap <input-image> <output.ktx2> [--size N]

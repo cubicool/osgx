@@ -69,7 +69,7 @@ int main(int argc, char** argv) {
 	osgViewer::Viewer viewer;
 
 	// osgx::imgui::Widget no longer checks/forces this itself (see its class
-	// comment) -- Dear ImGui's single global context isn't safe to touch from more
+	// comment) - Dear ImGui's single global context isn't safe to touch from more
 	// than one OSG draw thread, so this is the caller's responsibility now, same
 	// as osgEarth's own ImGuiEventHandler.
 	viewer.setThreadingModel(osgViewer::Viewer::SingleThreaded);

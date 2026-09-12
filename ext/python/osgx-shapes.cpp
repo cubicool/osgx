@@ -7,7 +7,7 @@ void bind_shapes(py::module_& m) {
 	py::class_<osgx::VertexLayout>(
 		m,
 		"VertexLayout",
-		"Generic vertex attribute locations a Polyhedron's Geometry is built with -- position/"
+		"Generic vertex attribute locations a Polyhedron's Geometry is built with - position/"
 		"normal/uv are installed both through Geometry's conventional arrays (for OSG's bounds "
 		"and compatibility machinery) and at these explicit locations (for core-profile shaders)."
 	)
@@ -26,7 +26,7 @@ void bind_shapes(py::module_& m) {
 		"Polyhedron",
 		"A polygonal, flat-shaded mesh with explicit GPU vertex attribute locations. Custom "
 		"per-face streams are supplied in original face-corner order, not expanded triangle "
-		"order -- rebuild() duplicates them exactly as it duplicates positions for fan "
+		"order - rebuild() duplicates them exactly as it duplicates positions for fan "
 		"triangulation, so a per-face material ID, tangent, or decal attribute is equally "
 		"straightforward to add."
 	);
@@ -133,7 +133,7 @@ void bind_shapes(py::module_& m) {
 			"location"_a,
 			"values"_a,
 			"Installs a custom per-face attribute at `location`. `values` has one element per "
-			"face; each value is repeated for every triangle vertex emitted from that face -- "
+			"face; each value is repeated for every triangle vertex emitted from that face - "
 			"useful for face IDs and material parameters."
 		)
 		.def(
@@ -159,7 +159,7 @@ void bind_shapes(py::module_& m) {
 			&osgx::Polyhedron::faceUp,
 			"faceIndex"_a,
 			"The canonical up direction of face `faceIndex`, perpendicular to its first directed "
-			"edge and pointing into the face -- a dice/decal layer's text-up direction."
+			"edge and pointing into the face - a dice/decal layer's text-up direction."
 		)
 		.def(
 			"restingOffset",

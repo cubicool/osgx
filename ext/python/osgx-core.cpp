@@ -7,13 +7,13 @@
 
 namespace osgx_python {
 
-// Only the TrackballManipulator instantiation is bound for now -- the only Base actually verified
+// Only the TrackballManipulator instantiation is bound for now - the only Base actually verified
 // working (examples/osgx-manipulator.cpp's "intents" mode).
 using TrackballCameraManipulator = osgx::CameraManipulator<osgGA::TrackballManipulator>;
 
 }
 
-// osgx::CameraManipulator<Base>::_callbacks introspection -- pyx::SequenceProxy over the read
+// osgx::CameraManipulator<Base>::_callbacks introspection - pyx::SequenceProxy over the read
 // accessors added alongside this (osgx/Manipulators.hpp's getNumUpdateCameraCallbacks()/
 // getUpdateCameraCallback()), modeled directly on osg::Program's SequenceTraits (OpenSceneGraph.py's
 // pyosg/osg/Program.hpp). Deliberately get/del only, no set()/append(): adding still goes through
@@ -77,7 +77,7 @@ void bind_core(py::module_& m) {
 		m,
 		"GridSettings",
 		"Live-tunable Grid rendering parameters (line width/intervals/colors/modes), stored in a "
-		"std430 SSBO. Normally accessed through a Grid's own property passthroughs -- construct "
+		"std430 SSBO. Normally accessed through a Grid's own property passthroughs - construct "
 		"directly only to share one GridSettings across multiple Grid instances."
 	);
 
@@ -107,11 +107,11 @@ void bind_core(py::module_& m) {
 		)
 		.def_property(
 			"edgeMode", &osgx::GridSettings::getEdgeMode, &osgx::GridSettings::setEdgeMode,
-			"How lines exactly on the canvas boundary are handled -- see Grid.EdgeMode."
+			"How lines exactly on the canvas boundary are handled - see Grid.EdgeMode."
 		)
 		.def_property(
 			"lineMode", &osgx::GridSettings::getLineMode, &osgx::GridSettings::setLineMode,
-			"Whether line width is measured in screen pixels or grid/world units -- see Grid.LineMode."
+			"Whether line width is measured in screen pixels or grid/world units - see Grid.LineMode."
 		)
 		.def_property(
 			"colorBg", &osgx::GridSettings::getColorBg, &osgx::GridSettings::setColorBg,
@@ -165,12 +165,12 @@ void bind_core(py::module_& m) {
 	grid
 		.def(
 			py::init<>(),
-			"Constructs a fullscreen NDC quad (XY plane, z=0, -1..1) -- pairs with orthoCamera()/"
+			"Constructs a fullscreen NDC quad (XY plane, z=0, -1..1) - pairs with orthoCamera()/"
 			"createOrthoCamera()."
 		)
 		.def(py::init<const osg::Vec3&, const osg::Vec3&, const osg::Vec3&>(),
 			"corner"_a, "width_vec"_a, "height_vec"_a,
-			"Constructs a quad at `corner` spanning `width_vec`/`height_vec` -- NDC for a "
+			"Constructs a quad at `corner` spanning `width_vec`/`height_vec` - NDC for a "
 			"fullscreen overlay, or world-space for a real 3D ground plane."
 		)
 		.def_property(
@@ -221,7 +221,7 @@ void bind_core(py::module_& m) {
 		.def(
 			"orthoCamera", &osgx::Grid::orthoCamera,
 			"Wraps this Grid in a Geode, and that Geode in an ABSOLUTE_RF, PRE_RENDER, "
-			"ortho2D(-1,1,-1,1) camera -- the always-drawn-first fullscreen NDC setup. The caller "
+			"ortho2D(-1,1,-1,1) camera - the always-drawn-first fullscreen NDC setup. The caller "
 			"still needs to set the main camera's clear mask to GL_DEPTH_BUFFER_BIT-only, or its "
 			"default color clear will stomp this camera's paint."
 		)
@@ -252,7 +252,7 @@ void bind_core(py::module_& m) {
 
 	// osgx::Ortho2DManipulator / OrbitAxisManipulator / MultiCameraManipulator (osgx/Manipulators.hpp).
 	// All three derive from osgGA::CameraManipulator, already registered by pyosgGA.cpp as
-	// "CameraManipulator" -- its node/matrix/inverseMatrix/homePosition properties and
+	// "CameraManipulator" - its node/matrix/inverseMatrix/homePosition properties and
 	// home()/init()/handle() methods come along automatically via virtual dispatch, so only each
 	// subclass's OWN new surface needs binding here.
 	py::class_<
@@ -475,17 +475,17 @@ void bind_core(py::module_& m) {
 			"setActive"_a=std::function<void(bool)>(),
 			"Registers a new target: `manipulator` handles input while it is active. Optional "
 			"`camera`/`scene` swap in a dedicated rendered camera/scene graph, and `setActive(bool)` "
-			"-- if given -- is called on activation and deactivation."
+			"-- if given - is called on activation and deactivation."
 		)
 		.def("activate", &osgx::MultiCameraManipulator::activate, "index"_a, "Activates the target at `index`.")
 		.def("next", &osgx::MultiCameraManipulator::next, "Activates the next target, wrapping around.")
 	;
 
-	// osgx::CameraManipulator<Base> (osgx/Manipulators.hpp) -- CRTP mixin merging one-shot/
+	// osgx::CameraManipulator<Base> (osgx/Manipulators.hpp) - CRTP mixin merging one-shot/
 	// persistent "camera intent" callbacks onto a SINGLE real manipulator instance (as opposed to
 	// wrapping/replacing it, see the header's own class comment for why that distinction mattered).
-	// Only the TrackballManipulator instantiation is bound for now -- the only Base actually
-	// verified working (examples/osgx-manipulator.cpp's "intents" mode) -- exposed as plain
+	// Only the TrackballManipulator instantiation is bound for now - the only Base actually
+	// verified working (examples/osgx-manipulator.cpp's "intents" mode) - exposed as plain
 	// "CameraManipulator" to match osgx::CameraManipulator<>'s own default Base directly.
 	auto cameraManipulator = py::class_<
 		TrackballCameraManipulator,
@@ -516,7 +516,7 @@ void bind_core(py::module_& m) {
 		.def_property_readonly(
 			"currentTime",
 			&TrackballCameraManipulator::currentTime,
-			"FRAME-event time, cached each frame -- what attached intents read for their own timing."
+			"FRAME-event time, cached each frame - what attached intents read for their own timing."
 		)
 		.def(
 			"flyTo",
@@ -541,9 +541,9 @@ void bind_core(py::module_& m) {
 			"ease"_a=std::function<float(float)>(osgx::defaultEase),
 			"tb"_a=osgAnimation::Motion::CLAMP,
 			"Convenience wrapper: adds a one-shot FlyToCallback. `ease` is any (float) -> float "
-			"callable -- pass one of OpenSceneGraph's osgAnimation module's curves "
+			"callable - pass one of OpenSceneGraph's osgAnimation module's curves "
 			"(osgAnimation.inOutCubic, .outBounce, .outElastic, ...) or your own. `tb` is any "
-			"osgAnimation.Motion.TimeBehaviour -- CLAMP (default) arrives once and stays parked; "
+			"osgAnimation.Motion.TimeBehaviour - CLAMP (default) arrives once and stays parked; "
 			"LOOP repeats forever (use FlyToCallback directly for a multi-waypoint patrol/loop)."
 		)
 		.def(
@@ -564,7 +564,7 @@ void bind_core(py::module_& m) {
 		)
 	;
 
-	// .callbacks -- read-only introspection of what's currently attached (see the
+	// .callbacks - read-only introspection of what's currently attached (see the
 	// pyx::SequenceTraits<TrackballCameraManipulator> specialization above this function).
 	pyx::bind_proxy_property<detail::CallbacksProxy, TrackballCameraManipulator, detail::CallbacksStorage>(
 		cameraManipulator, "_Callbacks", "callbacks",
@@ -585,7 +585,7 @@ void bind_core(py::module_& m) {
 	;
 
 	// osg::Callback itself is registered by pyosg (OpenSceneGraph.py/pyosg/osg/NodeCallback.cpp),
-	// imported before this runs (see osgx.cpp) -- FlyToCallback/ShakeCallback derive from it
+	// imported before this runs (see osgx.cpp) - FlyToCallback/ShakeCallback derive from it
 	// directly (not osg::NodeCallback), matching the (manipulator, camera) object/data pair
 	// CameraManipulator<Base>::updateCamera() passes to run(), which osg::NodeCallback's
 	// operator()(Node*, NodeVisitor*) convenience doesn't fit.
@@ -625,7 +625,7 @@ void bind_core(py::module_& m) {
 			"tb"_a=osgAnimation::Motion::CLAMP,
 			"Multi-waypoint constructor: waypoints.size() == durations.size(), leg i flies from "
 			"waypoints[i - 1] (or the camera's current pose, for i == 0) to waypoints[i]. tb=LOOP "
-			"repeats the whole path forever -- for a smooth ping-pong, author waypoints so the last "
+			"repeats the whole path forever - for a smooth ping-pong, author waypoints so the last "
 			"and first points coincide or are close (e.g. waypoints=[B, A])."
 		)
 	;
@@ -671,7 +671,7 @@ void bind_core(py::module_& m) {
 	);
 
 	// Shader-object substitution hook slots, the counterpart to resolveShaderLibs()' text
-	// splicing above -- see osgx::applyHooks() (Shader.hpp) and PBRIBLScene.create()'s "hooks"
+	// splicing above - see osgx::applyHooks() (Shader.hpp) and PBRIBLScene.create()'s "hooks"
 	// parameter. A HookList is just `[(osgx.Hook.Tonemap, shader), ...]` in Python; no separate
 	// binding is needed for HookList itself, pybind11's stl.h vector/pair casters cover it once
 	// osgx.Hook is bound below.
@@ -680,7 +680,7 @@ void bind_core(py::module_& m) {
 		"Hook",
 		"Shader-object substitution slots (see resolveShaderLibs()/applyHooks() and "
 		"PBRIBLScene.create()'s `hooks` parameter). Each hook REPLACES its default shader object "
-		"entirely -- GLSL permits one body per function, so attaching a second definition "
+		"entirely - GLSL permits one body per function, so attaching a second definition "
 		"alongside the built-in is a link error, not an override. Tonemap replaces "
 		"osgx_Tonemap(); Skinning replaces osgx_gltf_ApplySkin(); DirectLighting replaces "
 		"osgx_DirectLighting(); DeferredLighting replaces the entire fullscreen deferred-lighting shader."

@@ -4,11 +4,11 @@
 // osgx::Cube shapes of different sizes/colors sitting on a flat floor quad, lit by one directional
 // osgx::LightSet light, its shadow cast via osgx::ShadowMap::create().
 //
-// Deliberately NOT osgx::gltf::pbribl -- no glTF asset, no IBL environment, nothing but the
+// Deliberately NOT osgx::gltf::pbribl - no glTF asset, no IBL environment, nothing but the
 // generic osgx::pbr direct-lighting hook contract plus the new shadow one, mirroring
 // osgx-lights.cpp's own "load nothing, just press a key" shape as closely as possible: the
 // fragment shader here is IDENTICAL to osgx-lights.cpp's (only DIRECT_LIGHTING_DECL + a call
-// site) -- the only difference is which hook shader object makeProgram() adds alongside it
+// site) - the only difference is which hook shader object makeProgram() adds alongside it
 // (DIRECT_LIGHTING_HOOK_SHADOWED instead of DIRECT_LIGHTING_HOOK_DEFAULT) and the extra
 // shadow-map texture/uniforms wired onto the StateSet. That's the whole point: proving the hook
 // swap is really a drop-in, no other shader change needed.
@@ -18,20 +18,20 @@
 // ONLY the three cubes into the depth texture) , mainGroup (shadow texture + shadow/light
 // uniforms; renders the cubes AND the floor, lit+shadowed)].
 //
-// Press 's' to toggle the shadow on/off (swaps back to the unshadowed hook shader) -- the
+// Press 's' to toggle the shadow on/off (swaps back to the unshadowed hook shader) - the
 // clearest possible A/B: same scene, same light, only the shadow term changes.
 //
 // Also exercises three fixes made to osgx::shadow itself (see osgx/TODO.md's old Shadow section,
 // and OpenSceneGraph.py's 11-sketchfab.py pivot, which is what surfaced all three):
 //
-// 1. ShadowMap::create() now builds an ORTHOGRAPHIC frustum, not a perspective one -- the
+// 1. ShadowMap::create() now builds an ORTHOGRAPHIC frustum, not a perspective one - the
 //    physically-correct shape for a directional (parallel-ray) light. This file used to get away
 //    with perspective because its floor is small/close; nothing here changed to accommodate it.
 // 2. ShadowMap::create() now installs its OWN minimal depth-only Program on the shadow
-//    camera (ON|OVERRIDE) -- this file's own hand-rolled makeDepthOnlyProgram()/casters-StateSet
+//    camera (ON|OVERRIDE) - this file's own hand-rolled makeDepthOnlyProgram()/casters-StateSet
 //    workaround is GONE below; the library now does this for every caller, for free.
 // 3. The light direction is live-draggable (ImGui section below, OSGX_IMGUI builds only) via
-//    ShadowMap::reposition() -- an in-place camera reposition, not a full
+//    ShadowMap::reposition() - an in-place camera reposition, not a full
 //    ShadowMap::create() rebuild, cheap enough to call on every slider tick. The light
 //    gizmo (osgx::LightGizmos) reads the same live osgx::LightSet, so it and the shadow
 //    track the dragged direction together with no manual sync code.
@@ -63,7 +63,7 @@ OSGX_ENABLE_WARNINGS
 namespace {
 
 // Same attribute layout osgx::Cube uses (Shapes.hpp's VertexLayout default: position=0,
-// normal=1) -- the floor quad below is built by hand to match, so both it and the cubes work
+// normal=1) - the floor quad below is built by hand to match, so both it and the cubes work
 // with the exact same Program.
 constexpr std::string_view VERTEX_SHADER = R"GLSL(
 #version 460 core
@@ -85,7 +85,7 @@ void main() {
 }
 )GLSL";
 
-// Identical to osgx-lights.cpp's FRAGMENT_SHADER -- see this file's header comment for why that's
+// Identical to osgx-lights.cpp's FRAGMENT_SHADER - see this file's header comment for why that's
 // the whole point. Only needs osgx_DirectLighting()'s CONTRACT declaration + a call site; whether
 // that call is shadowed or not is entirely decided by which hook shader object makeProgram()
 // below adds alongside this one.
@@ -134,7 +134,7 @@ void main() {
 }
 )GLSL";
 
-// `shadowed` selects DIRECT_LIGHTING_HOOK_SHADOWED vs. plain DIRECT_LIGHTING_HOOK_DEFAULT -- the
+// `shadowed` selects DIRECT_LIGHTING_HOOK_SHADOWED vs. plain DIRECT_LIGHTING_HOOK_DEFAULT - the
 // 's'-key toggle in main() rebuilds the Program via this same function, swapping only that one
 // shader object.
 osg::ref_ptr<osg::Program> makeProgram(bool shadowed) {
@@ -160,7 +160,7 @@ osg::ref_ptr<osg::Program> makeProgram(bool shadowed) {
 
 // A flat floor quad, XY plane at the given Z, built with the same vertex-attribute layout
 // osgx::Cube uses (position=0, normal=1) so it renders through the identical Program the cubes
-// use -- no separate floor shader needed, unlike the old hand-rolled pyosg-lighting examples.
+// use - no separate floor shader needed, unlike the old hand-rolled pyosg-lighting examples.
 osg::ref_ptr<osg::Geode> makeFloor(float halfSize, float z) {
 	auto positions = osgx::make_ref<osg::Vec3Array>();
 
@@ -179,7 +179,7 @@ osg::ref_ptr<osg::Geode> makeFloor(float halfSize, float z) {
 	geometry->setNormalArray(normals.get(), osg::Array::BIND_OVERALL);
 	geometry->setVertexAttribArray(0, positions.get(), osg::Array::BIND_PER_VERTEX);
 	geometry->setVertexAttribArray(1, normals.get(), osg::Array::BIND_OVERALL);
-	// GL_TRIANGLE_FAN, not GL_QUADS -- GL_QUADS is removed in a core-profile context (this project's
+	// GL_TRIANGLE_FAN, not GL_QUADS - GL_QUADS is removed in a core-profile context (this project's
 	// shaders are all "#version 460 core"); a 4-vertex fan is exactly the same two triangles for a
 	// convex quad and works in either profile.
 	geometry->addPrimitiveSet(new osg::DrawArrays(GL_TRIANGLE_FAN, 0, 4));
@@ -203,7 +203,7 @@ osg::ref_ptr<osg::Geode> makeCube(const osg::Vec3& center, const osg::Vec3& size
 
 int main() {
 	// Three cubes of different footprints/heights, loosely matching osgx-grid's own floor demo
-	// screenshot -- close enough to prove multi-caster shadows land in believable places, not a
+	// screenshot - close enough to prove multi-caster shadows land in believable places, not a
 	// pixel-exact match. Sizes are (width, depth, height); center.z is size.z()/2 so each cube's
 	// base sits exactly on the floor (z=0).
 	struct CubeSpec {
@@ -218,7 +218,7 @@ int main() {
 		{osg::Vec3(0.5f, -0.7f, 0.35f), osg::Vec3(0.7f, 0.7f, 0.7f), osg::Vec3(0.95f, 0.75f, 0.10f)}, // yellow
 	};
 
-	// Directional light travel direction (down and across) -- steep enough that all three cubes
+	// Directional light travel direction (down and across) - steep enough that all three cubes
 	// cast a clearly visible shadow onto the floor without one cube's shadow completely burying
 	// another's. Not const: the ImGui "Directional Light" section below drags this live (see
 	// ShadowMap::reposition() further down).
@@ -251,7 +251,7 @@ int main() {
 	mainSS->addUniform(new osg::Uniform("metallic", 0.0f));
 	mainSS->addUniform(new osg::Uniform("ambientColor", osg::Vec3(1.0f, 1.0f, 1.0f)));
 	mainSS->addUniform(new osg::Uniform("ambientIntensity", 0.08f));
-	// Floor never sets its own "albedo" (unlike the cubes above) -- a flat, slightly warm
+	// Floor never sets its own "albedo" (unlike the cubes above) - a flat, slightly warm
 	// gray-stone default so it reads clearly against the shadow it receives.
 	floor->getOrCreateStateSet()->addUniform(new osg::Uniform("albedo", osg::Vec3(0.72f, 0.68f, 0.60f)));
 
@@ -268,13 +268,13 @@ int main() {
 		lightDir, sceneBoundCenter, sceneBoundRadius, shadowOptions
 	);
 
-	// No depth-only Program set here anymore -- ShadowMap::create() now installs one
+	// No depth-only Program set here anymore - ShadowMap::create() now installs one
 	// directly on shadowMap.camera's own StateSet (ON|OVERRIDE), which applies automatically to
 	// any subgraph added as its child. `casters` used to need its own explicit workaround; it
 	// doesn't anymore, and neither does any other osgx::shadow caller.
 	shadowMap.camera->addChild(casters.get());
 
-	// Shadow texture unit 0 -- this demo has no other textures. `shadowMap`'s own bias/strength/
+	// Shadow texture unit 0 - this demo has no other textures. `shadowMap`'s own bias/strength/
 	// casterIndex uniforms are added as-is (their defaults already match ShadowMapOptions above).
 	mainSS->setTextureAttributeAndModes(0, shadowMap.depthTexture.get(), osg::StateAttribute::ON);
 	mainSS->addUniform(new osg::Uniform("osgx_shadowMap", 0));
@@ -287,7 +287,7 @@ int main() {
 
 	mainSS->setAttributeAndModes(makeProgram(shadowed).get(), osg::StateAttribute::ON);
 
-	// minMarkerRadius/spotConeLength stay at their unit-scene-scale library defaults -- this
+	// minMarkerRadius/spotConeLength stay at their unit-scene-scale library defaults - this
 	// scene's own cubes/floor are already close to unit scale, unlike osgx-lights.cpp's object.
 	// `mainGroup` (not `root`) so the gizmo sizes itself off the actual shaded scene, not the
 	// shadow camera/gizmo overlay's own unrelated bounds.
@@ -333,7 +333,7 @@ int main() {
 	// shadow (and moves osgx::LightGizmos' overlay, reading the same LightSet) without ever
 	// rebuilding shadowMap's camera/FBO/depth texture.
 	//
-	// gizmos->getOverlay() pinned explicitly as the draw camera -- osgx::LightGizmos' overlay is a
+	// gizmos->getOverlay() pinned explicitly as the draw camera - osgx::LightGizmos' overlay is a
 	// POST_RENDER camera nested under `root` (not a View slave), which draws AFTER the master
 	// camera's own PostDrawCallback (where Widget's default drawCamera=nullptr guess fires); left
 	// at the default, the panel rendered, then was immediately painted over by the gizmo overlay's
@@ -356,7 +356,7 @@ int main() {
 		changed |= ImGui::SliderFloat("Intensity", &lightIntensity, 0.0f, 10.0f);
 
 		if(changed) {
-			// A dragged slider can pass through (0,0,0) -- lookAt() (inside
+			// A dragged slider can pass through (0,0,0) - lookAt() (inside
 			// ShadowMap::reposition()) is degenerate for a zero-length direction, so
 			// hold the last valid direction instead of feeding it one.
 			if(lightDir.length2() > 1e-8f) {

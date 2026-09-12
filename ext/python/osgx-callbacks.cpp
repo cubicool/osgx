@@ -12,11 +12,11 @@ namespace detail {
 }
 
 // osgx::CallbacksGroup<Callback>'s add()/remove() are identity-based, but the underlying
-// storage (osgx/Callbacks.hpp's _callbacks) is a real std::vector -- size()/get()/set()/
+// storage (osgx/Callbacks.hpp's _callbacks) is a real std::vector - size()/get()/set()/
 // removeAt()/insert() (added alongside this binding) expose that positionally, which is what
 // SequenceTraits actually needs. This is the SAME shape as Group.children (OpenSceneGraph.py's
 // pyosg/osg/Group.hpp): a pyx::SequenceProxy handles Python list semantics AND, critically,
-// per-element Python identity/lifetime via SlotCache -- NOT py::dynamic_attr() (deliberately
+// per-element Python identity/lifetime via SlotCache - NOT py::dynamic_attr() (deliberately
 // avoided project-wide, it's slow) and NOT py::keep_alive (can't reach elements added later
 // through a method call, only fixed constructor argument positions).
 template<>
@@ -77,11 +77,11 @@ namespace detail {
 		pyx::ProxyStorageOSG<osgx::DrawableDrawCallbacksGroup, DrawableDrawCallbacksProxy>;
 }
 
-// osgx::CallbacksGroup<Callback> and its three instantiations (osgx/Callbacks.hpp) -- the usual
+// osgx::CallbacksGroup<Callback> and its three instantiations (osgx/Callbacks.hpp) - the usual
 // way to run several callbacks of the same kind off one slot (updateCallback, postDrawCallback,
 // etc.) without threading a Callback::setNestedCallback() chain by hand. Bound directly at the
 // top-level `osgx` namespace (not a submodule), matching FlyToCallback/ShakeCallback in
-// osgx-core.cpp -- these are general infra, not thematically their own module.
+// osgx-core.cpp - these are general infra, not thematically their own module.
 void bind_callbacks(py::module_& m) {
 	auto cameraGroup = py::class_<
 		osgx::CameraDrawCallbacksGroup,
@@ -91,7 +91,7 @@ void bind_callbacks(py::module_& m) {
 		m,
 		"CameraDrawCallbacksGroup",
 		"Runs several osg.Camera.DrawCallback objects off one draw-callback slot, in list order, "
-		"side by side -- NOT chained via setNestedCallback(). Populate through .callbacks (a real "
+		"side by side - NOT chained via setNestedCallback(). Populate through .callbacks (a real "
 		"Python list: indexing, len(), append(), insert(), del) or the add()/remove() aliases."
 	);
 
@@ -105,7 +105,7 @@ void bind_callbacks(py::module_& m) {
 	cameraGroup
 		.def(py::init<>(), "Creates an empty group.")
 		// Populated through the SAME proxy .callbacks exposes (via extend()), not group->add()
-		// directly -- extend()/append() are what actually cache each element's Python identity
+		// directly - extend()/append() are what actually cache each element's Python identity
 		// (SlotCache), so a callback passed inline in the list literal with no other Python
 		// reference stays alive exactly as long as it's a member, same guarantee append()
 		// gives when called after construction.
@@ -118,7 +118,7 @@ void bind_callbacks(py::module_& m) {
 
 			return group;
 		}), "callbacks"_a, "Creates a group pre-populated with `callbacks`, run in list order.")
-		// Thin aliases matching osgx::CallbacksGroup's own add()/remove() vocabulary -- both
+		// Thin aliases matching osgx::CallbacksGroup's own add()/remove() vocabulary - both
 		// delegate to the SAME retaining proxy .callbacks exposes, not the raw C++ methods.
 		.def("add", [](osgx::CameraDrawCallbacksGroup& g, py::object cb) {
 			detail::CameraDrawCallbacksStorage::get(g)->template proxy<detail::CameraDrawCallbacksProxy>().append(cb);
@@ -136,7 +136,7 @@ void bind_callbacks(py::module_& m) {
 		m,
 		"NodeCallbacksGroup",
 		"Runs several osg.NodeCallback objects off one update/event/cull callback slot, in list "
-		"order, side by side -- NOT chained via setNestedCallback(). Populate through .callbacks "
+		"order, side by side - NOT chained via setNestedCallback(). Populate through .callbacks "
 		"(a real Python list: indexing, len(), append(), insert(), del) or the add()/remove() aliases."
 	);
 
@@ -174,7 +174,7 @@ void bind_callbacks(py::module_& m) {
 		m,
 		"DrawableDrawCallbacksGroup",
 		"Runs several osg.Drawable.DrawCallback objects off one draw-callback slot, in list "
-		"order, side by side -- NOT chained via setNestedCallback(). Populate through .callbacks "
+		"order, side by side - NOT chained via setNestedCallback(). Populate through .callbacks "
 		"(a real Python list: indexing, len(), append(), insert(), del) or the add()/remove() aliases."
 	);
 
@@ -207,7 +207,7 @@ void bind_callbacks(py::module_& m) {
 	// No keep_alive on the texture argument: WriteTextureCallback holds a real
 	// osg::ref_ptr<osg::Texture>, so the C++ object outlives any Python wrapper on its own, and
 	// py::cast() returns the same PyObject* for the same pointer anyway. Nothing here needs a
-	// SlotCache/proxy either -- it's one fixed constructor argument, not an add()-retained
+	// SlotCache/proxy either - it's one fixed constructor argument, not an add()-retained
 	// container.
 	py::class_<
 		osgx::WriteTextureCallback,
@@ -227,13 +227,13 @@ void bind_callbacks(py::module_& m) {
 		.def(
 			"write", &osgx::WriteTextureCallback::write, "filename"_a,
 			"Request that this callback's texture be written to `filename` the NEXT time the "
-			"callback runs. Does not write immediately and does not block -- the readback needs a "
+			"callback runs. Does not write immediately and does not block - the readback needs a "
 			"live GL context, so it happens inside the draw traversal rather than here.\n\n"
 			"Install it on the camera that RENDERS the texture, normally as that camera's "
 			"postDrawCallback, so the readback sees what the camera just drew (use "
 			"CameraDrawCallbacksGroup if the slot is already occupied).\n\n"
 			"Chiefly a diagnostic. It settles questions about a render target that are genuinely "
-			"hard to judge on screen -- 'is this actually flat, or just low-contrast?' becomes "
+			"hard to judge on screen - 'is this actually flat, or just low-contrast?' becomes "
 			"unambiguous once you count distinct colors in the dump, where a uniform fill stands "
 			"out instantly. Caveat: the readback can be GPU-async-stale; if a result seems to lag "
 			"a frame, prefer live shader hot-swap over trusting the pixels."

@@ -46,14 +46,14 @@ void installAnimationCallback(
 	bool skipAnimation
 );
 
-// Drives glTF node animation (translation/rotation/scale channels only -- no morph-target/weights
+// Drives glTF node animation (translation/rotation/scale channels only - no morph-target/weights
 // path exists here) UNCONDITIONALLY: installAnimationCallback() attaches one of these directly as
 // an ordinary osg::NodeCallback, and `_playing` below defaults to true, so keyframe sampling and
 // setMatrix() calls happen every update traversal the instant the application starts calling
-// frame() -- no SimplePlayer, and no other application code, is required to make this run.
+// frame() - no SimplePlayer, and no other application code, is required to make this run.
 // SimplePlayer (SimplePlayer.hpp) is a CONTROL surface bolted on top of an already-running
 // instance of this class (found via dynamic_cast<SimplePlayerControl*> on the model's update-
-// callback chain) -- constructing one lets a caller pause/select/restart, but never causes
+// callback chain) - constructing one lets a caller pause/select/restart, but never causes
 // animation to start; it was already happening. This is also why a caller who never touches
 // SimplePlayer at all (e.g. a plain viewer/loader) still sees any model with node animation move.
 //

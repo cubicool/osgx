@@ -17,7 +17,7 @@ OSGX_ENABLE_WARNINGS
 // osg::TemplateArray/TemplateIndexArray, from an osg::MixinVector<T> specialization. Unlike
 // TemplateArray/TemplateIndexArray's OTHER base (Array/IndexArray, both OSG_EXPORT), MixinVector
 // itself carries no export annotation anywhere in OSG, and every one of its methods is defined
-// inline inside its class body (see <osg/MixinVector>) -- so any translation unit that touches
+// inline inside its class body (see <osg/MixinVector>) - so any translation unit that touches
 // one of these array types implicitly compiles its own private copy of MixinVector<T>'s methods
 // for that T.
 //
@@ -25,16 +25,16 @@ OSGX_ENABLE_WARNINGS
 // how many translation units bring one, or whether OSG's own DLL happens to carry a dormant copy
 // too. MSVC will ALSO fold it right up until something in the final link causes it to actually
 // need a different symbol living in the same object file inside osg.lib as one of these dormant
-// copies -- at which point that whole object file gets pulled in, the duplicate is no longer
+// copies - at which point that whole object file gets pulled in, the duplicate is no longer
 // dormant, and the link fails with LNK2005 "already defined". This bit osgx::gltf::Accessor's
 // IntArray/UIntArray usage the moment osgx::PixelText was added elsewhere in the same module,
-// with zero changes to Accessor.cpp itself -- confirming this isn't a bug in any one file, but a
+// with zero changes to Accessor.cpp itself - confirming this isn't a bug in any one file, but a
 // standing gap in every osg::XxxArray specialization this project actually constructs.
 //
-// Declaring every such specialization `extern` here -- matched by the one real instantiation of
-// each in Array.cpp -- stops every OTHER translation unit that includes this header from
+// Declaring every such specialization `extern` here - matched by the one real instantiation of
+// each in Array.cpp - stops every OTHER translation unit that includes this header from
 // compiling its own copy. osgx then contributes exactly one copy of each, project-wide, instead
-// of one per translation unit -- closing off this whole class of bug instead of firefighting it
+// of one per translation unit - closing off this whole class of bug instead of firefighting it
 // one newly-exposed type at a time. The list below is every element type osgx::gltf::Accessor
 // (the one file that constructs nearly the full glTF component-type space) actually instantiates;
 // extend it if a new file starts constructing an osg::XxxArray specialization not already here.
@@ -107,12 +107,12 @@ public:
 		assign(init.begin(), init.end());
 	}
 
-	// Preallocates `count` default-constructed elements -- BaseArray's own sized constructor
+	// Preallocates `count` default-constructed elements - BaseArray's own sized constructor
 	// (e.g. osg::Vec3Array(unsigned int)) isn't inherited, since Array declares its own
 	// constructor set instead of `using BaseArray::BaseArray;`. For an arithmetic
 	// ElementDataType (osgx::FloatArray), a bare int/unsigned literal prefers the variadic
 	// single-element constructor below instead (its exact-match template deduction beats the
-	// int->size_t conversion this overload needs) -- pass an actual std::size_t (e.g. the `_sz`
+	// int->size_t conversion this overload needs) - pass an actual std::size_t (e.g. the `_sz`
 	// UDL from Core.hpp) to select this overload unambiguously in that case. Non-arithmetic
 	// element types (Vec2Array/Vec3Array/Vec4Array) have no such ambiguity: any integral argument
 	// resolves here cleanly, since ElementDataType isn't constructible from it at all.
@@ -128,7 +128,7 @@ public:
 	}
 
 	// std::vector-style "N default-constructed elements" constructor. Guarded off whenever
-	// size_t is itself convertible to ElementDataType (e.g. FloatArray/IntArray) -- there,
+	// size_t is itself convertible to ElementDataType (e.g. FloatArray/IntArray) - there,
 	// Array(5) already means "one element valued 5" via the variadic constructor below, and an
 	// unconstrained sized constructor would make that call ambiguous. No such collision for
 	// struct-like element types (Vec2/Vec3/Vec4Array), where this is unambiguous and safe.

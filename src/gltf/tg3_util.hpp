@@ -58,7 +58,7 @@ inline void tg3_free_file(uint8_t* data, uint64_t, void*) {
 }
 
 // tg3_str -> owned std::string. Only needed where data must outlive the model's arena
-// (osg node names, texture cache keys) -- everywhere else, read tg3_str fields directly.
+// (osg node names, texture cache keys) - everywhere else, read tg3_str fields directly.
 inline std::string tg3_to_string(tg3_str s) {
 	return s.data ? std::string(s.data, s.len) : std::string();
 }
@@ -90,10 +90,10 @@ inline int tg3_texcoord_suffix(tg3_str attrName) {
 	return value;
 }
 
-// v3 ships no Value::Has/Get-style accessor -- tg3_value/tg3_extension/tg3_kv_pair
+// v3 ships no Value::Has/Get-style accessor - tg3_value/tg3_extension/tg3_kv_pair
 // (Section 9 of tiny_gltf_v3.h) are raw structs only. These are the handful of tree-walk
 // operations osgx actually needs (KHR_materials_pbrSpecularGlossiness in Material.cpp and
-// the osgx_pbribl manifest decode in PBRIBL.cpp -- though PBRIBL.cpp's manifest was never
+// the osgx_pbribl manifest decode in PBRIBL.cpp - though PBRIBL.cpp's manifest was never
 // real glTF data and uses tinygltf_json_c.h's tg3json_value directly instead, a different
 // type from tg3_value; do not conflate the two).
 inline const tg3_extension* tg3_find_extension(const tg3_extras_ext& ext, const char* name) {
@@ -130,7 +130,7 @@ inline bool tg3_as_string(const tg3_value& value, tg3_str& out) {
 	return true;
 }
 
-// Only needed for MaterialBuilder's "primitive has no material index" fallback -- every
+// Only needed for MaterialBuilder's "primitive has no material index" fallback - every
 // *parsed* material already gets these defaults from the parser itself (tg3__init_pbr /
 // tg3__init_normal_texture_info / tg3__init_occlusion_texture_info / tg3__parse_material
 // in tiny_gltf_v3.c), which this mirrors exactly.

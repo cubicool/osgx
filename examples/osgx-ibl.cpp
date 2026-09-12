@@ -127,7 +127,7 @@ void main() {
 }
 )GLSL";
 
-// The LUT's meaningful data is a (scale, bias) pair in R/G -- see osgx_F_MultiScatter's ab.x/ab.y
+// The LUT's meaningful data is a (scale, bias) pair in R/G - see osgx_F_MultiScatter's ab.x/ab.y
 // read in osgx/PBR.hpp. Shown directly, unlit/untonemapped, since it's not a color at all.
 constexpr const char LUT_FRAG[] = R"GLSL(
 #version 460 core
@@ -612,7 +612,7 @@ int main(int argc, char** argv) {
 			cubemap = bake.prefilterTexture;
 			bakeRoot = bake.root;
 			sourceTexture = bake.sourceTexture;
-			// Matches GGXPrefilter.cpp's own mipCountForSize() -- the highest valid mip index for
+			// Matches GGXPrefilter.cpp's own mipCountForSize() - the highest valid mip index for
 			// a power-of-two cube face, i.e. floor(log2(size)), not the level *count*.
 			maxMip = static_cast<int>(std::floor(std::log2(static_cast<double>(cubeSize))));
 
@@ -622,7 +622,7 @@ int main(int argc, char** argv) {
 
 			// A sibling bake root under the same parent, same as
 			// osgx::gltf::pbribl::PBRIBLEnvironment::prepare(hdrPath, ...) wires its own LUT/diffuse/
-			// specular bakes together -- independent PRE_RENDER passes, not a dependency chain.
+			// specular bakes together - independent PRE_RENDER passes, not a dependency chain.
 			bakeRoot->addChild(lutCamera);
 		}
 

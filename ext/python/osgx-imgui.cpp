@@ -1,15 +1,15 @@
 #include "osgx-python.hpp"
 #include "osgx/ImGui.hpp"
 
-// osgx::imgui -- deliberately NOT a general ImGui wrapper (that's pyimgui's job elsewhere). Just
+// osgx::imgui - deliberately NOT a general ImGui wrapper (that's pyimgui's job elsewhere). Just
 // enough to build quick debugging knobs inside a Widget::addSection() callback: a handful of
 // stateless functions returning (changed, value) tuples, since Python floats/bools aren't
 // mutable references the way ImGui's C++ &value out-params expect. A sibling of osgx::debug, not
-// nested under it -- most of this (Panel/Widget/sliders) has nothing to do with the profiler;
+// nested under it - most of this (Panel/Widget/sliders) has nothing to do with the profiler;
 // only ProfilerSection reaches into debug::.
 //
 // This whole file only compiles (and is only added to the source list, see CMakeLists.txt) when
-// OSGX_WITH_IMGUI is on -- osgx::imgui's own types don't exist otherwise (see osgx/ImGui.hpp).
+// OSGX_WITH_IMGUI is on - osgx::imgui's own types don't exist otherwise (see osgx/ImGui.hpp).
 #ifdef OSGX_IMGUI
 
 namespace pybind11x {
@@ -61,7 +61,7 @@ void bind_imgui(py::module_& m_imgui) {
 		.def_readwrite("dock_width", &osgx::imgui::Options::dockWidth, "Window width in pixels when docked LEFT/RIGHT.")
 	;
 
-	// A growable options bag for addSection() -- expected to grow (a size hint
+	// A growable options bag for addSection() - expected to grow (a size hint
 	// beyond expand/constrain, tooltips, etc.), so this is keyword-constructible
 	// from Python rather than adding more positional args to addSection itself.
 	py::class_<osgx::imgui::SectionOptions>(
@@ -91,7 +91,7 @@ void bind_imgui(py::module_& m_imgui) {
 		m_imgui,
 		"Panel",
 		"Reusable osgx.imgui content for an application-owned Dear ImGui frame. Creates no ImGui "
-		"context, backend, window, or event handler of its own -- call draw() after the host has "
+		"context, backend, window, or event handler of its own - call draw() after the host has "
 		"begun the window that should contain these sections. See Widget for the convenience "
 		"driver that supplies those pieces automatically."
 	)
@@ -167,11 +167,11 @@ void bind_imgui(py::module_& m_imgui) {
 		"Widget",
 		"Owns the Dear ImGui lifecycle (context, backend, window, event handling) for one viewer "
 		"window and draws its Panel's sections inside it every frame. Requires the viewer already "
-		"be osgViewer.Viewer.SingleThreaded -- Dear ImGui's single global context isn't safe to "
+		"be osgViewer.Viewer.SingleThreaded - Dear ImGui's single global context isn't safe to "
 		"touch from more than one OSG draw thread. Add via addEventHandler()."
 	)
 		.def(
-			// osgViewer::View, not the full Viewer -- Widget only needs getCamera()
+			// osgViewer::View, not the full Viewer - Widget only needs getCamera()
 			// (cached once) and getEventHandlers(); a Python osgViewer::Viewer still
 			// works here since it upcasts (View is separately registered above and
 			// Viewer's py::class_ lists it as a base).

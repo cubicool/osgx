@@ -32,9 +32,9 @@ OSGX_ENABLE_WARNINGS
 
 namespace osgx {
 
-// Disables a node after its update callback has fired exactly once -- e.g. a PRE_RENDER bake
+// Disables a node after its update callback has fired exactly once - e.g. a PRE_RENDER bake
 // camera that should render one frame at startup and then go idle. Call rebake() to re-arm it
-// (render one more frame -- e.g. after swapping the bake's source data).
+// (render one more frame - e.g. after swapping the bake's source data).
 class RunOnceCallback: public osg::NodeCallback {
 public:
 	explicit RunOnceCallback(bool traverseChildren=true): _traverseChildren(traverseChildren) {}
@@ -72,13 +72,13 @@ private:
 	mutable std::atomic<bool> _done{false};
 };
 
-// Fullscreen NDC-quad vertex shader -- shared by any single-pass bake (BRDF LUT today; future
+// Fullscreen NDC-quad vertex shader - shared by any single-pass bake (BRDF LUT today; future
 // bakes that need a rasterized pass can reuse it too).
 //
 // Kept as an `inline constexpr` header definition (not moved to IBL.cpp like the rest of this
 // file): it's bound directly by name in ext/osgx-python.cpp (osgx::FULLSCREEN_VERT), which
 // needs real external linkage, AND referenced inside registerIBLShaderLibs()'s `static constexpr
-// ShaderLib` array below, which needs a genuine constant expression -- `inline constexpr` in a
+// ShaderLib` array below, which needs a genuine constant expression - `inline constexpr` in a
 // header is the one form that satisfies both at once.
 inline constexpr const char* FULLSCREEN_VERT = R"GLSL(
 #version 430 core
@@ -91,7 +91,7 @@ void main() {
 }
 )GLSL";
 
-// Split-sum BRDF LUT bake (Karis 2013) -- environment-independent, so it only ever needs to
+// Split-sum BRDF LUT bake (Karis 2013) - environment-independent, so it only ever needs to
 // bake once. R channel = Fresnel scale, G channel = Fresnel bias; sampled in the consuming
 // shader as texture(brdfLUT, vec2(NdotV, roughness)).rg.
 inline constexpr const char* BRDF_LUT_FRAG = R"GLSL(
@@ -162,9 +162,9 @@ void main() {
 )GLSL";
 
 // Loads a pre-baked GGX-prefiltered cubemap from a .ktx2 file (see
-// plugins/ktx2/ReaderWriterKTX2.cpp for the plugin that makes this format readable -- must be
+// plugins/ktx2/ReaderWriterKTX2.cpp for the plugin that makes this format readable - must be
 // registered with osgDB, same as any other reader/writer plugin). The KTX2 is expected to carry its own
-// hand-baked mip chain, one level per roughness step -- hardware mipmap generation is disabled
+// hand-baked mip chain, one level per roughness step - hardware mipmap generation is disabled
 // so OSG doesn't overwrite it.
 //
 // Returns nullptr (and logs via OSG_WARN) if the path doesn't load, or doesn't load as a
@@ -172,11 +172,11 @@ void main() {
 osg::ref_ptr<osg::TextureCubeMap> loadPrefilterCubemap(const std::string& path);
 
 // Creates a PRE_RENDER FBO camera that bakes the split-sum BRDF LUT into `lut` exactly once
-// (via RunOnceCallback -- installed as the camera's update callback). `lut` is configured
+// (via RunOnceCallback - installed as the camera's update callback). `lut` is configured
 // in-place (size/format/filters), matching the out-param convention used by the two-argument
 // makePickCamera() overload above. The caller is responsible for:
 //
-// - adding the returned camera as a child of the scene graph (anywhere -- it's ABSOLUTE_RF)
+// - adding the returned camera as a child of the scene graph (anywhere - it's ABSOLUTE_RF)
 // - NOT expecting it to re-bake on its own: the LUT's only inputs are NdotV and roughness,
 //   both baked into the UV axes, so a static environment never needs a second bake. Call
 //   rebake() on the camera's RunOnceCallback (via getUpdateCallback()) if that ever changes.
@@ -184,21 +184,21 @@ osg::ref_ptr<osg::Camera> makeBRDFLUTCamera(int lutSize, osg::Texture2D* lut);
 
 // One `SharedBRDFLUT::create(lutSize)` call's worth of result: `texture` is always the shared LUT
 // for that size. `camera` is only non-null the FIRST time a given `lutSize` is requested in this
-// process -- that caller is responsible for adding it to a rendered scene graph so the one-time
+// process - that caller is responsible for adding it to a rendered scene graph so the one-time
 // bake actually runs. Every later call at the same `lutSize` gets the same `texture` back with
 // `camera` left null, because there is nothing left to bake.
 struct SharedBRDFLUT {
 	osg::ref_ptr<osg::Texture2D> texture;
 	osg::ref_ptr<osg::Camera> camera;
 
-	// The split-sum BRDF LUT is a property of THIS CODE -- this GGX distribution, this Smith
-	// visibility term, this sample count -- not of any HDR image, environment, or probe (see the
+	// The split-sum BRDF LUT is a property of THIS CODE - this GGX distribution, this Smith
+	// visibility term, this sample count - not of any HDR image, environment, or probe (see the
 	// derivation note above makeBRDFLUTCamera()). Every environment requesting the same `lutSize`
 	// bakes to byte-identical output, so this bakes it once per size, process-wide, and hands the
-	// same GPU texture to every caller after that -- never re-derive it per HDR/environment/probe,
+	// same GPU texture to every caller after that - never re-derive it per HDR/environment/probe,
 	// and never key this cache by anything but `lutSize`. NOTE: unlike every other `::create()`
 	// factory in osgx, this one may hand back an ALREADY-EXISTING shared texture rather than a
-	// fresh bake -- see the comment above for the exact contract.
+	// fresh bake - see the comment above for the exact contract.
 	static SharedBRDFLUT create(int lutSize);
 };
 
@@ -209,7 +209,7 @@ struct SharedBRDFLUT {
 // SharedBRDFLUT::create()'s live consumers never construct one of these.
 //
 // The result is a bare osg::Image, not a Texture2D: the KTX2 writer plugin has no Texture2D
-// support at all (only TextureCubeMap and osg::Image -- see plugins/ktx2/ReaderWriterKTX2.cpp), so
+// support at all (only TextureCubeMap and osg::Image - see plugins/ktx2/ReaderWriterKTX2.cpp), so
 // there is nothing gained by wrapping this back into a texture before writing it out.
 class BRDFLUTReadback: public osg::Camera::DrawCallback {
 public:
@@ -234,7 +234,7 @@ private:
 
 // Reads all six faces of `srcTex` (already bound by the caller) back from the GPU into CPU-side
 // osg::Image data on `result`, so it becomes writable by the KTX2 plugin (which reads per-face
-// `getImage()` data -- see plugins/ktx2/ReaderWriterKTX2.cpp -- not a live GL texture). Shared by
+// `getImage()` data - see plugins/ktx2/ReaderWriterKTX2.cpp - not a live GL texture). Shared by
 // every cubemap readback callback (GGXPrefilterReadback, LambertianCubeReadback); each keeps its
 // own trigger condition (frame-count heuristic vs. an exact BakeCompletion signal), since that part
 // genuinely differs and isn't worth unifying behind a virtual hook.
@@ -249,7 +249,7 @@ void readCubeMapFaces(
 // SH-9 diffuse irradiance
 //
 // L0-L2 spherical harmonics: 9 RGB coefficients standing in for the whole low-frequency diffuse
-// environment -- much cheaper than sampling a cubemap per-pixel for diffuse, at the cost of only
+// environment - much cheaper than sampling a cubemap per-pixel for diffuse, at the cost of only
 // capturing broad/blurry lighting (which is all diffuse irradiance ever needs). Ported from
 // 09-ibl.py's compute_sh() (projection) and sh_irradiance() (GLSL evaluation).
 // ------------------------------------------------------------------------------------------------
@@ -261,14 +261,14 @@ struct SH9 {
 // Projects an equirectangular (2:1) HDR/LDR environment image onto SH9. Cosine-lobe A_l weights
 // are baked in here so the GLSL evaluation (SH_IRRADIANCE below) is a plain dot-product sum.
 //
-// O(width*height) -- meant to run once at startup (or once per environment swap), not per frame.
+// O(width*height) - meant to run once at startup (or once per environment swap), not per frame.
 // img's pixel format is read via osg::Image::getColor(), which returns true (unnormalized) float
-// radiance for float-format images -- use a genuinely HDR-loaded osg::Image (e.g. a .hdr file via
+// radiance for float-format images - use a genuinely HDR-loaded osg::Image (e.g. a .hdr file via
 // osgDB::readImageFile()), not an LDR-clamped one, or the diffuse term will be dim/wrong.
 SH9 computeSH(const osg::Image* img);
 
 // GLSL evaluation of an SH9 environment at world-space normal N. shCoeffs is a 9-element array
-// uniform (or local) -- caller declares and binds it under whatever name fits their shader
+// uniform (or local) - caller declares and binds it under whatever name fits their shader
 // (e.g. `uniform vec3 iblSH[9];`), then calls osgx_SHIrradiance(N, iblSH).
 //
 // Each shCoeffs[i] is A_l * L_lm (the cosine-lobe weight A_l already baked in by computeSH()'s
@@ -298,22 +298,22 @@ vec3 osgx_SHIrradiance(vec3 N, vec3 shCoeffs[9]) {
 // keeps directional detail SH9's low-frequency basis can wash out in high-contrast environments.
 // This is what the official Khronos glTF-Sample-Viewer itself bakes for diffuse IBL. Ported
 // directly from OpenSceneGraph.py/examples/pyosg-khronos-viewer.py's make_lambertian_environment()
-// -- same Hammersley/radical-inverse sequence, same per-face tangent-frame construction, same
+// - same Hammersley/radical-inverse sequence, same per-face tangent-frame construction, same
 // GL-cube-face -> Z-up-world axis convention IBL_SPECULAR's own R_gl swap already uses (so
 // LAMBERTIAN_IRRADIANCE below applies the identical remap before sampling). Confirmed
 // pixel-parity against github.khronos.org/glTF-Sample-Viewer-Release/ via that Python viewer,
-// 2026-07-22 -- this is a mechanical C++ port of an already-validated algorithm, not a new design.
+// 2026-07-22 - this is a mechanical C++ port of an already-validated algorithm, not a new design.
 //
-// Lives alongside SH9, not in place of it -- SH9 stays the right call for "cheap ambient, zero
+// Lives alongside SH9, not in place of it - SH9 stays the right call for "cheap ambient, zero
 // fuss"; reach for this when matching a real reference renderer (or high-contrast environments)
 // actually matters. osgGLTF's optional PBR renderer uses this exclusively for Khronos parity.
 //
 // The tangent-frame/equirect-sampling helpers this relies on (radicalInverseVdC, cubeFaceDirection,
 // EquirectView, sampleEquirect) are private to computeLambertianCubeMap()'s implementation and live
-// entirely in IBL.cpp -- nothing outside this repo's own build has ever referenced them by name.
+// entirely in IBL.cpp - nothing outside this repo's own build has ever referenced them by name.
 // ------------------------------------------------------------------------------------------------
 
-// O(6 * size * size * samples) bilinear HDR samples -- meant to run once at startup (or once per
+// O(6 * size * size * samples) bilinear HDR samples - meant to run once at startup (or once per
 // environment swap), same contract as computeSH(). `hdrImg` must be a real HDR-loaded osg::Image
 // (not LDR-clamped), same requirement as computeSH().
 osg::ref_ptr<osg::TextureCubeMap> computeLambertianCubeMap(
@@ -322,7 +322,7 @@ osg::ref_ptr<osg::TextureCubeMap> computeLambertianCubeMap(
 	int samples = 256
 );
 
-// GLSL evaluation of a baked Lambertian cubemap at world-space normal N -- applies the same
+// GLSL evaluation of a baked Lambertian cubemap at world-space normal N - applies the same
 // GL-cube-face axis remap IBL_SPECULAR's R_gl uses, so `diffuseEnv` must be sampled with a plain
 // `samplerCube` bound to a cubemap baked by computeLambertianCubeMap() above (or an equivalent
 // Y-up-convention bake).
@@ -334,10 +334,10 @@ vec3 osgx_LambertianIrradiance(vec3 N, samplerCube diffuseEnv) {
 }
 )GLSL";
 
-// Flat two-color "sky above / ground below" ambient term -- no cubemap, BRDF LUT, or SH bake
+// Flat two-color "sky above / ground below" ambient term - no cubemap, BRDF LUT, or SH bake
 // needed, so a shader can have *some* ambient response with zero asset loading. This is the
 // fallback path 09-ibl.py's evaluateIBL() takes when iblEnabled == 0; pulled out standalone here
-// since a quick REPL/demo shader frequently wants exactly this and nothing else -- reach for the
+// since a quick REPL/demo shader frequently wants exactly this and nothing else - reach for the
 // real SH_IRRADIANCE/IBL_SPECULAR pair above once an actual environment is worth loading.
 inline constexpr const char* HEMISPHERE_AMBIENT = R"GLSL(
 vec3 osgx_HemisphereAmbient(vec3 N, vec3 up, vec3 albedo, float ao, vec3 skyColor, vec3 groundColor) {
@@ -351,19 +351,19 @@ vec3 osgx_HemisphereAmbient(vec3 N, vec3 up, vec3 albedo, float ao, vec3 skyColo
 // Lambertian diffuse cubemap, a GGX-prefiltered specular cubemap + BRDF LUT, independent
 // diffuse/specular intensity scalars, and the cubemap lookup basis. Split into its own snippet,
 // separate from osgx_EvaluateIBL() itself, the same shape DEFERRED_LIGHTING_INPUTS/GET_GBUFFER
-// (osgx::gltf) use -- a caller that wants these uniforms declared without osgx_EvaluateIBL()
+// (osgx::gltf) use - a caller that wants these uniforms declared without osgx_EvaluateIBL()
 // (unlikely today, but no reason to force the two together) can request just this one.
 //
-// iblDiffuseIntensity/iblSpecularIntensity are independent, not one shared iblIntensity -- ported
+// iblDiffuseIntensity/iblSpecularIntensity are independent, not one shared iblIntensity - ported
 // from OpenSceneGraph.py/examples/pyosg-lighting/11-sketchfab-lambertian.py's own knobs: turning
 // up diffuse SH enough to read as ambient fill also blows out reflections if the two share one
 // scalar, and turning reflections down to a sane brightness crushes ambient back to near-black.
 // Also the pair a caller dials toward zero to make punctual lights read more clearly against IBL
-// -- see PBRIBLScene::iblDiffuseIntensity/iblSpecularIntensity and PBRIBLLightingScene's own
+// - see PBRIBLScene::iblDiffuseIntensity/iblSpecularIntensity and PBRIBLLightingScene's own
 // identically-named pair (PBRIBL.hpp) for the live-tunable Uniform refs osgx::gltf::pbribl exposes
 // for exactly this, one per lighting-pass shape.
 //
-// iblAxis is the KTX/OpenGL cubemap lookup basis -- a prepared environment may override this for
+// iblAxis is the KTX/OpenGL cubemap lookup basis - a prepared environment may override this for
 // a legacy or application-specific cube convention.
 inline constexpr const char* IBL_LIGHTING_INPUTS = R"GLSL(
 uniform samplerCube envMap;
@@ -374,22 +374,22 @@ uniform float iblSpecularIntensity;
 uniform vec3 iblAxis[3];
 )GLSL";
 
-// osgx_EvaluateIBL() -- the production diffuse+specular IBL evaluator osgx::gltf::pbribl's own
+// osgx_EvaluateIBL() - the production diffuse+specular IBL evaluator osgx::gltf::pbribl's own
 // forward and deferred lighting shaders both run (formerly a private, unprefixed `evaluateIBL()`/
-// `Lighting` duplicated verbatim in PBRIBL.cpp's two shader strings -- moved here 2026-08-22 so a
+// `Lighting` duplicated verbatim in PBRIBL.cpp's two shader strings - moved here 2026-08-22 so a
 // `Hook::DeferredLighting` override can actually reuse it via `#pragma osgx::ibl IBL_LIGHTING_INPUTS,
 // EVALUATE_IBL`, instead of hand-copying it the way examples/osgx-gbuffer-comic.cpp's comment used
 // to note as simply a fact of life). Requires osgx_Material (osgx::pbr MATERIAL_STRUCT) and
 // osgx_F_MultiScatter (osgx::pbr F_MULTISCATTER) already in scope, plus IBL_LIGHTING_INPUTS above.
 //
-// Distinct from osgx_AmbientLighting()/osgx_IBLSpecular() (PBR.hpp) -- those are the simpler,
+// Distinct from osgx_AmbientLighting()/osgx_IBLSpecular() (PBR.hpp) - those are the simpler,
 // specular-only ambient hook a hand-assembled minimal PBR shader uses (see PBR.hpp's own
 // AMBIENT_LIGHTING_DECL comment); this is the fuller evaluator for a caller that already has (or
 // is willing to bake) a real diffuse irradiance cubemap and wants diffuse/specular kept separate
-// (osgx_Lighting, not one blended vec3) -- e.g. for a diagnostics isolation mode, or independent
+// (osgx_Lighting, not one blended vec3) - e.g. for a diagnostics isolation mode, or independent
 // diffuse/specular intensity tinting.
 //
-// `N`/`V` MUST already be WORLD-SPACE -- unlike osgx_DirectLighting() (which takes worldPos and
+// `N`/`V` MUST already be WORLD-SPACE - unlike osgx_DirectLighting() (which takes worldPos and
 // does its own light-vector math internally), this performs no view->world rotation itself. A
 // forward-pass caller needs world-space N/V for osgx_DirectLighting() anyway, so compute the
 // rotation once and pass the same vectors to both, rather than rotating twice.
@@ -420,10 +420,10 @@ osgx_Lighting osgx_EvaluateIBL(osgx_Material mat, vec3 N, vec3 V) {
 
 	// Matches pyosg-khronos-viewer.py's fresnel()/fd/fm/mix(...) exactly: two independent
 	// multiscatter-Fresnel evaluations (dielectric F0=0.04, metal F0=albedo), mixed by metallic
-	// AFTER Fresnel -- NOT a single Fresnel evaluation of a pre-blended F0=mix(0.04,albedo,metallic).
+	// AFTER Fresnel - NOT a single Fresnel evaluation of a pre-blended F0=mix(0.04,albedo,metallic).
 	// The two are not equivalent: F_MultiScatter is nonlinear in F0 (see its Favg/(1-roughness)
 	// clamp terms), so mixing F0 first and evaluating Fresnel once diverges from evaluating
-	// Fresnel twice and mixing the result -- most visible on partially-metallic materials at
+	// Fresnel twice and mixing the result - most visible on partially-metallic materials at
 	// grazing angles/higher roughness. This was the actual source of a real, camera-independent
 	// specular mismatch found comparing BoomBox's handle (non-trivial metallic in its
 	// metallicRoughnessTexture) against the Khronos reference.

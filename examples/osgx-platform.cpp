@@ -79,7 +79,7 @@ int main(int argc, char** argv) {
 
 	std::cout << "XRandR monitors:" << std::endl;
 
-	if(monitors.empty()) std::cout << "  (none found -- no X display?)" << std::endl;
+	if(monitors.empty()) std::cout << "  (none found - no X display?)" << std::endl;
 
 	for(const auto& mon : monitors) {
 		std::cout
@@ -172,7 +172,7 @@ int main(int argc, char** argv) {
 
 		if(!gc || !gc->valid()) {
 			std::cerr
-				<< "Failed to create GBM window (needs exclusive DRM access -- try a bare TTY)"
+				<< "Failed to create GBM window (needs exclusive DRM access - try a bare TTY)"
 				<< std::endl;
 
 			return 1;

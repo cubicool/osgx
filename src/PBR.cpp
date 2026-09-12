@@ -84,7 +84,7 @@ int Material::compare(const osg::StateAttribute& sa) const {
 	return 0;
 }
 
-// Read-only over this object's state -- see the class comment (PBR.hpp) for why that matters
+// Read-only over this object's state - see the class comment (PBR.hpp) for why that matters
 // across multiple graphics contexts. Textures bind through osg::State's own per-unit tracking
 // (applyTextureAttribute), so a texture already current at that unit from elsewhere is a no-op;
 // the factor buffer binds through the usual osg::Array/BufferObject per-context sync.
@@ -191,7 +191,7 @@ constexpr std::size_t SPOT_ANGLES_OFFSET = 12; // vec2
 constexpr std::size_t ENABLED_OFFSET = 14; // int
 
 // The `type` field is declared `int` on the GLSL side (LIGHT_UNIFORMS) but stored in this
-// float-typed backing array -- std::bit_cast reinterprets the bit pattern without UB (unlike a
+// float-typed backing array - std::bit_cast reinterprets the bit pattern without UB (unlike a
 // union-based type pun), which is all that's needed since the GPU reads the same raw bytes back
 // as int regardless of how the CPU side labeled the storage.
 float intBitsToFloat(int value) { return std::bit_cast<float>(value); }
@@ -234,13 +234,13 @@ int LightSet::compare(const osg::StateAttribute& sa) const {
 }
 
 void LightSet::apply(osg::State& state) const {
-	// osgx_lightCount is NOT pushed as a uniform at all -- see LIGHT_UNIFORMS/DIRECT_LIGHTING_HOOK_
+	// osgx_lightCount is NOT pushed as a uniform at all - see LIGHT_UNIFORMS/DIRECT_LIGHTING_HOOK_
 	// DEFAULT's own history comment (PBR.hpp) for why two different ways of doing that (OSG's
 	// deprecated applyShaderCompositionUniform() stash, then a direct getLastAppliedProgramObject()
-	// push) both turned out unreliable -- the second broke the moment ANY Program elsewhere in the
+	// push) both turned out unreliable - the second broke the moment ANY Program elsewhere in the
 	// same frame used StateAttribute::OVERRIDE (osgx::gltf::pbribl::PBRIBLScene::create() included),
 	// confirmed via a live repro 2026-09-03. The shader loop now reads a compile-time OSGX_MAX_LIGHTS
-	// bound instead, gated per-light by `enabled` -- data that already lives in the SSBO this single
+	// bound instead, gated per-light by `enabled` - data that already lives in the SSBO this single
 	// applyAttribute() call binds, so it needs no separate, Program-targeted push at all.
 	state.applyAttribute(_binding.get());
 }
@@ -355,11 +355,11 @@ void LightSet::setCount(std::size_t count) const {
 	if(count > static_cast<std::size_t>(MAX_LIGHTS)) throw std::out_of_range("LightSet count out of range");
 
 	// _lightCount itself is no longer read by the shader (see DIRECT_LIGHTING_HOOK_DEFAULT's own
-	// history comment, PBR.hpp) -- kept only as this object's own CPU-side bookkeeping for
+	// history comment, PBR.hpp) - kept only as this object's own CPU-side bookkeeping for
 	// getCount(). What the shader actually honors is each light's `enabled` flag, so setCount()
-	// disables every slot this new count no longer covers -- preserving the existing
+	// disables every slot this new count no longer covers - preserving the existing
 	// setCount(0)-disables-everything behavior every caller relies on (e.g. a --no-lights CLI
-	// flag) -- without touching slots still in range, which stay however setPoint()/
+	// flag) - without touching slots still in range, which stay however setPoint()/
 	// setDirectional()/setSpot()/setEnabled() last left them; setCount() only ever narrows what's
 	// active, it never (re-)enables anything on its own.
 	_lightCount->set(static_cast<int>(count));

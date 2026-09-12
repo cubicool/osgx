@@ -103,8 +103,8 @@ bool PointerCapture::handle(const osgGA::GUIEventAdapter& ea, osgGA::GUIActionAd
 	// implementations typically drain their native event queue in a loop and requestWarpPointer()
 	// forces a round trip (e.g. XWarpPointer+XSync on X11) before returning, so the synthetic
 	// MOVE/DRAG it generates is often already pending and gets processed in this same pass. That
-	// echo rarely lands exactly on (_centerX, _centerY) -- float/int truncation in the warp call,
-	// plus a Y-flip round trip some GUIActionAdapter implementations apply -- so treating it as real
+	// echo rarely lands exactly on (_centerX, _centerY) - float/int truncation in the warp call,
+	// plus a Y-flip round trip some GUIActionAdapter implementations apply - so treating it as real
 	// input would accumulate a small, consistently-signed leftover delta AND re-warp, forming a
 	// self-reinforcing loop that swamps real motion within a single frame. Absorb exactly one event
 	// per warp as the presumed echo instead of re-warping again from it.

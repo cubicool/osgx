@@ -2,7 +2,7 @@
 
 OSGX_DISABLE_WARNINGS
 
-// Declarations only -- tiny_gltf_v3.c already compiles the implementation
+// Declarations only - tiny_gltf_v3.c already compiles the implementation
 // (TINYGLTF_JSON_C_IMPLEMENTATION) once into osgx_gltf, which osgx_gltf_pbribl links.
 #include "tinygltf_json_c.h"
 
@@ -180,8 +180,8 @@ float osgx_gltf_AlphaCoverage(vec2 baseColorUV) {
 )GLSL";
 
 // The minimum declarations ANY osgx::Hook::DeferredLighting override needs against
-// PBRIBLLightingScene::create()'s fullscreen quad -- the five G-buffer sampler uniforms
-// PBRIBLGBuffer::create() writes (view-space normal/position, NOT world-space -- see
+// PBRIBLLightingScene::create()'s fullscreen quad - the five G-buffer sampler uniforms
+// PBRIBLGBuffer::create() writes (view-space normal/position, NOT world-space - see
 // PBRIBLGBuffer's own field comments), the view-matrix uniforms PBRIBLLightingScene::update()
 // keeps fresh every frame (needed to rotate view-space normal/position into world space; see that
 // function's own comment for why this quad's own osg_ViewMatrix can't be trusted), `vUV`, and the
@@ -206,11 +206,11 @@ out vec4 fragColor;
 )GLSL";
 
 // Structured decode of PBRIBLGBuffer::create()'s fixed 5-channel layout, the same "struct +
-// osgx_GetX(uv)" shape osgx_gltf_GetMaterial() uses for MATERIAL_INPUTS -- lets an
+// osgx_GetX(uv)" shape osgx_gltf_GetMaterial() uses for MATERIAL_INPUTS - lets an
 // osgx::Hook::DeferredLighting override read `gb.albedo`/`gb.normal`/etc. instead of hand-sampling
 // five textures and unpacking channels itself. `normal`/`position` stay VIEW-space, exactly as
 // PBRIBLGBuffer writes them (see PBRIBLGBuffer::normalTexture/positionTexture's own comments in
-// PBRIBL.hpp for why) -- rotate into world space via osgx_mainViewMatrixInverse only if the
+// PBRIBL.hpp for why) - rotate into world space via osgx_mainViewMatrixInverse only if the
 // override actually needs it. Requires DEFERRED_LIGHTING_INPUTS already in scope.
 const char GET_GBUFFER[] = R"GLSL(
 struct osgx_GBuffer {
@@ -290,11 +290,11 @@ namespace osgx::gltf::pbribl {
 // low-cost representation; it is deliberately not part of this reference-quality convenience path.
 //
 // IBL plus an optional handful of direct/punctual lights, via the osgx_DirectLighting() CONTRACT
-// (DIRECT_LIGHTING_DECL/DIRECT_LIGHTING_HOOK_DEFAULT in PBR.hpp) -- one call
+// (DIRECT_LIGHTING_DECL/DIRECT_LIGHTING_HOOK_DEFAULT in PBR.hpp) - one call
 // (`osgx_DirectLighting(N, V, worldPos, mat)`) against osgx::LightSet's buffer-backed light array
 // (up to osgx::MAX_LIGHTS), instead of this shader hand-copying the per-light dispatch loop
 // itself (a prior revision did exactly that, and drifted out of sync with OpenSceneGraph.py's
-// pyosg_dice.py copy -- see TODO.md; both now share the one hook definition,
+// pyosg_dice.py copy - see TODO.md; both now share the one hook definition,
 // DIRECT_LIGHTING_HOOK_DEFAULT, added as a second FRAGMENT osg::Shader object in
 // PBRIBLScene::create() below). A LightSet's osgx_lightCount defaults to 0 (LightSet::create()
 // zero-initializes it), so a caller that only wants IBL sees no change; one that wants direct
@@ -336,10 +336,10 @@ out vec2 vNormalUV;
 out vec2 vOrmUV;
 out vec2 vEmissiveUV;
 
-// osgx_gltf_ApplySkin() CONTRACT -- forward-declared here, DEFINED in a separate, separately
+// osgx_gltf_ApplySkin() CONTRACT - forward-declared here, DEFINED in a separate, separately
 // compiled VERTEX shader object (shader::SKINNING_HOOK_IDENTITY by default, or a caller-supplied
 // `{{osgx::Hook::Skinning, ...}}` hooks entry, e.g. shader::SKINNING_HOOK_LINEAR_BLEND) attached
-// alongside this one via applyHooks() (Shader.hpp) -- same "forward-declare + call site here,
+// alongside this one via applyHooks() (Shader.hpp) - same "forward-declare + call site here,
 // definition elsewhere" hook pattern PBR.hpp's DIRECT_LIGHTING_DECL uses.
 struct osgx_gltf_SkinnedVertex {
 	vec4 position;
@@ -468,8 +468,8 @@ void main() {
 	mat.roughness = aaRoughness;
 #endif
 
-	// World-space N/V, shared by osgx_EvaluateIBL() (osgx::ibl EVALUATE_IBL -- requires
-	// world-space input, see its own comment) and osgx_DirectLighting() below -- both need the
+	// World-space N/V, shared by osgx_EvaluateIBL() (osgx::ibl EVALUATE_IBL - requires
+	// world-space input, see its own comment) and osgx_DirectLighting() below - both need the
 	// same rotation, so it is computed once here instead of twice (evaluateIBL() used to do this
 	// rotation internally, a second time, before this move). Named distinctly from the
 	// diagnostics block's own invView/Nworld above so both compile together regardless of
@@ -490,7 +490,7 @@ void main() {
 	emissive = (debugMode == 0 || debugMode == 14) ? emissive : vec3(0.0);
 #endif
 
-	// Direct/punctual lights: point, directional, and spot, e.g. a torch or a sun -- the
+	// Direct/punctual lights: point, directional, and spot, e.g. a torch or a sun - the
 	// osgx_DirectLighting() CONTRACT (see the comment above this shader) does the per-light dispatch;
 	// this shader only supplies N/V/worldPos/mat. Reuses N_world/V_world computed above.
 	vec3 worldPos = (osg_ViewMatrixInverse * vec4(vPosition, 1.0)).xyz;
@@ -555,7 +555,7 @@ void main() {
 	gNormal = vec4(normalize(N), 0.0);
 	gMaterial = vec4(mat.roughness, mat.metallic, 0.0, 0.0);
 	gEmissive = vec4(osgx_gltf_Emissive(vEmissiveUV), alpha);
-	// Real eye-space position, straight from the vertex shader -- NOT reconstructed from depth
+	// Real eye-space position, straight from the vertex shader - NOT reconstructed from depth
 	// in the lighting pass (see PBRIBLGBuffer::positionTexture's comment in PBRIBL.hpp for why).
 	gPosition = vec4(vPosition, 1.0);
 }
@@ -564,16 +564,16 @@ void main() {
 // Lighting-pass fragment shader for the deferred split (PBRIBLLightingScene::create() below) --
 // runs the SAME osgx_EvaluateIBL() (osgx::ibl EVALUATE_IBL) as FULL_PBR_FRAGMENT_SHADER_SRC above,
 // a real shared function since 2026-08-22 (formerly two independent copies of an unprefixed
-// `evaluateIBL()` -- see TODO.md's "Generic vs. glTF-specific layering" section for why that was
+// `evaluateIBL()` - see TODO.md's "Generic vs. glTF-specific layering" section for why that was
 // worth fixing). The two call sites still look
 // slightly different: this shader's own N/V are already world-space by the time they reach
 // osgx_EvaluateIBL() (rotated below from the G-buffer's view-space channels), while
 // FULL_PBR_FRAGMENT_SHADER_SRC rotates its own varying-derived N/V first, since
 // osgx_EvaluateIBL() requires world-space input unconditionally and does no rotation itself.
-// Plus osgx_DirectLighting(), reading G-buffer textures (position included -- NOT reconstructed
+// Plus osgx_DirectLighting(), reading G-buffer textures (position included - NOT reconstructed
 // from depth; see PBRIBLGBuffer::positionTexture's comment) instead of interpolated per-vertex
 // varyings. OSGX_PBRIBL_NO_TONEMAP/OSGX_PBRIBL_AO mirror PBRIBLLightingPassOptions::tonemap/
-// aoTexture -- see that struct's comment in PBRIBL.hpp for why each is an independent opt-out/
+// aoTexture - see that struct's comment in PBRIBL.hpp for why each is an independent opt-out/
 // opt-in rather than one flag.
 constexpr const char LIGHTING_FRAGMENT_SHADER_SRC[] = R"GLSL(
 #version 460 core
@@ -584,14 +584,14 @@ const float PI = 3.14159265359;
 #pragma osgx::pbr MATERIAL_STRUCT, F_MULTISCATTER, SPECULAR_AA, TONEMAP_DECL, DIRECT_LIGHTING_DECL
 #pragma osgx::ibl IBL_LIGHTING_INPUTS, EVALUATE_IBL
 // DEFERRED_LIGHTING_INPUTS/GET_GBUFFER: the same osgx_GBuffer/osgx_GetGBuffer() an
-// osgx::Hook::DeferredLighting override uses -- this built-in default is deliberately not a
+// osgx::Hook::DeferredLighting override uses - this built-in default is deliberately not a
 // hand-rolled special case, so the two stay provably equivalent decode paths.
 #pragma osgx::gltf DEFERRED_LIGHTING_INPUTS, GET_GBUFFER
 
-// Manually maintained every frame by PBRIBLLightingScene::update() -- see that function's comment
+// Manually maintained every frame by PBRIBLLightingScene::update() - see that function's comment
 // (and PBRIBLLightingScene::create()'s) for why this quad's own osg_ViewMatrix/osg_ViewMatrixInverse
 // can't be trusted the way FULL_PBR_FRAGMENT_SHADER_SRC's forward-pass equivalents can. No
-// projection-matrix uniform here -- position comes straight from gPosition, not a depth
+// projection-matrix uniform here - position comes straight from gPosition, not a depth
 // reconstruction, so only the VIEW matrix (genuinely consistent across nested cameras) is needed.
 
 #ifdef OSGX_PBRIBL_AO
@@ -601,7 +601,7 @@ uniform sampler2D aoTex;
 void main() {
 	osgx_GBuffer gb = osgx_GetGBuffer(vUV);
 
-	// A cleared-but-never-written pixel has a zero-length normal -- real geometry always writes
+	// A cleared-but-never-written pixel has a zero-length normal - real geometry always writes
 	// a normalized one. Cheaper and more robust than a separate coverage mask texture.
 	if(dot(gb.normal, gb.normal) < 0.0001) discard;
 
@@ -619,7 +619,7 @@ void main() {
 
 	// Specular AA (see PBR.hpp's SPECULAR_AA) works from screen-space derivatives, which are
 	// available on a G-buffer texture sample exactly the same way they are on an interpolated
-	// varying -- sampling a neighboring fragment's own written normal here is the standard
+	// varying - sampling a neighboring fragment's own written normal here is the standard
 	// deferred-renderer form of this technique, not an approximation of the forward-pass one.
 	vec3 N_view_n = normalize(gb.normal);
 
@@ -668,13 +668,13 @@ bool PBRIBLScene::valid() const { return node.valid(); }
 //
 // Fully dynamic overload: bakes the GGX-prefiltered specular cubemap live instead of loading one
 // from a KTX2 file, calling the exact same osgx::GGXPrefilterScene::create() workflow
-// osggltf-iblbake-gpu already wraps to write that KTX2 to disk in the first place -- no readback,
+// osggltf-iblbake-gpu already wraps to write that KTX2 to disk in the first place - no readback,
 // no CPU round-trip, no temporary file. GGXPrefilterScene::prefilterTexture is the live render-
 // target cubemap the bake's PRE_RENDER passes write into; it is immediately valid to bind (same
 // contract as the existing Lambertian diffuseEnv below), it just isn't correct until
 // specularBakeRoot's passes have actually run a few frames of whatever viewer the caller adds
 // environment.root to. GGXPrefilterReadback (glFinish-gated CPU readback) is deliberately unused
-// here -- that machinery exists only for osggltf-iblbake-gpu's serialize-to-KTX2 use case.
+// here - that machinery exists only for osggltf-iblbake-gpu's serialize-to-KTX2 use case.
 //
 // prefilterSize=256 matches what this session's Khronos-parity comparisons actually validated
 // (GGXPrefilterOptions's own default of 128 has not been checked against the reference); revisit
@@ -717,7 +717,7 @@ PBRIBLEnvironment PBRIBLEnvironment::prepare(const std::string& hdrPath, int lut
 	return environment;
 }
 
-// See this method's own header comment (PBRIBL.hpp) -- identical to prepare() except it never
+// See this method's own header comment (PBRIBL.hpp) - identical to prepare() except it never
 // constructs a GGXPrefilterScene at all, so hdrPath's specular content is never GPU-baked.
 PBRIBLEnvironment PBRIBLEnvironment::prepareDiffuseOnly(const std::string& hdrPath, int lutSize) {
 	PBRIBLEnvironment environment;
@@ -736,7 +736,7 @@ PBRIBLEnvironment PBRIBLEnvironment::prepareDiffuseOnly(const std::string& hdrPa
 	environment.diffuseBakeRoot = diffuseBake.root;
 	environment.diffuseEnv = diffuseBake.diffuseTexture;
 
-	// Placeholder only -- see this method's own header comment for why envMap still needs to be a
+	// Placeholder only - see this method's own header comment for why envMap still needs to be a
 	// valid, bindable texture despite never being baked here. 1x1 is enough: nothing samples it
 	// before the caller's own live bake replaces it on texture unit 5.
 	auto* placeholder = new osg::TextureCubeMap();
@@ -762,7 +762,7 @@ PBRIBLEnvironment PBRIBLEnvironment::prepareDiffuseOnly(const std::string& hdrPa
 
 namespace {
 
-// Every lookup guards for a null/wrong-typed value first -- a missing/malformed role (e.g. no
+// Every lookup guards for a null/wrong-typed value first - a missing/malformed role (e.g. no
 // "diffuse" object at all) must decode to defaults, not crash.
 std::string decodeString(const tg3json_value* value, const char* key) {
 	if(!value || value->type != TG3JSON_OBJECT) return {};
@@ -789,7 +789,7 @@ int decodeInt(const tg3json_value* value, const char* key, int fallback) {
 
 // Owns a tg3json_value tree parsed by tg3json_parse_n(). tg3json_value_free() must never run
 // twice on the same value (it doesn't reset itself after freeing, unlike tg3_model_free()'s
-// whole-arena semantics) -- parse() itself already frees on failure internally, so _owned only
+// whole-arena semantics) - parse() itself already frees on failure internally, so _owned only
 // tracks the success case to avoid a double-free on that path.
 class JsonDocument {
 public:
@@ -879,7 +879,7 @@ PBRIBLEnvironment PBRIBLEnvironment::load(const IBLEnvironmentManifest& manifest
 
 	const std::filesystem::path base(baseDir);
 
-	// loadPrefilterCubemap() is content-agnostic despite its name -- it just loads a KTX2 as a
+	// loadPrefilterCubemap() is content-agnostic despite its name - it just loads a KTX2 as a
 	// TextureCubeMap, which is equally correct for the Lambertian diffuse cube as for GGX specular.
 	environment.envMap = osgx::loadPrefilterCubemap((base / manifest.specular.uri).string());
 
@@ -1024,14 +1024,14 @@ PBRIBLScene PBRIBLScene::create(
 	fragmentShader->setName(prog->getName() + ".fragment");
 	prog->addShader(fragmentShader);
 
-	// osgx_DirectLighting() CONTRACT's definition -- a second, separately compiled FRAGMENT shader
+	// osgx_DirectLighting() CONTRACT's definition - a second, separately compiled FRAGMENT shader
 	// object with no main() of its own; GLSL cross-shader-object linking resolves the
 	// FULL_PBR_FRAGMENT_SHADER_SRC's forward-declared osgx_DirectLighting() call against this at
 	// Program-link time. See PBR.hpp's DIRECT_LIGHTING_DECL/DIRECT_LIGHTING_HOOK_DEFAULT comment.
 	// `shadowMap` swaps in the shadowed variant (Shadow.hpp's DIRECT_LIGHTING_HOOK_SHADOWED) --
 	// same contract/call signature, so nothing else in this shader changes either way. Not routed
-	// through applyHooks() (unlike Skinning/Tonemap just below) -- `shadowMap` picks between two
-	// built-ins directly, there's no caller-override HookList slot for it here -- so it needs its
+	// through applyHooks() (unlike Skinning/Tonemap just below) - `shadowMap` picks between two
+	// built-ins directly, there's no caller-override HookList slot for it here - so it needs its
 	// own explicit setName() rather than picking one up from applyHooks() automatically.
 	auto* directLightingShader = new osg::Shader(
 		osg::Shader::FRAGMENT,
@@ -1042,14 +1042,14 @@ PBRIBLScene PBRIBLScene::create(
 
 	directLightingShader->setName(prog->getName() + ".directLightingHook");
 	prog->addShader(directLightingShader);
-	// osgx_gltf_ApplySkin()/osgx_Tonemap() CONTRACTS' default definitions -- each a separately
+	// osgx_gltf_ApplySkin()/osgx_Tonemap() CONTRACTS' default definitions - each a separately
 	// compiled shader object with no main() of its own. See PBR.hpp's TONEMAP_DECL/
 	// TONEMAP_HOOK_DEFAULT comment and Shader.hpp's SKINNING_HOOK_IDENTITY/SKINNING_HOOK_LINEAR_BLEND
 	// comment for the full rationale. osgx_EvaluateIBL()'s own diffuse/specular blend above is NOT
-	// routed through osgx_AmbientLighting() -- that hook's default is specular-only (no SH-9
+	// routed through osgx_AmbientLighting() - that hook's default is specular-only (no SH-9
 	// diffuse yet), while this scene already has a real baked Lambertian diffuseEnv cubemap; there
 	// is no AmbientLighting hook slot here as a result. `hooks` SUBSTITUTES a slot's default shader
-	// object, it is never attached alongside it -- see applyHooks()'s own comment (Shader.hpp) for
+	// object, it is never attached alongside it - see applyHooks()'s own comment (Shader.hpp) for
 	// the exactly-one-definition invariant this preserves, same one
 	// PBRIBLLightingScene::create() relies on at its own tonemap attach site.
 	osgx::applyHooks(prog, hooks, {
@@ -1080,7 +1080,7 @@ PBRIBLScene PBRIBLScene::create(
 	ss->addUniform(pis.iblDiffuseIntensity);
 	ss->addUniform(pis.iblSpecularIntensity);
 
-	// Shadow: unit 4 -- matches the fixed unit the old hand-rolled pyosg-lighting examples always
+	// Shadow: unit 4 - matches the fixed unit the old hand-rolled pyosg-lighting examples always
 	// used for their own shadowMap sampler (0-3 are glTF material, 5/6/7 are IBL above), kept here
 	// purely for continuity, not a hard requirement of anything else in this shader.
 	if(shadowMap) {
@@ -1092,7 +1092,7 @@ PBRIBLScene PBRIBLScene::create(
 		ss->addUniform(shadowMap->casterIndex);
 	}
 
-	// foldZUpToGLTFAxis() (PBRIBL.hpp) -- pre-folds osgx_ZUpToGLTF's fixed permutation into each
+	// foldZUpToGLTFAxis() (PBRIBL.hpp) - pre-folds osgx_ZUpToGLTF's fixed permutation into each
 	// row here, once, so the shader's osgx_OrientIBL() can be called directly on a raw Z-up
 	// N_world/R at its real lighting call sites instead of composing two transforms per fragment.
 	auto* iblAxis = new osg::Uniform(osg::Uniform::FLOAT_VEC3, "iblAxis", 3);
@@ -1157,10 +1157,10 @@ PBRIBLGBuffer PBRIBLGBuffer::create(osg::Node* node, int width, int height) {
 	vertexShader->setName(prog->getName() + ".vertex");
 	prog->addShader(vertexShader);
 
-	// osgx_gltf_ApplySkin() CONTRACT's default (identity) definition -- FULL_PBR_VERTEX_SHADER
+	// osgx_gltf_ApplySkin() CONTRACT's default (identity) definition - FULL_PBR_VERTEX_SHADER
 	// always calls this hook now (see PBRIBLScene::create()'s own comment for the full mechanism).
 	// This geometry pass doesn't expose a `hooks` parameter of its own yet (see TODO.md), so it
-	// always gets the passthrough -- a skinned model through the deferred split still animates
+	// always gets the passthrough - a skinned model through the deferred split still animates
 	// its joint transforms/gizmos correctly, it just won't deform the G-buffer mesh yet. Not
 	// routed through applyHooks() (no `hooks` parameter here to substitute it), hence the
 	// explicit setName() rather than picking one up automatically the way PBRIBLScene::create()'s
@@ -1185,7 +1185,7 @@ PBRIBLGBuffer PBRIBLGBuffer::create(osg::Node* node, int width, int height) {
 
 	ss->setAttributeAndModes(prog, osg::StateAttribute::ON | osg::StateAttribute::OVERRIDE);
 
-	// Same texture-unit-labeling fix PBRIBLScene::create() needs -- the loader binds the actual
+	// Same texture-unit-labeling fix PBRIBLScene::create() needs - the loader binds the actual
 	// Texture2Ds per geometry but never sets the sampler uniforms naming which unit is which.
 	shader::configureStateSet(*ss);
 
@@ -1214,7 +1214,7 @@ PBRIBLGBuffer PBRIBLGBuffer::create(osg::Node* node, int width, int height) {
 bool PBRIBLLightingScene::valid() const { return node.valid(); }
 
 // The fullscreen quad's own camera is necessarily ABSOLUTE_RF/identity-view/identity-projection
-// (that's what makes an NDC quad cover the screen) -- OSG's automatic osg_ViewMatrix therefore
+// (that's what makes an NDC quad cover the screen) - OSG's automatic osg_ViewMatrix therefore
 // resolves to identity on it, not `mainCamera`'s real matrices. Rather than fight that (as
 // PBRIBLScene::create()'s forward-pass shader can, by simply living on real scene geometry under
 // the real camera), this pass carries its own osgx_mainViewMatrix/osgx_mainViewMatrixInverse
@@ -1222,7 +1222,7 @@ bool PBRIBLLightingScene::valid() const { return node.valid(); }
 // the same fix 11-sketchfab.py's own Increment 1 needed for exactly this reason. There is
 // deliberately NO projection-matrix uniform: an earlier version reconstructed view-space
 // position from gDepth + an inverse projection matrix here, which turned out to be unreliable
-// -- each nested PRE_RENDER camera (this lighting pass, the geometry pass, mainCamera itself)
+// - each nested PRE_RENDER camera (this lighting pass, the geometry pass, mainCamera itself)
 // clamps its own PRIVATE per-camera projection copy during its own cull pass and never writes
 // that clamped result back onto the Camera object, so a projection matrix read off `mainCamera`
 // after the fact does not reliably match what the geometry pass actually used to write depth --
@@ -1250,12 +1250,12 @@ PBRIBLLightingScene PBRIBLLightingScene::create(
 	prog->addShader(vertexShader);
 
 	// EXACTLY ONE definition each of osgx_DirectLighting(), osgx_Tonemap(), and main() (the
-	// DeferredLighting slot), always -- never zero, never two. applyHooks() (Shader.hpp) enforces
+	// DeferredLighting slot), always - never zero, never two. applyHooks() (Shader.hpp) enforces
 	// this: it always attaches one shader per slot below, the caller's options.hooks override if
 	// present, otherwise the built-in.
 	//
 	// DeferredLighting's built-in default IS this pass's own main() (detail::
-	// LIGHTING_FRAGMENT_SHADER_SRC) -- an override REPLACES the whole lighting orchestration, not
+	// LIGHTING_FRAGMENT_SHADER_SRC) - an override REPLACES the whole lighting orchestration, not
 	// one leaf function, so a caller supplying one is free to ignore osgx_DirectLighting()/
 	// osgx_Tonemap() (still harmlessly attached below, unused-but-defined is not a GLSL error) and
 	// read the G-buffer via osgx_GetGBuffer() (#pragma osgx::gltf GET_GBUFFER) instead. See
@@ -1265,17 +1265,17 @@ PBRIBLLightingScene PBRIBLLightingScene::create(
 	// DirectLighting: was attached unconditionally here, OUTSIDE applyHooks() entirely, until this
 	// collided with a real DeferredLighting override that also wanted the same low-level BRDF
 	// primitives (D_GGX/G_Schlick/G_Smith/F_Schlick/DirectSpecular/DirectDiffuse/DirectLight) for
-	// its own use -- DIRECT_LIGHTING_HOOK_DEFAULT/_SHADOWED pull those in via their own `#pragma
+	// its own use - DIRECT_LIGHTING_HOOK_DEFAULT/_SHADOWED pull those in via their own `#pragma
 	// osgx::pbr` to implement osgx_DirectLighting() itself, so two shader objects ended up defining
-	// the same GLSL functions (a link error). Now a real slot -- see Hook::DirectLighting's own
+	// the same GLSL functions (a link error). Now a real slot - see Hook::DirectLighting's own
 	// comment (Shader.hpp) for the full incident.
 	//
 	// Tonemap: never zero because OSGX_PBRIBL_NO_TONEMAP strips the CALL at render time, but that
 	// define is absent during OSG's realize-time GLObjectsVisitor pre-compile, which would then
 	// link a call with no definition. See TONEMAP_HOOK_IDENTITY's comment in PBR.hpp for the full
-	// mechanism -- the rule is that a #define may gate a call, but must never be the only thing
+	// mechanism - the rule is that a #define may gate a call, but must never be the only thing
 	// making a function exist. Never two because GLSL allows one body per function, so a caller
-	// cannot "override" by adding a second shader defining osgx_Tonemap() -- that is a
+	// cannot "override" by adding a second shader defining osgx_Tonemap() - that is a
 	// duplicate-definition link error. Which is exactly why options.hooks exists: customization
 	// SUBSTITUTES a slot's shader rather than competing with it.
 	osgx::applyHooks(prog, options.hooks, {
@@ -1314,7 +1314,7 @@ PBRIBLLightingScene PBRIBLLightingScene::create(
 	cam->addChild(geode);
 
 	// POST_RENDER, drawing to whatever framebuffer this camera ends up under (the backbuffer, if
-	// added directly to the viewer's scene graph) -- this pass is always the pipeline's terminal
+	// added directly to the viewer's scene graph) - this pass is always the pipeline's terminal
 	// step, matching options.tonemap's own default (true). No FBO, so this is deliberately a plain
 	// osg::Camera rather than an osgx::RTT (whose contract assumes an FBO attachment).
 	cam->setRenderOrder(osg::Camera::POST_RENDER);
@@ -1323,17 +1323,17 @@ PBRIBLLightingScene PBRIBLLightingScene::create(
 	auto* ss = cam->getOrCreateStateSet();
 
 	ss->setAttributeAndModes(prog, osg::StateAttribute::ON);
-	// This quad covers every pixel unconditionally and resolves the whole frame's shading -- there
+	// This quad covers every pixel unconditionally and resolves the whole frame's shading - there
 	// is nothing for it to be depth-tested AGAINST, so it has to own its depth state rather than
 	// inherit whatever the surrounding framebuffer happens to be carrying.
 	//
 	// Leaving this to ambient state worked only by accident, and only when this camera drew to the
 	// backbuffer: the main camera clears depth to 1.0 every frame, so the quad passed GL_LESS. The
 	// moment a caller hand-retargets this camera to an FBO (attach() + PRE_RENDER, to chain
-	// bloom/exposure after it -- not a built-in option here), OSG attaches an IMPLICIT depth
+	// bloom/exposure after it - not a built-in option here), OSG attaches an IMPLICIT depth
 	// renderbuffer to that FBO
 	// (DisplaySettings::DEFAULT_IMPLICIT_BUFFER_ATTACHMENT includes IMPLICIT_DEPTH_BUFFER_ATTACHMENT;
-	// see RenderStage.cpp's own implicit-attachment block) which nothing ever clears -- undefined
+	// see RenderStage.cpp's own implicit-attachment block) which nothing ever clears - undefined
 	// depth, every fragment of this quad discarded, and the attachment left holding nothing but the
 	// clear color. That failure is completely silent: the FBO is valid, the viewport is right, the
 	// draw call is issued, and the output is a single flat color, which reads as a broken shader
@@ -1353,8 +1353,8 @@ PBRIBLLightingScene PBRIBLLightingScene::create(
 	ss->addUniform(new osg::Uniform("gEmissive", 3));
 	ss->addUniform(new osg::Uniform("gPosition", 4));
 
-	// `environment` is now OPTIONAL -- a caller whose osgx::Hook::DeferredLighting override doesn't
-	// need osgx_EvaluateIBL() (see that Hook's own comment, Shader.hpp -- a custom override CAN
+	// `environment` is now OPTIONAL - a caller whose osgx::Hook::DeferredLighting override doesn't
+	// need osgx_EvaluateIBL() (see that Hook's own comment, Shader.hpp - a custom override CAN
 	// still pull it in via `#pragma osgx::ibl EVALUATE_IBL`, it just isn't required to) has no use
 	// for a baked/loaded IBL environment at all, and forcing one anyway meant a full HDR bake or
 	// KTX2 load purely to populate textures nothing ever samples. Skip binding envMap/brdfLUT/

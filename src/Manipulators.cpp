@@ -316,7 +316,7 @@ bool Ortho2DManipulator::handle(const osgGA::GUIEventAdapter& ea, osgGA::GUIActi
 		if(ctrl) {
 			// 3D: pitch/yaw orbit around center. Tracked as two independent scalar angles and
 			// reconstructed fresh each time (NOT accumulated onto the previous _rotation via a
-			// path-dependent "current right" axis) -- yaw always rotates around fixed screen up,
+			// path-dependent "current right" axis) - yaw always rotates around fixed screen up,
 			// pitch always around the fixed original screen right, so yaw behaves identically
 			// regardless of how much pitch has already accumulated. Mixing a path-dependent axis
 			// (the old "current right", derived from _rotation itself) with a fixed one is
@@ -324,7 +324,7 @@ bool Ortho2DManipulator::handle(const osgGA::GUIEventAdapter& ea, osgGA::GUIActi
 			// Clamped just short of +-90 degrees to avoid the one unavoidable Euler-angle
 			// singularity (true gimbal lock, where yaw and roll become indistinguishable).
 			//
-			// _invertY/_invertX apply ONLY here (Ctrl-drag pitch/yaw) -- plain pan below is
+			// _invertY/_invertX apply ONLY here (Ctrl-drag pitch/yaw) - plain pan below is
 			// unaffected. Yaw's default (un-inverted) sign matches a direct-manipulation "grab and
 			// drag" feel: dragging right rotates the model's near side to the right.
 			static const double MAX_PITCH = osg::DegreesToRadians(89.0);
@@ -339,7 +339,7 @@ bool Ortho2DManipulator::handle(const osgGA::GUIEventAdapter& ea, osgGA::GUIActi
 			// q1*q2 applied via .rotate() applies q2 first), but OSG's row-vector convention
 			// reverses that for a product quaternion converted via Matrixd::rotate() + v*M:
 			// verified empirically that this order applies pitch first (around the fixed
-			// original screen right), then yaw (around fixed screen up) -- the order needed so yaw
+			// original screen right), then yaw (around fixed screen up) - the order needed so yaw
 			// never drifts the apparent pitch. Swapping this order was the actual fix for a
 			// real reported bug where any yaw after a pitch rotated around the wrong axis.
 			_rotation =
@@ -462,7 +462,7 @@ void OrbitAxisManipulator::setByInverseMatrix(const osg::Matrixd& m) {
 }
 
 // Recompute the distance clamp from the camera's current vertical FOV and the model's vertical
-// extent, then clamp _distance to it. Leaves the projection matrix untouched -- the caller owns
+// extent, then clamp _distance to it. Leaves the projection matrix untouched - the caller owns
 // FOV/near/far.
 void OrbitAxisManipulator::updateCamera(osg::Camera& cam) {
 	double fovy, aspect, zNear, zFar;

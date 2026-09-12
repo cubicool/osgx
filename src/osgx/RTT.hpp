@@ -19,12 +19,12 @@ OSGX_ENABLE_WARNINGS
 namespace osgx {
 
 // ================================================================================================
-// RTT -- a single render-to-texture osg::Camera.
+// RTT - a single render-to-texture osg::Camera.
 //
 // Every hand-rolled RTT camera in this codebase (GBuffer, Picking, Grid, GGXPrefilter,
 // CaptureCubeMap, LambertianBake, Shadow, Aura, gltf::PBRIBL) independently repeats the same four
-// lines -- PRE_RENDER, FRAME_BUFFER_OBJECT, ABSOLUTE_RF, and a viewport matching the target
-// texture's size -- and forgetting ABSOLUTE_RF is a SILENT failure: without it, the camera's own
+// lines - PRE_RENDER, FRAME_BUFFER_OBJECT, ABSOLUTE_RF, and a viewport matching the target
+// texture's size - and forgetting ABSOLUTE_RF is a SILENT failure: without it, the camera's own
 // view matrix gets folded into the PARENT scene's bound computation (osg::Camera IS-A
 // osg::Transform), producing a black/empty screenshot with no other symptom. RTT's constructor
 // sets all four so this can no longer be forgotten at a call site.
@@ -32,24 +32,24 @@ namespace osgx {
 // Deliberately IS-A osg::Camera (not a wrapping Group/struct): every osg::Camera setter
 // (setViewMatrix, setProjectionMatrix, setClearColor, the inherited attach() overloads, ...)
 // stays directly available with no forwarding, and `root->addChild(rtt)` just works. Multi-camera
-// fan-out (cubemap faces, prefiltered mip chains) stays OUT of scope here on purpose -- RTT is the
-// single-pass primitive those get built FROM (by something that owns N of them -- a future
+// fan-out (cubemap faces, prefiltered mip chains) stays OUT of scope here on purpose - RTT is the
+// single-pass primitive those get built FROM (by something that owns N of them - a future
 // manager, or a bake function like GGXPrefilter's own that still hand-rolls its N cameras), not a
 // thing that grows its own fan-out logic.
 //
-// No OSGX_META_Object / clone() support -- like osgx::CameraIntentHost's manipulator mixins
+// No OSGX_META_Object / clone() support - like osgx::CameraIntentHost's manipulator mixins
 // (Manipulators.hpp), an RTT owns real GPU render-target state that clone() can't meaningfully
 // duplicate; it is not expected to ever be cloned.
 // ================================================================================================
 class RTT: public osg::Camera {
 public:
 	// Declarative multi-attachment setup: a std::vector, not std::initializer_list, deliberately
-	// matching osgx::Shader::HookList exactly (Shader.hpp) -- both bind to Python for free via
+	// matching osgx::Shader::HookList exactly (Shader.hpp) - both bind to Python for free via
 	// pybind11/stl.h's vector/pair casters (see ext/python/osgx-rtt.cpp), whereas
 	// std::initializer_list has no pybind11 caster at all and would need a hand-written wrapper.
 	// Costs nothing at C++ call sites: std::vector takes the identical `{{...}}` brace-init. `using
 	// osg::Camera::attach` below keeps every other attach() overload (the level/face/mipmap variants
-	// CaptureCubeMap/GGXPrefilter need) reachable too -- introducing this overload would otherwise
+	// CaptureCubeMap/GGXPrefilter need) reachable too - introducing this overload would otherwise
 	// hide ALL base-class attach() overloads at this type, not just add to them.
 	using AttachmentList = std::vector<std::pair<osg::Camera::BufferComponent, osg::Texture*>>;
 
@@ -57,18 +57,18 @@ public:
 
 	// width/height: FBO resolution in pixels. Sets renderOrder=PRE_RENDER,
 	// renderTargetImplementation=FRAME_BUFFER_OBJECT, referenceFrame=referenceFrame (ABSOLUTE_RF
-	// by default -- see this class's own header comment), and viewport(0,0,width,height) -- every
+	// by default - see this class's own header comment), and viewport(0,0,width,height) - every
 	// other camera setting (clearMask/clearColor/view/projection/attach) is left to the caller,
 	// same as a raw osg::Camera.
 	//
 	// referenceFrame=RELATIVE_RF is a real, deliberate second shape, not an escape hatch: a camera
 	// that never sets its own view/projection and instead inherits whatever the cull traversal's
-	// current matrices are at its position in the scene graph -- i.e. "render exactly what my
+	// current matrices are at its position in the scene graph - i.e. "render exactly what my
 	// parent camera sees, into a texture instead of the backbuffer." osgx::Aura's selectionCamera
 	// (Aura.cpp) is exactly this: it renders the selected node from the SAME viewpoint as the main
 	// camera by simply never overriding view/projection, relying on ordinary RELATIVE_RF
-	// composition during cull. Get this wrong the other way -- ABSOLUTE_RF on a camera that never
-	// sets its own matrices -- and it renders from the origin looking down -Z, not from wherever
+	// composition during cull. Get this wrong the other way - ABSOLUTE_RF on a camera that never
+	// sets its own matrices - and it renders from the origin looking down -Z, not from wherever
 	// the caller expected.
 	explicit RTT(
 		int width,
@@ -101,12 +101,12 @@ private:
 	osg::ref_ptr<osg::Geometry> _quad;
 };
 
-// Internal only -- NOT part of the public API, unlike AttachmentList above. AttachmentList/
+// Internal only - NOT part of the public API, unlike AttachmentList above. AttachmentList/
 // HookList are things a caller constructs directly (an options struct field, an attach() call);
 // TextureInput only ever gets built inside Aura.cpp/GBuffer.cpp/TemporalEdge.cpp's own private
-// fullscreen-pass helpers to bind their sampler inputs, so it stays un-bound to Python -- no
+// fullscreen-pass helpers to bind their sampler inputs, so it stays un-bound to Python - no
 // caller-facing get/set contract to keep honest, just three copies of the same loop collapsed to
-// one. std::span, not std::vector (unlike AttachmentList/HookList above) -- every real call site
+// one. std::span, not std::vector (unlike AttachmentList/HookList above) - every real call site
 // already builds a fixed-size std::array literal, and there's no pybind11-casting reason here to
 // prefer std::vector, since this type never crosses into Python.
 namespace detail {

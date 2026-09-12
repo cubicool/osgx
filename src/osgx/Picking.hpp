@@ -45,7 +45,7 @@ namespace osgx {
 // Creates a POST_RENDER FBO camera wired for object-ID picking.
 //
 // ABSOLUTE_RF is set so the camera uses its own view/projection matrices independently
-// of where it sits in the scene graph -- without it the cull frustum is wrong and all
+// of where it sits in the scene graph - without it the cull frustum is wrong and all
 // geometry is silently clipped.
 //
 // image=nullptr (ASYNC mode): attach a renderbuffer instead of an osg::Image so the
@@ -64,11 +64,11 @@ namespace osgx {
 // - installing a readback callback (update NodeCallback for SYNC; postDrawCallback for ASYNC)
 //
 // installProgram=false skips building/installing the generic pick Program (and ignores
-// vertHook/fragHook -- there is no core to attach them to; passing either logs a warning) while
+// vertHook/fragHook - there is no core to attach them to; passing either logs a warning) while
 // still setting up everything else (FBO, ABSOLUTE_RF, clear, viewport, the picking-correct
 // BlendFunc/DITHER overrides). Use this when a subtree under the returned camera owns its own
 // vertex-layout contract and needs to install its own Program (e.g. a wrapper Group with
-// ON|OVERRIDE) -- without this flag, this camera's own OVERRIDE Program wins regardless (OSG
+// ON|OVERRIDE) - without this flag, this camera's own OVERRIDE Program wins regardless (OSG
 // resolves OVERRIDE shallowest-wins), forcing the subtree to fight back with PROTECTED. Skipping
 // installation here is the real fix; PROTECTED downstream is now only a workaround for callers
 // that don't use this flag.
@@ -82,11 +82,11 @@ osg::ref_ptr<osg::Camera> makePickCamera(
 
 // ASYNC variant: attach a Texture2D for FBO rendering. OSG uses glFramebufferTexture2D
 // (renders directly into the texture) with no automatic CPU readback. The caller installs
-// a postDrawCallback that uses glGetTexImage + PBO for zero-stall async readback -- valid
+// a postDrawCallback that uses glGetTexImage + PBO for zero-stall async readback - valid
 // after FBO unbind since glGetTexImage reads from the texture object, not the framebuffer.
 // makePickCamera configures the texture's size, format, and NEAREST filters.
 //
-// installProgram -- see the Image overload above; same meaning here.
+// installProgram - see the Image overload above; same meaning here.
 osg::ref_ptr<osg::Camera> makePickCamera(
 	int w, int h,
 	osg::Texture2D* tex,
@@ -102,19 +102,19 @@ inline uint32_t decodePickID(const uint8_t* px) {
 
 // A GLSL `vec4 osgx_encodePickID(uint id)` matching decodePickID()'s bit layout above, registered
 // under the "osgx::picking" pragma namespace (`#pragma osgx::picking encode`) via
-// osgx::registerShaderLibs -- see Shader.hpp. Exists so a shader that CAN'T reuse
+// osgx::registerShaderLibs - see Shader.hpp. Exists so a shader that CAN'T reuse
 // makePickCamera()'s own PICK_FRAG_CORE/PICK_FRAG_HOOK_UNIFORM wholesale (e.g. one that has to run
 // its own coverage/discard test before it knows the final ID) still packs the ID exactly the way
 // this file's own decodePickID() expects it, from one shared implementation instead of a
 // hand-copied one drifting in another repo.
 void registerPickShaderLibs();
 
-// Hands out contiguous pick-ID ranges instead of a single ID -- for a drawable whose fragment
+// Hands out contiguous pick-ID ranges instead of a single ID - for a drawable whose fragment
 // shader distinguishes more than one pickable "part" per draw call (e.g. a multi-layer composite
 // shape rendered in one draw call, where a per-vertex layer index picks out the part). ID 0 stays
 // reserved for "nothing hit" (the pick camera's clear color), so the first real ID is 1.
 //
-// Not thread-safe -- allocation happens at scene-build time on a single thread, same as the rest
+// Not thread-safe - allocation happens at scene-build time on a single thread, same as the rest
 // of scene construction; nothing here is touched during rendering or readback.
 class PickIDAllocator {
 public:
@@ -134,48 +134,48 @@ private:
 };
 
 // Selects one pick ID from a flat NxN RGBA pixel buffer.
-// pixels -- row-major RGBA, n*n pixels, Y=0 at bottom-left (OpenGL convention)
-// n -- side length of the region; n=1 is the degenerate single-pixel case
+// pixels - row-major RGBA, n*n pixels, Y=0 at bottom-left (OpenGL convention)
+// n - side length of the region; n=1 is the degenerate single-pixel case
 using PickRule = std::function<uint32_t(const uint8_t*, int)>;
 
-// Center pixel wins -- semantics identical to n=1; larger n widens the rasterized region.
+// Center pixel wins - semantics identical to n=1; larger n widens the rasterized region.
 uint32_t pickCenter(const uint8_t* px, int n);
 
-// Most-covered non-zero ID wins -- useful in dense or overlapping scenes.
+// Most-covered non-zero ID wins - useful in dense or overlapping scenes.
 uint32_t pickMostCoverage(const uint8_t* px, int n);
 
-// Non-zero ID nearest to center wins -- good for snap-to-object / hover picking.
+// Non-zero ID nearest to center wins - good for snap-to-object / hover picking.
 uint32_t pickNearestToCenter(const uint8_t* px, int n);
 
 // Spirals outward from center ring by ring (Chebyshev distance), returning the first
 // non-zero ID found. Equivalent result to pickNearestToCenter but exits on the first
-// hit instead of scanning all N*N pixels -- preferred default for all pick modes.
+// hit instead of scanning all N*N pixels - preferred default for all pick modes.
 uint32_t spiralPick(const uint8_t* px, int n);
 
 enum class ActionType { HOVER, CLICK };
 
 // Shared state for SYNC and ASYNC pick readback variants.
 //
-// `virtual osg::Object` -- NOT `virtual osg::Referenced`: OSG's own diamond-merge point for
+// `virtual osg::Object` - NOT `virtual osg::Referenced`: OSG's own diamond-merge point for
 // this exact multiple-inheritance shape is osg::Callback : public virtual Object (see
-// osg/Callback) -- osg::Object : public Referenced is a PLAIN, non-virtual edge one level
+// osg/Callback) - osg::Object : public Referenced is a PLAIN, non-virtual edge one level
 // further down. PickReadbackSync/Async each inherit this ALONGSIDE a second callback base
 // (NodeCallback or Camera::DrawCallback) that reaches that SAME shared virtual Object through
 // its own Callback base. Virtually inheriting Referenced directly here would NOT merge with
-// that -- it'd add a third, unrelated path to Referenced, which is ambiguous rather than
+// that - it'd add a third, unrelated path to Referenced, which is ambiguous rather than
 // shared (verified: it fails to compile with "virtual base osg::Referenced inaccessible ...
 // due to ambiguity"). Virtually inheriting Object at the SAME level Callback does is what
 // actually collapses the diamond into one shared subobject. Concrete classes still provide
-// their OWN callback behavior (operator()) -- this mixin only owns the shared onPick/onEnter/
+// their OWN callback behavior (operator()) - this mixin only owns the shared onPick/onEnter/
 // onLeave/mouse-position/lastID state.
 //
-// onPick(id, ActionType) -- HOVER fires when hovered ID changes (including to 0=background);
+// onPick(id, ActionType) - HOVER fires when hovered ID changes (including to 0=background);
 //                           CLICK fires when a click resolves.
-//                           May fire on any thread depending on readback mode -- safe for
+//                           May fire on any thread depending on readback mode - safe for
 //                           logging/audio/non-scene-graph reactions only.
-// onEnter(id)            -- non-zero id entered. Always fired from the update thread via
-// onLeave(id)               PickHoverCallback -- safe for scene graph modifications.
-// reportClick()          -- call from PickHandler in CONTINUOUS mode to fire CLICK with the
+// onEnter(id)            - non-zero id entered. Always fired from the update thread via
+// onLeave(id)               PickHoverCallback - safe for scene graph modifications.
+// reportClick()          - call from PickHandler in CONTINUOUS mode to fire CLICK with the
 //                           currently hovered ID.
 struct PickReadback: public virtual osg::Object {
 	std::function<void(uint32_t, ActionType)> onPick;
@@ -186,15 +186,15 @@ struct PickReadback: public virtual osg::Object {
 	void updateMouse(int x, int y);
 	void reportClick();
 
-	// Forces the tracked pick state back to "nothing hovered" (id 0) -- both lastID() and the
+	// Forces the tracked pick state back to "nothing hovered" (id 0) - both lastID() and the
 	// internal onPick-hover dedup state. Meant for invalidating from OUTSIDE the pick camera's
 	// own knowledge: the pick camera/sub-frustum only ever updates on a MOVE event, so if the
-	// mouse leaves the window entirely (no GUIEventAdapter event fires for that at all -- see
+	// mouse leaves the window entirely (no GUIEventAdapter event fires for that at all - see
 	// osgx::platform::isCursorInWindow()'s own comment), the last-hovered ID stays reported as
 	// hovered forever, with the cursor nowhere near the window.
 	//
 	// PickCameraSync already calls this automatically every frame the cursor is outside the
-	// window (when built with OSGX_PLATFORM) -- nothing else needs to call it in the common
+	// window (when built with OSGX_PLATFORM) - nothing else needs to call it in the common
 	// case. Public for callers driving picking without a PickCameraSync, or wanting to
 	// invalidate for an unrelated reason (e.g. picking should pause while some other UI has
 	// mouse capture). PickHoverCallback's own next poll of lastID() fires onLeave naturally
@@ -208,7 +208,7 @@ struct PickReadback: public virtual osg::Object {
 	int mouseX() const { return _x.load(std::memory_order_relaxed); }
 	int mouseY() const { return _y.load(std::memory_order_relaxed); }
 
-	// Set by PickHandler from GUIEventAdapter::getHandled() -- true while some earlier handler
+	// Set by PickHandler from GUIEventAdapter::getHandled() - true while some earlier handler
 	// (e.g. osgx::imgui::Widget) already claimed the current mouse event, meaning mouseX()/
 	// mouseY() are frozen at whatever they were the last time a REAL 3D-viewport event updated
 	// them (see PickHandler::handle()'s own comment for why they're frozen rather than tracking
@@ -217,7 +217,7 @@ struct PickReadback: public virtual osg::Object {
 	// that same frozen-but-still-valid position every frame regardless of events, so the
 	// continuous readback just re-derives the same hover a frame later. PickCameraSync checks
 	// this every update traversal and calls invalidate() continuously while set, the same way it
-	// already does for "cursor left the window" (isCursorInWindow()) -- see its own comment.
+	// already does for "cursor left the window" (isCursorInWindow()) - see its own comment.
 	void setSuspended(bool suspended) const { _suspended.store(suspended, std::memory_order_relaxed); }
 	bool isSuspended() const { return _suspended.load(std::memory_order_relaxed); }
 
@@ -228,7 +228,7 @@ struct PickReadback: public virtual osg::Object {
 	// setWindowOrigin exists because mouseX()/mouseY() (via requestPick()/updateMouse(), fed
 	// by PickHandler from raw GUIEventAdapter coordinates) are WINDOW-absolute, but every pick
 	// target (the pick camera's own viewport, a reduced RTT image, ...) is sized and addressed
-	// relative to the MAIN viewer camera's viewport -- which is only the whole window when that
+	// relative to the MAIN viewer camera's viewport - which is only the whole window when that
 	// viewport's origin is (0, 0). An app that gives part of the window to something else (an
 	// ImGui dock, a split view, ...) and confines the 3D camera's own viewport to the rest needs
 	// this correction or every pick target is silently offset by exactly that viewport's origin.
@@ -250,13 +250,13 @@ protected:
 // SYNC readback: NodeCallback that reads from an osg::Image attached to the pick camera.
 //
 // OSG reads the FBO into the image inside RenderStage::drawImplementation while the FBO is
-// still bound. We sample image->data() one frame later in the update traversal -- invisible
+// still bound. We sample image->data() one frame later in the update traversal - invisible
 // latency for click-only or continuous hover picking.
 class PickReadbackSync: public PickReadback, public osg::NodeCallback {
 public:
 	enum class Mode { CLICK, CONTINUOUS };
 
-	// winW / winH -- initial window dimensions. PickCameraSync refreshes them
+	// winW / winH - initial window dimensions. PickCameraSync refreshes them
 	// from its viewer camera's live viewport, so reduced image targets keep
 	// mapping mouse coordinates correctly after a resize.
 	PickReadbackSync(
@@ -300,7 +300,7 @@ private:
 //
 // The pick camera must attach a Texture2D (not osg::Image) so OSG renders directly into
 // the texture with no automatic CPU readback. glGetTexImage reads from the texture object --
-// FBO binding is irrelevant after unbind -- so the postDrawCallback timing is correct.
+// FBO binding is irrelevant after unbind - so the postDrawCallback timing is correct.
 // TODO: This is only PBO-delayed readback, not strictly non-stalling async: the next-frame
 // glMapBuffer() can still block if the transfer has not completed. Fix by adding a fence
 // (glFenceSync + zero-timeout glClientWaitSync polling) or a deeper PBO ring before mapping.
@@ -332,14 +332,14 @@ private:
 // other pick callbacks (e.g. PickReadbackSync) via setNestedCallback().
 //
 // When built with OSGX_PLATFORM: also transparently invalidates rb every frame the cursor is
-// outside the window (platform::isCursorInWindow()) -- see PickReadback::invalidate()'s own
+// outside the window (platform::isCursorInWindow()) - see PickReadback::invalidate()'s own
 // comment for why that's needed at all. No caller opt-in; a safe no-op on a non-X11
 // GraphicsContext or a non-OSGX_PLATFORM build.
 //
 // pick1x1=true: also builds a sub-frustum projection centered on the cursor each frame
 // (gluPickMatrix equivalent). The live viewer-camera viewport supplies its dimensions AND
 // origin (via rb->setWindowSize()/setWindowOrigin()), so the cursor projection stays correct
-// after a window resize AND when that viewport doesn't start at (0, 0) -- e.g. an app that
+// after a window resize AND when that viewport doesn't start at (0, 0) - e.g. an app that
 // confines the 3D camera to part of the window (a docked UI panel taking the rest) needs the
 // origin correction or picking is silently offset by exactly that viewport's own (x, y).
 // Requires rb for the current mouse position.
@@ -374,7 +374,7 @@ private:
 // and fires callbacks safely regardless of which thread the readback runs on.
 //
 // This is the correct way to trigger scene graph modifications (setMatrix, setColor, etc.)
-// in response to hover events -- onEnter/onLeave fired directly from PickReadbackAsync's
+// in response to hover events - onEnter/onLeave fired directly from PickReadbackAsync's
 // draw callback would race with the cull thread.
 class PickHoverCallback: public osg::NodeCallback {
 public:
@@ -388,13 +388,13 @@ private:
 };
 
 // GUIEventHandler that forwards click/move events to any PickReadback variant.
-// continuous=false -- left-click calls requestPick(x, y); use with CLICK mode.
-// continuous=true -- MOVE events update cursor position; left-click queries lastID().
+// continuous=false - left-click calls requestPick(x, y); use with CLICK mode.
+// continuous=true - MOVE events update cursor position; left-click queries lastID().
 // Use with CONTINUOUS mode (1x1 sub-frustum picking).
 //
-// consumeEvents=true -- returns true on left-click, stopping OSG's handler chain.
+// consumeEvents=true - returns true on left-click, stopping OSG's handler chain.
 // Use when picking should be exclusive (e.g. object selection that must not also
-// rotate the camera). Default false (additive -- pick and camera manipulator both
+// rotate the camera). Default false (additive - pick and camera manipulator both
 // receive the click).
 class PickHandler: public osgGA::GUIEventHandler {
 public:

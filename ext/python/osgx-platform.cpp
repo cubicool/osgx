@@ -20,9 +20,9 @@ using namespace std::string_literals;
 
 namespace osgx_python {
 
-// osgx::platform -- X11/XRandr window helpers (alwaysOnTop, listMonitors, moveWindow) plus, when
+// osgx::platform - X11/XRandr window helpers (alwaysOnTop, listMonitors, moveWindow) plus, when
 // built (see OSGX_WITH_EGL/OSGX_WITH_GBM in CMakeLists.txt), the EGL- and GBM/DRM-backed
-// GraphicsWindow factories. Moved here from OSG.py's pyosg/linux -- was never actually
+// GraphicsWindow factories. Moved here from OSG.py's pyosg/linux - was never actually
 // OSG.py-specific, so osgx is the right home; see osgx/Linux.hpp.
 void bind_platform(py::module_& m_platform) {
 	m_platform.def(
@@ -37,7 +37,7 @@ void bind_platform(py::module_& m_platform) {
 		m_platform,
 		"Monitor",
 		"One XRandR monitor, in real root-window coordinates. Monitors are NOT assumed to be "
-		"flush/adjacent -- see listMonitors()."
+		"flush/adjacent - see listMonitors()."
 	)
 		.def_readonly("name", &osgx::platform::Monitor::name, "This monitor's XRandR output name (e.g. 'DP-1', 'HDMI-0').")
 		.def_readonly("x", &osgx::platform::Monitor::x, "Left edge, in root-window pixels.")
@@ -61,7 +61,7 @@ void bind_platform(py::module_& m_platform) {
 		"listMonitors",
 		&osgx::platform::listMonitors,
 		"Query the real XRandR monitor layout (position/size in root-window coordinates). Monitors "
-		"are NOT assumed to be flush/adjacent -- use these rects directly for placement math."
+		"are NOT assumed to be flush/adjacent - use these rects directly for placement math."
 	);
 
 	m_platform.def(
@@ -89,10 +89,10 @@ void bind_platform(py::module_& m_platform) {
 		py::overload_cast<osgViewer::Viewer&>(&osgx::platform::isCursorInWindow),
 		"viewer"_a,
 		"True if the mouse pointer is currently within this viewer's real X11 window bounds. "
-		"Queries X11 directly -- there is no 'pointer left the window' GUIEventAdapter event in "
+		"Queries X11 directly - there is no 'pointer left the window' GUIEventAdapter event in "
 		"OSG's own event stream. osgx.picking.PickCameraSync already checks this automatically "
 		"every frame to invalidate continuous/hover picking when the pointer leaves the window "
-		"entirely -- this standalone binding is for anything else that wants the same check."
+		"entirely - this standalone binding is for anything else that wants the same check."
 	);
 
 #ifdef OSGX_EGL
@@ -134,13 +134,13 @@ void bind_platform(py::module_& m_platform) {
 		"window-local pixels) without the jump itself registering as motion."
 	);
 
-	// Thread-safe, event-driven cursor position tracking -- the generalized, picking-agnostic
+	// Thread-safe, event-driven cursor position tracking - the generalized, picking-agnostic
 	// version of osgx.picking.PickReadback's positional half. CursorHandler/CursorCallback retain
 	// it in C++, matching the osg::ref_ptr holder used here.
 	py::class_<osgx::platform::CursorState, osg::ref_ptr<osgx::platform::CursorState>>(
 		m_platform,
 		"CursorState",
-		"Thread-safe, event-driven cursor position tracking -- the generalized, picking-agnostic "
+		"Thread-safe, event-driven cursor position tracking - the generalized, picking-agnostic "
 		"version of osgx.picking.PickReadback's positional half. Pure state; nothing here "
 		"requires a pick camera, scene graph, or rendering of any kind."
 	)
@@ -161,7 +161,7 @@ void bind_platform(py::module_& m_platform) {
 			&osgx::platform::CursorState::inWindow,
 			&osgx::platform::CursorState::setInWindow,
 			"Whether the last known position is still inside the window. Refreshed every update "
-			"traversal by CursorCallback via isCursorInWindow() -- there is no 'pointer left the "
+			"traversal by CursorCallback via isCursorInWindow() - there is no 'pointer left the "
 			"window' GUIEventAdapter event to react to instead. True (fail-safe) until the first "
 			"refresh."
 		)
@@ -195,7 +195,7 @@ void bind_platform(py::module_& m_platform) {
 		"CursorCallback",
 		"Fires a callable(x, y) every update traversal (unconditionally, same style as "
 		"osgx.picking.PickCameraSync) with the current cursor position. The consumer decides "
-		"what 'follow' means -- reposition a HUD quad, unproject onto a world plane, drive a "
+		"what 'follow' means - reposition a HUD quad, unproject onto a world plane, drive a "
 		"rendered software cursor, whatever."
 	)
 		.def(
@@ -210,7 +210,7 @@ void bind_platform(py::module_& m_platform) {
 	;
 
 	// Software hide+warp+accumulate mouse capture for turntable/FPS-style relative-motion look
-	// controls. NOT true OS-level pointer confinement -- see osgx/Cursor.hpp.
+	// controls. NOT true OS-level pointer confinement - see osgx/Cursor.hpp.
 	py::class_<
 		osgx::platform::PointerCapture,
 		osgGA::GUIEventHandler,
@@ -219,11 +219,11 @@ void bind_platform(py::module_& m_platform) {
 		m_platform,
 		"PointerCapture",
 		"Software hide+warp+accumulate mouse capture for turntable/FPS-style relative-motion look "
-		"controls. NOT true OS-level pointer confinement -- see osgx/Cursor.hpp."
+		"controls. NOT true OS-level pointer confinement - see osgx/Cursor.hpp."
 	)
 		.def(
 			py::init<osgViewer::View&>(), "view"_a,
-			"Wraps `view`; capture starts disabled -- set .captured = True to begin hiding+warping+accumulating."
+			"Wraps `view`; capture starts disabled - set .captured = True to begin hiding+warping+accumulating."
 		)
 		.def_property(
 			"captured",

@@ -30,7 +30,7 @@ using Stage = osgx::gltf::Reader::Stage;
 
 // Per-section progress: tg3_stream_callbacks fires one of these per item, only after that
 // section's array is fully parsed (TG3__STREAM_CB in tiny_gltf_v3.c parses the whole section,
-// THEN loops the callback over it) -- so ctx.model->X_count is already the real, final count
+// THEN loops the callback over it) - so ctx.model->X_count is already the real, final count
 // by the time the first item of that section ticks, never a fabricated denominator. Covers the
 // sections most worth showing progress for; buffers/bufferViews/accessors/samplers/cameras/
 // scenes are typically tiny or uninteresting to report individually.
@@ -184,7 +184,7 @@ namespace osgx::gltf::detail {
 
 osgDB::ReaderWriter::ReadResult ReaderImpl::read(
 	const std::string& location,
-	bool /* isBinary -- tg3_parse_file auto-sniffs JSON vs GLB, no longer needed internally */,
+	bool /* isBinary - tg3_parse_file auto-sniffs JSON vs GLB, no longer needed internally */,
 	const osgDB::Options* readOptions,
 	const Reader::ProgressCallback& progress
 ) const {

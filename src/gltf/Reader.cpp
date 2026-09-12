@@ -10,11 +10,11 @@
 namespace {
 
 // Order tinygltf v3's single-pass parser visits these sections in (see the fixed sequence of
-// TG3__STREAM_CB calls in tiny_gltf_v3.c) -- fixed by the parser's own source, not by the glTF
+// TG3__STREAM_CB calls in tiny_gltf_v3.c) - fixed by the parser's own source, not by the glTF
 // file's JSON key order. Each section gets an equal share of the Parsing stage's weight, credited
 // by POSITION rather than by item count: reaching section N's first tick implies sections 0..N-1
 // are already done, whether or not they had any items to tick. That's the only way an empty
-// section (e.g. no skins) ever gets its share credited -- it never fires a callback of its own.
+// section (e.g. no skins) ever gets its share credited - it never fires a callback of its own.
 constexpr std::string_view kParsingSectionOrder[] = {
 	"meshes", "nodes", "materials", "textures", "images", "skins", "animations"
 };
@@ -54,7 +54,7 @@ Reader::TextureCache::TextureCache(TextureCache&&) noexcept = default;
 Reader::TextureCache& Reader::TextureCache::operator=(TextureCache&&) noexcept = default;
 
 // BuildingNodes only ever starts once Parsing has fully finished, so Parsing's whole weight is
-// credited unconditionally as soon as we're in that stage -- current/total there IS a real,
+// credited unconditionally as soon as we're in that stage - current/total there IS a real,
 // exact node count (unlike Parsing's per-section totals), so this reaches exactly 1.0 on the
 // final node, regardless of how rough the Parsing-side estimate below was.
 double Reader::computeOverall(

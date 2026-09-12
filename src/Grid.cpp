@@ -77,10 +77,10 @@ layout(std430, binding = 4) readonly buffer osgx_GridSettingsBuffer {
 
 // Lines that fall exactly on the canvas boundary (pos == 0 or pos == u_grid.canvasSize) only have
 // geometry on one side, so their AA kernel is half-clipped and they render at roughly half
-// intensity/width -- u_grid.edgeMode picks how to handle that:
-//   0 EDGE_ASIS  -- leave the half-clipped line as rendered (matches raw geometry)
-//   1 EDGE_HIDE  -- don't draw boundary lines at all (clean edge, good for screen-aligned UI)
-//   2 EDGE_NUDGE -- shift boundary lines inward by half their width so they render at full
+// intensity/width - u_grid.edgeMode picks how to handle that:
+//   0 EDGE_ASIS  - leave the half-clipped line as rendered (matches raw geometry)
+//   1 EDGE_HIDE  - don't draw boundary lines at all (clean edge, good for screen-aligned UI)
+//   2 EDGE_NUDGE - shift boundary lines inward by half their width so they render at full
 //                   strength (good for a true 3D ground plane, where there's no "UI edge")
 const int EDGE_ASIS = 0;
 const int EDGE_HIDE = 1;
@@ -112,7 +112,7 @@ float osgx_GridLine(vec2 pos, float interval, float lineWidthPx) {
 	vec2 bias = deriv * 0.5;
 
 	// For edge lines under EDGE_NUDGE, REPLACE (not add to) the resonance bias above with the
-	// nudge-inward amount -- stacking both cancels to zero on min edges (line stays on the
+	// nudge-inward amount - stacking both cancels to zero on min edges (line stays on the
 	// boundary, still half-clipped) and doubles up on max edges (shifts a full pixel in), which
 	// is exactly the bottom/left-vs-top/right asymmetry this branch is here to avoid.
 	if(u_grid.edgeMode == EDGE_NUDGE) {

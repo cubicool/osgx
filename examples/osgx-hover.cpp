@@ -4,7 +4,7 @@
 //
 // ASYNC (default): PickReadbackAsync (Texture2D + PBO glGetTexImage) updates _lastID
 // atomically on the draw thread. PickHoverCallback polls lastID() on the update thread
-// and fires onEnter/onLeave -- safe for scene modifications at any OSG threading level.
+// and fires onEnter/onLeave - safe for scene modifications at any OSG threading level.
 //
 // --sync: PickReadbackSync (osg::Image NodeCallback) for comparison. onEnter/onLeave
 // still go through PickHoverCallback for consistency.
@@ -133,7 +133,7 @@ int main(int argc, char** argv) {
 
 	// ------------------------------------------------------------------------------------------------
 	// ASYNC (--async): PickReadbackAsync updates _lastID on the draw thread.
-	// PickHoverCallback fires onEnter/onLeave on the update thread -- safe for scene mods.
+	// PickHoverCallback fires onEnter/onLeave on the update thread - safe for scene mods.
 	// Chain on pickCam: PickCameraSync -> PickHoverCallback
 	// ------------------------------------------------------------------------------------------------
 	if(async) {
@@ -170,7 +170,7 @@ int main(int argc, char** argv) {
 
 		pickImage->allocateImage(1, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE);
 
-		// makePickCamera() zeroes the image itself once attached -- see its comment for why.
+		// makePickCamera() zeroes the image itself once attached - see its comment for why.
 		pickCam = osgx::makePickCamera(1, 1, pickImage);
 		pickCam->addChild(scene);
 

@@ -29,12 +29,12 @@ namespace osgx {
 // ================================================================================================
 // PBR / IBL
 //
-// This file (the BRDF math itself -- GGX distribution, Schlick Fresnel, Smith geometry term,
+// This file (the BRDF math itself - GGX distribution, Schlick Fresnel, Smith geometry term,
 // independent of where the incoming light comes from: the same terms feed a direct point-light
 // loop or an IBL environment term) and IBL.hpp (the environment-as-light-source pipeline: a
 // prefiltered specular cubemap plus a split-sum BRDF LUT (Karis 2013), and eventually SH-9
 // diffuse irradiance, calling back into this file for its Fresnel term) both live directly under
-// `osgx::` -- neither is a separate opt-in subsystem (its own #include outside the umbrella, its
+// `osgx::` - neither is a separate opt-in subsystem (its own #include outside the umbrella, its
 // own CMake link target) the way osgx::debug/imgui/platform/gltf/ktx2 are, so neither earns its
 // own namespace; see TODO.md's namespace-boundary decision. The `"osgx::pbr"`/`"osgx::ibl"`
 // strings passed to registerPBRShaderLibs()/registerIBLShaderLibs() below are just the shader-lib
@@ -42,22 +42,22 @@ namespace osgx {
 //
 // Ported from the STATIC path of OpenSceneGraph.py/examples/pyosg-lighting/09-ibl.py: a
 // pre-baked .ktx2 prefiltered cubemap loaded once, plus a one-shot BRDF LUT bake. Deliberately
-// does NOT include 10-dynamicprobes.py's live GPU re-bake -- out of scope here.
+// does NOT include 10-dynamicprobes.py's live GPU re-bake - out of scope here.
 // ================================================================================================
 
-// GLSL function-body snippets, not full shaders -- concatenate the ones you need into a
+// GLSL function-body snippets, not full shaders - concatenate the ones you need into a
 // consuming fragment shader (same mechanism osgSlug's SHADER_LIB_FRAGMENT uses: paste the
 // source in, above main()). All function names carry the osgx_ prefix to avoid collisions
 // with whatever else is in the consuming shader.
 //
 // Contract: these assume `const float PI = 3.14159265359;` is already in scope. Not bundled
 // here, since plenty of consuming shaders already define PI themselves and a duplicate
-// `const float PI` is a compile error, not a harmless redefinition -- the caller adds it once.
+// `const float PI` is a compile error, not a harmless redefinition - the caller adds it once.
 //
 // Kept as `inline constexpr` header definitions (not moved to PBR.cpp): most are bound directly
 // by name in ext/osgx-python.cpp (needs real external linkage), AND all eleven are referenced
 // inside registerPBRShaderLibs()'s `static constexpr ShaderLib` array below, which needs a genuine
-// constant expression -- `inline constexpr` in a header is the one form satisfying both, same
+// constant expression - `inline constexpr` in a header is the one form satisfying both, same
 // reasoning as osgx::ibl's shader-string constants.
 
 // GGX/Trowbridge-Reitz normal distribution term (D). NdotH and roughness in [0,1];
@@ -97,7 +97,7 @@ vec3 osgx_F_Schlick(float cosTheta, vec3 F0) {
 }
 )GLSL";
 
-// Roughness-aware Fresnel (Lagarde) -- for IBL specular, so a rough surface's Fresnel rim
+// Roughness-aware Fresnel (Lagarde) - for IBL specular, so a rough surface's Fresnel rim
 // doesn't stay mirror-sharp the way plain F_Schlick would. Direct lights use F_SCHLICK instead.
 inline constexpr const char* F_SCHLICK_ROUGHNESS = R"GLSL(
 vec3 osgx_F_Schlick_roughness(float cosTheta, vec3 F0, float roughness) {
@@ -105,7 +105,7 @@ vec3 osgx_F_Schlick_roughness(float cosTheta, vec3 F0, float roughness) {
 }
 )GLSL";
 
-// Plain PBR material bundle -- source-agnostic (osgGLTF's optional renderer populates one from
+// Plain PBR material bundle - source-agnostic (osgGLTF's optional renderer populates one from
 // its loader-defined material interface, but nothing here assumes glTF): everything DIRECT_SPECULAR,
 // F_MULTISCATTER/IBL_SPECULAR, and a hemisphere/SH ambient term need to shade a fragment.
 inline constexpr const char* MATERIAL_STRUCT = R"GLSL(
@@ -119,17 +119,17 @@ struct osgx_Material {
 )GLSL";
 
 // Binding point for the factor buffer osgx::Material (below) builds. Lives here (generic osgx::),
-// not under osgx::gltf -- osgx::gltf::shader::MATERIAL_BINDING (Shader.hpp) is now just an alias
+// not under osgx::gltf - osgx::gltf::shader::MATERIAL_BINDING (Shader.hpp) is now just an alias
 // for this constant, so a caller reading GET_MATERIAL never has to care whether the buffer at this
 // binding was populated by the glTF loader (Material.cpp) or by a hand-authored osgx::Material
-// (see examples/osgx-gbuffer-blueprint.cpp's buildShapeNode() for a non-glTF consumer) -- same
+// (see examples/osgx-gbuffer-blueprint.cpp's buildShapeNode() for a non-glTF consumer) - same
 // binding, same buffer shape, either way. See TODO.md's "Generic vs. glTF-specific layering"
 // section for the principle this is following.
 inline constexpr unsigned int MATERIAL_BINDING = 0;
 
 // Texture units osgx::Material's four maps bind at, and osgx::gltf's loader populates directly
 // (Material.cpp) for the same reason MATERIAL_BINDING lives here rather than under osgx::gltf::
-// shader:: -- osgx::gltf::shader::BASE_COLOR_TEXTURE_UNIT etc. (Shader.hpp) are now just aliases.
+// shader:: - osgx::gltf::shader::BASE_COLOR_TEXTURE_UNIT etc. (Shader.hpp) are now just aliases.
 inline constexpr int BASE_COLOR_TEXTURE_UNIT = 0;
 inline constexpr int NORMAL_TEXTURE_UNIT = 1;
 inline constexpr int ORM_TEXTURE_UNIT = 2;
@@ -139,20 +139,20 @@ inline constexpr int EMISSIVE_TEXTURE_UNIT = 3;
 // into ONE state-graph object: `stateSet.setAttributeAndModes(new osgx::Material(...))` replaces
 // the old attachMaterialFactors() free function plus however many manual
 // setTextureAttributeAndModes() calls a caller previously had to keep in sync with it by hand
-// (osgx::gltf's own loader -- Material.cpp -- was the worst offender: the has*Map flags it built
+// (osgx::gltf's own loader - Material.cpp - was the worst offender: the has*Map flags it built
 // were a SEPARATE set of locals from whatever texture binds actually happened, so a load failure
 // partway through could silently leave them lying about what was bound). Modeled on osg::Material
 // (a StateAttribute wrapping glMaterial state) more than on osgEarth::PBRTexture (a StateAttribute
-// wrapping just texture refs, paired with a separate plain PBRMaterial value struct) -- osgx::
+// wrapping just texture refs, paired with a separate plain PBRMaterial value struct) - osgx::
 // Material owns BOTH the scalar factors and the maps together, since MATERIAL_INPUTS/GET_MATERIAL
 // (Shader.hpp/PBRIBL.cpp) already treat them as one interface.
 //
 // has*Map (the flags GET_MATERIAL gates every texture read behind) are no longer separate bools a
-// caller can drift out of sync with reality -- they're derived directly from whether the
+// caller can drift out of sync with reality - they're derived directly from whether the
 // corresponding ref_ptr is set, so binding a texture and marking "this material has that map" are
 // literally the same operation, by construction. hasOcclusion is the one exception: occlusion is
 // read from the metallic-roughness map's own R channel, not a dedicated texture/unit of its own
-// (see Material.cpp's ORM-baking comments), so it stays an explicit flag -- setHasOcclusion().
+// (see Material.cpp's ORM-baking comments), so it stays an explicit flag - setHasOcclusion().
 //
 // Deliberately claims the reserved osg::StateAttribute::CAPABILITY Type rather than reusing an
 // existing built-in one the way osgEarth::PBRTexture reuses TEXTURE. CAPABILITY/member 0 is this
@@ -161,14 +161,14 @@ inline constexpr int EMISSIVE_TEXTURE_UNIT = 3;
 // not share both parts of it (a real osg::Texture at unit 0 alongside a same-key custom attribute,
 // for instance, would silently fight over one slot).
 // osgEarth::PBRTexture only gets away with reusing TEXTURE because it also gives up on compare()
-// (unconditionally returns -1, opting out of state-sorting dedup entirely) -- osgx::Material does
+// (unconditionally returns -1, opting out of state-sorting dedup entirely) - osgx::Material does
 // neither: real dedup means two drawables sharing an equal material (same texture pointers --
-// osgx::gltf's TextureLoader already caches/shares those -- and equal factors) skip a redundant
+// osgx::gltf's TextureLoader already caches/shares those - and equal factors) skip a redundant
 // apply() entirely.
 //
-// apply() is deliberately read-only over this object's state -- it binds whatever's already set,
+// apply() is deliberately read-only over this object's state - it binds whatever's already set,
 // nothing more. Every setter rebuilds the factor buffer's contents immediately (in place, via
-// osg::Array::dirty() -- no new GL buffer object, no custom per-context dirty flag) rather than
+// osg::Array::dirty() - no new GL buffer object, no custom per-context dirty flag) rather than
 // leaving that work for apply() to discover lazily; apply() can then run concurrently from
 // multiple graphics contexts (osgViewer::CompositeViewer, an offscreen bake pass alongside the
 // main view) with no shared mutable state to race over, the same guarantee osg::Material::apply()
@@ -194,7 +194,7 @@ class Material: public osg::StateAttribute {
 		void setMetallic(float metallic);
 		float getMetallic() const { return _metallic; }
 
-		// See the class comment -- occlusion has no dedicated unit of its own, so unlike the four
+		// See the class comment - occlusion has no dedicated unit of its own, so unlike the four
 		// map setters below, this doesn't derive from a ref_ptr.
 		void setHasOcclusion(bool hasOcclusion);
 		bool getHasOcclusion() const { return _hasOcclusion; }
@@ -261,7 +261,7 @@ vec3 osgx_DirectSpecular(vec3 N, vec3 V, vec3 L, float NdotV, float roughness, v
 )GLSL";
 
 // Lambertian direct-light diffuse term, kept a companion to DIRECT_SPECULAR above rather than
-// folded into it -- callers that only need specular can still pull just that one, matching the
+// folded into it - callers that only need specular can still pull just that one, matching the
 // "atomic snippet" contract everywhere else in this file. Shares DIRECT_SPECULAR's own
 // F_SCHLICK-based kD split so the two stay energy-consistent when combined (see DIRECT_LIGHT
 // below). Requires F_SCHLICK already in scope, and `const float PI` in the consuming shader (see
@@ -281,7 +281,7 @@ vec3 osgx_DirectDiffuse(vec3 N, vec3 V, vec3 L, vec3 albedo, float metallic, vec
 }
 )GLSL";
 
-// Compile-time bound for LIGHT_UNIFORMS' GLSL buffer array declaration below -- kept as a real C++
+// Compile-time bound for LIGHT_UNIFORMS' GLSL buffer array declaration below - kept as a real C++
 // constant (not just a literal baked into the GLSL string) so callers can size a LightSet without
 // hardcoding a number that has to stay in sync by hand. If this changes, OSGX_MAX_LIGHTS inside
 // LIGHT_UNIFORMS must change with it. 6 covers a small handful of torchlights in one room without
@@ -289,7 +289,7 @@ vec3 osgx_DirectDiffuse(vec3 N, vec3 V, vec3 L, vec3 albedo, float metallic, vec
 inline constexpr int MAX_LIGHTS = 6;
 
 // Size, in 4-byte floats, of one packed `osgx_Light` struct in LIGHT_UNIFORMS' std430 buffer below
-// (16 floats = 64 bytes) -- the C++-side stride LightSet's setters/getters index into `lights`
+// (16 floats = 64 bytes) - the C++-side stride LightSet's setters/getters index into `lights`
 // with. Must match the GLSL struct exactly; see LIGHT_UNIFORMS' own layout comment.
 inline constexpr std::size_t LIGHT_STRUCT_FLOATS = 16;
 
@@ -300,7 +300,7 @@ inline constexpr unsigned int LIGHT_BINDING = 3;
 
 // Punctual point-light radiance (glTF punctual-light convention: inverse-square falloff, no
 // artificial radius cutoff) plus the resulting light direction `L`, both needed by DIRECT_LIGHT
-// below. `posIntensity` is world-space position in .xyz and intensity in .w -- the exact packing
+// below. `posIntensity` is world-space position in .xyz and intensity in .w - the exact packing
 // osgx::OrbitLightRig writes via LightSet::setPosition() into each osgx_Light's own
 // posIntensity field (LIGHT_UNIFORMS' buffer struct below), so a caller wiring a static (e.g.
 // torch-style) light just calls LightSet::setPoint() once instead of installing a NodeCallback.
@@ -315,25 +315,25 @@ vec3 osgx_PointLightRadiance(vec4 posIntensity, vec3 color, vec3 worldPos, out v
 }
 )GLSL";
 
-// Declarations shared by every consumer of DIRECT_LIGHT/POINT_LIGHT_RADIANCE below -- one
+// Declarations shared by every consumer of DIRECT_LIGHT/POINT_LIGHT_RADIANCE below - one
 // contract, so a caller can populate one osgx::LightSet on an ancestor StateSet and have it
 // inherited by every lit subgraph (dice, backdrop, whatever else) instead of wiring the same
 // uniforms into each shader by hand. OSGX_MAX_LIGHTS is a compile-time array bound, not a runtime
-// one -- osgx_lightCount (set at runtime, <= OSGX_MAX_LIGHTS) is what actually gates the loop a
+// one - osgx_lightCount (set at runtime, <= OSGX_MAX_LIGHTS) is what actually gates the loop a
 // caller (or DIRECT_LIGHTING_HOOK_DEFAULT's osgx_DirectLighting) writes over osgx_lights.
 //
 // A single std430 buffer struct array replaces what used to be seven parallel flat uniform arrays
 // (lightPosIntensity/lightColor/lightType/lightDir/lightSpotAngles/lightSourceRadius plus
-// lightCount) -- modeled on gltf::detail::Skin's paletteMatrices buffer (a small, runtime-variable-
+// lightCount) - modeled on gltf::detail::Skin's paletteMatrices buffer (a small, runtime-variable-
 // count array of structs), not Material.cpp's fixed-size, one-per-draw
-// read-only data -- the right shape for a single material, not an array of lights). std430 (not
+// read-only data - the right shape for a single material, not an array of lights). std430 (not
 // std140, which only applies to `uniform` blocks) is what actually buys the tighter packing here
-// -- no forced 16-byte rounding on scalar/vec2 array elements. Every uniform/block name below
+// - no forced 16-byte rounding on scalar/vec2 array elements. Every uniform/block name below
 // carries the `osgx_` prefix (2026-08-16 rename) to avoid collision with an unrelated consumer
 // shader's own similarly-named uniforms, matching the rest of this catalog (osgx_Material,
 // osgx_DirectLight, etc.).
 //
-// Packed layout of one osgx_Light (std430; 16 floats / 64 bytes -- must match
+// Packed layout of one osgx_Light (std430; 16 floats / 64 bytes - must match
 // LIGHT_STRUCT_FLOATS and the float offsets LightSet's setters/getters use in PBR.cpp):
 //   vec4  posIntensity   offset  0  (xyz = world-space position, w = intensity)
 //   vec3  color          offset 16
@@ -344,14 +344,14 @@ vec3 osgx_PointLightRadiance(vec4 posIntensity, vec3 color, vec3 worldPos, out v
 //   int   enabled        offset 56  (0 = off; non-zero = contributes light)
 //   float _pad0          offset 60  (rounds the struct to a multiple of 16)
 //
-// type/dir/sourceRadius/spotAngles are additive -- a caller that only ever calls setPoint() with
+// type/dir/sourceRadius/spotAngles are additive - a caller that only ever calls setPoint() with
 // sourceRadius=0 gets exactly today's point-light behavior. A per-light `type` (LightType in C++
 // below) picks the radiance function (POINT_LIGHT_RADIANCE/DIRECTIONAL_LIGHT_RADIANCE/
-// SPOT_LIGHT_RADIANCE); sourceRadius is deliberately NOT a fourth "sphere" type -- it is a
+// SPOT_LIGHT_RADIANCE); sourceRadius is deliberately NOT a fourth "sphere" type - it is a
 // physical-size knob on a point or spot light, matching how a sphere light actually differs from
 // a point light: same inverse-square falloff, only the specular highlight's shape changes (see
 // DIRECT_LIGHT_SPHERE below). This is unrelated to the "no artificial radius cutoff" decision
-// noted on POINT_LIGHT_RADIANCE above -- that was about attenuation distance (deliberately not
+// noted on POINT_LIGHT_RADIANCE above - that was about attenuation distance (deliberately not
 // reintroduced here); this is about physical light size.
 inline constexpr const char* LIGHT_UNIFORMS = R"GLSL(
 #define OSGX_MAX_LIGHTS 6
@@ -370,7 +370,7 @@ struct osgx_Light {
 	float _pad0;
 };
 
-// binding = 3 here must match LIGHT_BINDING in C++ -- same hardcode-and-cross-reference
+// binding = 3 here must match LIGHT_BINDING in C++ - same hardcode-and-cross-reference
 // pattern osgx::gltf::shader::MATERIAL_INPUTS uses for its own `binding = 0`.
 layout(std430, binding = 3) readonly buffer osgx_LightBuffer {
 	osgx_Light osgx_lights[OSGX_MAX_LIGHTS];
@@ -380,7 +380,7 @@ uniform int osgx_lightCount;
 )GLSL";
 
 // Combines osgx_DirectDiffuse + osgx_DirectSpecular into one per-light contribution against an
-// osgx_Material (MATERIAL_STRUCT) -- the "modular hook" PBRIBLScene::create()'s own comment has been
+// osgx_Material (MATERIAL_STRUCT) - the "modular hook" PBRIBLScene::create()'s own comment has been
 // waiting on: a caller loops `osgx_lightCount` times, calling osgx_PointLightRadiance for
 // L/radiance then this for the shaded result, and accumulates (or just calls osgx_DirectLighting(),
 // see DIRECT_LIGHTING_DECL/DIRECT_LIGHTING_HOOK_DEFAULT below, which already does exactly that). Requires
@@ -395,7 +395,7 @@ vec3 osgx_DirectLight(vec3 N, vec3 V, vec3 L, vec3 radiance, osgx_Material mat) 
 }
 )GLSL";
 
-// Directional-light radiance: no position, no falloff -- a directional light is already parallel
+// Directional-light radiance: no position, no falloff - a directional light is already parallel
 // rays of constant irradiance (the sun, at scene scale). `direction` is the ray travel direction
 // (matching the glTF/KHR_lights_punctual convention a caller would eventually import), so the
 // direction TO the light is its negation. Ported from
@@ -410,7 +410,7 @@ vec3 osgx_DirectionalLightRadiance(vec3 direction, vec3 color, float intensity, 
 )GLSL";
 
 // Spot-light radiance: point-light falloff (POINT_LIGHT_RADIANCE) times a cone attenuation term.
-// `coneAngles` is (cos(innerConeAngle), cos(outerConeAngle)) -- pre-cosined so this stays a single
+// `coneAngles` is (cos(innerConeAngle), cos(outerConeAngle)) - pre-cosined so this stays a single
 // dot/smoothstep per fragment instead of an acos. Ported from 99-repl.py's spot block
 // (`smoothstep(spotOuterCos, spotInnerCos, cone)`). Requires POINT_LIGHT_RADIANCE already in scope.
 inline constexpr const char* SPOT_LIGHT_RADIANCE = R"GLSL(
@@ -427,7 +427,7 @@ vec3 osgx_SpotLightRadiance(
 
 // Sphere-light "representative point" trick (Karis, "Real Shading in Unreal Engine 4", 2013):
 // bends the direction used for the SPECULAR term toward the closest point on the light's physical
-// sphere to the ideal mirror-reflection ray, instead of always pointing at its center -- this is
+// sphere to the ideal mirror-reflection ray, instead of always pointing at its center - this is
 // what actually makes a highlight bigger/softer as the light's physical size grows (diffuse has
 // no equivalent "highlight shape" to distort, so it keeps using the true light direction; see
 // DIRECT_LIGHT_SPHERE below). `toLightCenter` is UNNORMALIZED (light center minus shading point);
@@ -454,14 +454,14 @@ vec3 osgx_SphereLightDir(vec3 toLightCenter, vec3 R, float sourceRadius) {
 // no new BRDF math, just a second osgx_DirectSpecular call site with a different L/roughness.
 // Requires DIRECT_DIFFUSE, DIRECT_SPECULAR, and SPHERE_LIGHT_SPECULAR already in scope.
 inline constexpr const char* DIRECT_LIGHT_SPHERE = R"GLSL(
-// A plain clamp(x, 0.0, 1.0) here has a hard derivative jump exactly at x==1.0 -- invisible for a
+// A plain clamp(x, 0.0, 1.0) here has a hard derivative jump exactly at x==1.0 - invisible for a
 // single shaded point, but on a surface close enough to a large-sourceRadius light for x to exceed
 // 1.0 on PART of the surface and not another, that jump shows up as a real, visible ring (confirmed
 // live 2026-08-16: a cube face close to a sourceRadius=2 light showed a sharp arc separating a
 // alphaPrime==1.0-saturated region from an unsaturated one). x is never negative here (alpha and
 // sourceRadius/(2*dist) are both >= 0), so only the upper ceiling needs softening. Identity below
 // (1.0 - softness), so every already-verified non-saturating case (small/no sourceRadius, or a
-// light far enough that alphaPrime never approaches 1.0) is completely unaffected -- only the
+// light far enough that alphaPrime never approaches 1.0) is completely unaffected - only the
 // approach to the ceiling itself eases smoothly instead of cutting off sharply.
 float osgx_SoftCeiling(float x, float softness) {
 	float edge = 1.0 - softness;
@@ -489,38 +489,38 @@ vec3 osgx_DirectLightSphere(
 }
 )GLSL";
 
-// osgx_DirectLighting() CONTRACT -- the per-light dispatch loop above (LIGHT_UNIFORMS' osgx_lightCount/
+// osgx_DirectLighting() CONTRACT - the per-light dispatch loop above (LIGHT_UNIFORMS' osgx_lightCount/
 // osgx_lights buffer array) factored out behind a single function boundary, instead of every consumer
 // hand-copying it into its own main() (PBRIBL.cpp's FULL_PBR_FRAGMENT_SHADER_SRC and
 // OpenSceneGraph.py's pyosg_dice.py both did exactly that, and the latter has already drifted out
-// of sync -- see osgx TODO.md). Follows the separate-compiled-shader-object "hook" pattern osgSlug
+// of sync - see osgx TODO.md). Follows the separate-compiled-shader-object "hook" pattern osgSlug
 // already uses to good effect (~/dev/osgSlug/src/Atlas.shaders.cpp's SHADER_NOOP_*_HOOK/HookList,
 // Atlas.cpp's createDefaultStateSet()): a consumer's OWN fragment shader only needs
-// DIRECT_LIGHTING_DECL spliced in (list MATERIAL_STRUCT earlier in the SAME pragma line -- this is a
+// DIRECT_LIGHTING_DECL spliced in (list MATERIAL_STRUCT earlier in the SAME pragma line - this is a
 // bare forward declaration, osgx_Material must already be a known type) plus a call site
 // (`color += osgx_DirectLighting(N, V, worldPos, mat);`); it never touches osgx_lightCount/osgx_lights/
 // DIRECT_LIGHT/DIRECT_LIGHT_SPHERE/etc. directly, and so can never drift out of sync with them the
 // way pyosg_dice.py's hand-copied loop did. The DEFINITION lives in DIRECT_LIGHTING_HOOK_DEFAULT
 // below, a fully self-contained, SEPARATELY compiled osg::Shader object added alongside the
-// consumer's own -- GLSL's ordinary cross-shader-object linking resolves the call at Program-link
+// consumer's own - GLSL's ordinary cross-shader-object linking resolves the call at Program-link
 // time, exactly like osgSlug's SHADER_VERT calling osgSlug_Vertex(data) defined in a separate hook
 // shader object. A caller that genuinely needs different direct-light shading (not just different
 // material response, which osgx_Material/MATERIAL_STRUCT already covers) supplies its own shader
-// object defining osgx_DirectLighting() instead of adding DIRECT_LIGHTING_HOOK_DEFAULT -- same override
+// object defining osgx_DirectLighting() instead of adding DIRECT_LIGHTING_HOOK_DEFAULT - same override
 // mechanism as osgSlug's HookList, minus the C++-side bookkeeping (a HookList-style helper plus the
-// Python binding are a deliberate follow-up, not done in this pass -- see TODO.md).
+// Python binding are a deliberate follow-up, not done in this pass - see TODO.md).
 inline constexpr const char* DIRECT_LIGHTING_DECL = R"GLSL(
 vec3 osgx_DirectLighting(vec3 N, vec3 V, vec3 worldPos, osgx_Material mat);
 )GLSL";
 
-// Self-contained -- carries its own #version/PI/#pragma line so it compiles as a standalone
+// Self-contained - carries its own #version/PI/#pragma line so it compiles as a standalone
 // osg::Shader object regardless of what the consumer's own fragment shader happens to have in
 // scope. Add via:
 //   program->addShader(new osg::Shader(
 //     osg::Shader::FRAGMENT, osgx::resolveShaderLibs(osgx::DIRECT_LIGHTING_HOOK_DEFAULT)
 //   ));
 // as an EXTRA shader object on the same Program that already has the consumer's own fragment
-// shader (which only needs DIRECT_LIGHTING_DECL + a call site, see above) -- not spliced by name via
+// shader (which only needs DIRECT_LIGHTING_DECL + a call site, see above) - not spliced by name via
 // #pragma osgx::pbr, so it is deliberately NOT in registerPBRShaderLibs()'s catalog.
 inline constexpr const char* DIRECT_LIGHTING_HOOK_DEFAULT = R"GLSL(
 #version 460 core
@@ -533,12 +533,12 @@ vec3 osgx_DirectLighting(vec3 N, vec3 V, vec3 worldPos, osgx_Material mat) {
 	vec3 color = vec3(0.0);
 
 	// Loop OSGX_MAX_LIGHTS (a compile-time constant), gated solely by each light's own `enabled`
-	// flag -- NOT osgx_lightCount (an SSBO-adjacent uniform LightSet::apply() used to push via
+	// flag - NOT osgx_lightCount (an SSBO-adjacent uniform LightSet::apply() used to push via
 	// osg::State::applyShaderCompositionUniform()/direct getLastAppliedProgramObject() push,
 	// see LightSet::apply()'s own history comment). Both were confirmed unreliable whenever a
 	// DIFFERENT Program elsewhere in the same frame (a sibling subgraph, even) uses
-	// StateAttribute::OVERRIDE -- e.g. osgx::gltf::pbribl::PBRIBLScene::create()'s own Program
-	// attachment -- silently zeroing direct lighting for every OTHER Program sharing this
+	// StateAttribute::OVERRIDE - e.g. osgx::gltf::pbribl::PBRIBLScene::create()'s own Program
+	// attachment - silently zeroing direct lighting for every OTHER Program sharing this
 	// LightSet. `enabled` travels on the SAME SSBO binding the light data itself does
 	// (state.applyAttribute(), never State's separate/unreliable uniform-push machinery), so it
 	// has none of that fragility.
@@ -582,14 +582,14 @@ vec3 osgx_DirectLighting(vec3 N, vec3 V, vec3 worldPos, osgx_Material mat) {
 // Multi-scattering energy-compensated Fresnel (Fdez-Aguera 2019, "A Multiple-Scattering
 // Microfacet Model for Real-Time Image-based Lighting"), the same formula the official Khronos
 // glTF-Sample-Viewer uses (ported from OpenSceneGraph.py/examples/pyosg-khronos-viewer.py's
-// fresnel(), which was itself written to match that viewer's IBL.glsl exactly -- confirmed
+// fresnel(), which was itself written to match that viewer's IBL.glsl exactly - confirmed
 // pixel-parity against github.khronos.org/glTF-Sample-Viewer-Release/ on 2026-07-22).
 //
-// The classic single-scatter split-sum approximation (Karis 2013 -- what IBL_SPECULAR below
+// The classic single-scatter split-sum approximation (Karis 2013 - what IBL_SPECULAR below
 // used before this was added) loses energy at higher roughness because it only accounts for
 // light bouncing off the microfacet surface once; this adds back an estimate of what multiple
 // internal bounces would have contributed, using the same split-sum LUT (ab.x/ab.y) the
-// single-scatter term already samples -- no extra texture reads, just more math on the same
+// single-scatter term already samples - no extra texture reads, just more math on the same
 // two numbers. Most visible on rough metals/dielectrics, which the single-scatter version
 // renders measurably too dark/desaturated.
 inline constexpr const char* F_MULTISCATTER = R"GLSL(
@@ -601,7 +601,7 @@ vec3 osgx_F_MultiScatter(vec3 N, vec3 V, float roughness, vec3 F0, sampler2D brd
 	vec3 Fss = F0 + (max(vec3(1.0 - roughness), F0) - F0) * pow(1.0 - NdotV, 5.0);
 	vec3 FssCombined = Fss * ab.x + ab.y;
 
-	// Energy lost to single-scatter, and the average Fresnel across all angles -- both from
+	// Energy lost to single-scatter, and the average Fresnel across all angles - both from
 	// Fdez-Aguera's derivation; feeds a geometric-series estimate of the multi-bounce term.
 	float Ems = 1.0 - (ab.x + ab.y);
 	vec3 Favg = F0 + (1.0 - F0) / 21.0;
@@ -626,7 +626,7 @@ vec3 osgx_IBLSpecular(
 ) {
 	vec3 R = reflect(-V, N);
 
-	// OSG world space is Z-up; the baked cubemap's faces are Y-up -- without this remap we'd
+	// OSG world space is Z-up; the baked cubemap's faces are Y-up - without this remap we'd
 	// sample a direction that doesn't correspond to R at all.
 	vec3 R_gl = vec3(R.x, R.z, -R.y);
 
@@ -637,17 +637,17 @@ vec3 osgx_IBLSpecular(
 }
 )GLSL";
 
-// osgx_AmbientLighting() CONTRACT -- same "hook" pattern as osgx_DirectLighting() above (see its
+// osgx_AmbientLighting() CONTRACT - same "hook" pattern as osgx_DirectLighting() above (see its
 // own contract comment for the full rationale): a consumer's fragment shader only needs
 // AMBIENT_LIGHTING_DECL spliced in (list MATERIAL_STRUCT earlier in the SAME pragma line) plus a
 // call site (`color += osgx_AmbientLighting(N, V, mat, envMap, brdfLUT, envMaxMip, iblIntensity);`);
 // it never touches osgx_IBLSpecular/osgx_F_MultiScatter directly. The DEFINITION lives in
-// AMBIENT_LIGHTING_HOOK_DEFAULT below -- specular-only (no SH-9 diffuse irradiance yet, see
-// osgx::ibl TODO.md) -- a consumer wanting real diffuse IBL (osgx_EvaluateIBL(), IBL.hpp's own
-// EVALUATE_IBL -- osgx::gltf::pbribl's PBRIBL.cpp is its own real consumer, bakes a Lambertian
+// AMBIENT_LIGHTING_HOOK_DEFAULT below - specular-only (no SH-9 diffuse irradiance yet, see
+// osgx::ibl TODO.md) - a consumer wanting real diffuse IBL (osgx_EvaluateIBL(), IBL.hpp's own
+// EVALUATE_IBL - osgx::gltf::pbribl's PBRIBL.cpp is its own real consumer, bakes a Lambertian
 // irradiance cubemap and blends diffuse/specular against two independent intensities) supplies
 // its own shader object defining osgx_AmbientLighting() instead of adding
-// AMBIENT_LIGHTING_HOOK_DEFAULT -- same override mechanism, and why PBRIBL.cpp does not (yet) route
+// AMBIENT_LIGHTING_HOOK_DEFAULT - same override mechanism, and why PBRIBL.cpp does not (yet) route
 // through this hook itself.
 inline constexpr const char* AMBIENT_LIGHTING_DECL = R"GLSL(
 vec3 osgx_AmbientLighting(
@@ -661,10 +661,10 @@ vec3 osgx_AmbientLighting(
 );
 )GLSL";
 
-// Self-contained -- carries its own #version/#pragma line so it compiles as a standalone
+// Self-contained - carries its own #version/#pragma line so it compiles as a standalone
 // osg::Shader object regardless of what the consumer's own fragment shader happens to have in
 // scope. Add alongside DIRECT_LIGHTING_HOOK_DEFAULT (if also used) as another EXTRA shader object
-// on the same Program -- not spliced by name via #pragma osgx::pbr, so it is deliberately NOT in
+// on the same Program - not spliced by name via #pragma osgx::pbr, so it is deliberately NOT in
 // registerPBRShaderLibs()'s catalog.
 inline constexpr const char* AMBIENT_LIGHTING_HOOK_DEFAULT = R"GLSL(
 #version 460 core
@@ -693,7 +693,7 @@ vec3 osgx_AmbientLighting(
 // only meaningful there, then converts back to the perceptual roughness this codebase otherwise
 // passes around (IBL_SPECULAR/F_MULTISCATTER's LOD selection and BRDF LUT lookups both expect
 // perceptual roughness, not alpha). `N` should be the final shading normal (post normal-map),
-// evaluated in any space -- dFdx/dFdy operate on screen-space fragment neighbors regardless.
+// evaluated in any space - dFdx/dFdy operate on screen-space fragment neighbors regardless.
 inline constexpr const char* SPECULAR_AA = R"GLSL(
 float osgx_SpecularAA(vec3 N, float roughness) {
 	vec3 dndx = dFdx(N);
@@ -706,7 +706,7 @@ float osgx_SpecularAA(vec3 N, float roughness) {
 }
 )GLSL";
 
-// Khronos PBR Neutral tonemap -- hue-preserving (no ACES orange shift), for compressing HDR
+// Khronos PBR Neutral tonemap - hue-preserving (no ACES orange shift), for compressing HDR
 // specular (routinely > 1.0 off a near-mirror surface under a bright environment) into LDR
 // without hard-clipping to solid white. Ported verbatim from 09-ibl.py's tonemapPBRNeutral().
 // Caller still applies its own gamma afterward if not rendering to an sRGB framebuffer.
@@ -729,10 +729,10 @@ vec3 osgx_TonemapPBRNeutral(vec3 color) {
 }
 )GLSL";
 
-// osgx_Tonemap() CONTRACT -- same "hook" pattern as osgx_DirectLighting()/osgx_AmbientLighting()
+// osgx_Tonemap() CONTRACT - same "hook" pattern as osgx_DirectLighting()/osgx_AmbientLighting()
 // above: a consumer's fragment shader only needs TONEMAP_DECL spliced in plus a call site
 // (`color = osgx_Tonemap(color);`) on its final linear color, before gamma. The DEFINITION lives
-// in TONEMAP_HOOK_DEFAULT below (osgx_TonemapPBRNeutral, unchanged) -- a consumer wanting a
+// in TONEMAP_HOOK_DEFAULT below (osgx_TonemapPBRNeutral, unchanged) - a consumer wanting a
 // different tone curve (ACES, a flat clamp, a look-specific LUT) supplies its own shader object
 // defining osgx_Tonemap() instead of adding TONEMAP_HOOK_DEFAULT.
 inline constexpr const char* TONEMAP_DECL = R"GLSL(
@@ -756,7 +756,7 @@ vec3 osgx_Tonemap(vec3 color) {
 //
 // **Attach this rather than attaching no tonemap hook at all.** A consumer that skips the hook and
 // #ifdef's the osgx_Tonemap() CALL out of its own shader instead has made the function's existence
-// depend on a #define -- and a define is NOT guaranteed to be present at every compile. OSG
+// depend on a #define - and a define is NOT guaranteed to be present at every compile. OSG
 // pre-compiles StateSets at realize time via osgUtil::GLObjectsVisitor, which does not carry the
 // accumulated osg::State define stack that State::apply() builds during real rendering, so that
 // pass sees an EMPTY define string, keeps the call, finds no definition, and fails to link. The
@@ -773,7 +773,7 @@ vec3 osgx_Tonemap(vec3 color) {
 )GLSL";
 
 // Selects the radiance function LIGHT_UNIFORMS' `osgx_lights[i].type` picks in the fragment
-// shader loop (OSGX_LIGHT_TYPE_* above) -- kept as a real C++ enum, not just the raw int a caller
+// shader loop (OSGX_LIGHT_TYPE_* above) - kept as a real C++ enum, not just the raw int a caller
 // would otherwise have to remember, same reasoning as MAX_LIGHTS. Deliberately no `Sphere` member:
 // a sphere light is a Point or Spot light with a non-zero LightSet::setPoint/setSpot
 // `sourceRadius`, not a fourth branch (see LIGHT_UNIFORMS' own comment for why).
@@ -789,10 +789,10 @@ enum class LightType: int {
 // count through osg::State::applyShaderCompositionUniform(), OSG's own StateAttribute-to-uniform
 // bridge (used by osg::ShaderAttribute, osg::TexEnv, and osg::TexGen). A caller wiring a fixed rig
 // (wall torches, sconces, a sun, a flashlight) uses this directly; OrbitLightRig can still animate
-// a light's position on top of the SAME LightSet for the subset of lights that should orbit -- the
+// a light's position on top of the SAME LightSet for the subset of lights that should orbit - the
 // two are complementary, not alternatives.
 //
-// CAPABILITY/member 1 deliberately differs from Material's CAPABILITY/member 0 -- see Material's
+// CAPABILITY/member 1 deliberately differs from Material's CAPABILITY/member 0 - see Material's
 // class comment for why the full (Type, member) pair is the State cache key.
 struct LightSet: public osg::StateAttribute {
 	static constexpr Type LIGHT_SET_TYPE = CAPABILITY;
@@ -811,13 +811,13 @@ struct LightSet: public osg::StateAttribute {
 	// LightSet is valid immediately and can be attached directly with setAttributeAndModes().
 	bool valid() const;
 
-	// `const` -- these mutate the buffer/uniform this LightSet owns, not its object identity. Lets
+	// `const` - these mutate the buffer/uniform this LightSet owns, not its object identity. Lets
 	// an osg::ref_ptr<LightSet> captured by value into a `const`-qualified lambda (e.g. an ordinary,
 	// non-`mutable` event-handler callback) still call these directly.
 	// Every index must be less than MAX_LIGHTS; otherwise the setter/getter throws std::out_of_range.
 	//
 	// `sourceRadius` > 0 switches this light's specular term to the representative-point path
-	// (DIRECT_LIGHT_SPHERE) -- this is what makes it read as a "sphere" light instead of an ideal
+	// (DIRECT_LIGHT_SPHERE) - this is what makes it read as a "sphere" light instead of an ideal
 	// point light; everything else about it (falloff, diffuse) is unchanged.
 	void setPoint(
 		std::size_t index,
@@ -828,7 +828,7 @@ struct LightSet: public osg::StateAttribute {
 	) const;
 
 	// `direction` is the ray travel direction (matching KHR_lights_punctual, for eventual loader
-	// compatibility) -- e.g. (0, 0, -1) for a light shining straight down in a Z-up world.
+	// compatibility) - e.g. (0, 0, -1) for a light shining straight down in a Z-up world.
 	void setDirectional(
 		std::size_t index,
 		const osg::Vec3& direction,
@@ -858,11 +858,11 @@ struct LightSet: public osg::StateAttribute {
 	void setEnabled(std::size_t index, bool enabled) const;
 
 	// Sets ONLY a light's posIntensity field, leaving color/type/dir/spotAngles/sourceRadius
-	// untouched -- the one primitive OrbitLightRig below needs to animate a light already
+	// untouched - the one primitive OrbitLightRig below needs to animate a light already
 	// configured via setPoint/setSpot, without re-specifying everything else every frame.
 	void setPosition(std::size_t index, const osg::Vec3& position, float intensity) const;
 
-	// Read accessors -- e.g. osgx::LightMarkers/LightGizmos read back a live LightSet's per-light
+	// Read accessors - e.g. osgx::LightMarkers/LightGizmos read back a live LightSet's per-light
 	// state to place gizmo geometry; individual fields are no longer separately retrievable
 	// osg::Uniforms the way the old parallel-array design allowed.
 	int getCount() const;
@@ -879,7 +879,7 @@ struct LightSet: public osg::StateAttribute {
 
 	private:
 	// Backing store for every light's packed osgx_Light struct (MAX_LIGHTS * LIGHT_STRUCT_FLOATS
-	// floats, std430 layout -- see LIGHT_UNIFORMS' struct comment), bound through _binding at
+	// floats, std430 layout - see LIGHT_UNIFORMS' struct comment), bound through _binding at
 	// LIGHT_BINDING. It stays private so it cannot be replaced independently of that binding.
 		osg::ref_ptr<osg::FloatArray> _lights;
 		osg::ref_ptr<osg::ShaderStorageBufferBinding> _binding;
@@ -890,13 +890,13 @@ struct LightSet: public osg::StateAttribute {
 
 // Animates a handful of point lights orbiting a center point, writing world-space position+
 // intensity into an existing LightSet's posIntensity field (via LightSet::setPosition) every
-// update traversal -- the motion is what confirms N/V/specular are wired correctly rather than
+// update traversal - the motion is what confirms N/V/specular are wired correctly rather than
 // just a static flat-shaded color. Install as the update callback on whichever node the lit shape
 // hangs from; `lights` must already be an attached LightSet with at least
-// orbits.size() lights configured via setPoint/setSpot (for their color/type/etc. -- this callback
+// orbits.size() lights configured via setPoint/setSpot (for their color/type/etc. - this callback
 // only ever touches position/intensity).
 //
-// Reusable across any PBR-lit scene -- configure `center`/`orbits`/`intensity` per use
+// Reusable across any PBR-lit scene - configure `center`/`orbits`/`intensity` per use
 // instead of copying this callback into each consumer.
 struct OrbitLightRig: public osg::NodeCallback {
 	struct Orbit {
