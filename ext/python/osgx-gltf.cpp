@@ -925,21 +925,46 @@ void bind_gltf(py::module_& m_gltf) {
 		)
 		.def_static(
 			"create",
-			&osgx::gltf::pbribl::PBRIBLScene::create,
+			// A lambda rather than &PBRIBLScene::create directly, purely to intercept `hooks`:
+			// pyx::unpack_one_or_many<T>() (pybind11x.hpp) accepts it as a dict of
+			// {osgx.Hook: osg.Shader} (preferred - matches osgSlug.Text.setHooks()'s own reasoning,
+			// see osgx-rtt.cpp's attach() for the fuller writeup), a list of (Hook, Shader) pairs,
+			// or a single bare (Hook, Shader) pair, instead of requiring the list form only.
+			[](
+				osg::Node* node,
+				const osgx::gltf::pbribl::PBRIBLEnvironment& environment,
+				float iblDiffuseIntensity,
+				float iblSpecularIntensity,
+				bool diagnostics,
+				const osgx::ShadowMap* shadowMap,
+				py::object hooks
+			) {
+				return osgx::gltf::pbribl::PBRIBLScene::create(
+					node,
+					environment,
+					iblDiffuseIntensity,
+					iblSpecularIntensity,
+					diagnostics,
+					shadowMap,
+					pyx::unpack_one_or_many<osgx::HookList::value_type>(hooks)
+				);
+			},
 			"node"_a,
 			"environment"_a,
 			"iblDiffuseIntensity"_a=1.0f,
 			"iblSpecularIntensity"_a=1.0f,
 			"diagnostics"_a=false,
 			"shadowMap"_a=nullptr,
-			"hooks"_a=osgx::HookList{},
+			"hooks"_a=py::dict(),
 			"Apply osgx::gltf's optional osgx-powered PBR/IBL renderer using prepared resources. Pass "
 			"an osgx.shadow.ShadowMap to shadow the key/directional light (osgx::LightSet index "
 			"shadowMap.casterIndex); omit it for today's unshadowed behavior.\n\n"
-			"hooks: an osgx.HookList (a list of (osgx.Hook, osg.Shader) pairs) substituting this "
-			"Program's built-in shader for a slot. This Program supports osgx.Hook.Skinning (a "
-			"VERTEX osg.Shader defining osgx_gltf_ApplySkin(vec4, vec3, vec3), REPLACING the default "
-			"identity passthrough - pass osgx.gltf.shader.SKINNING_HOOK_LINEAR_BLEND, wrapped in "
+			"hooks: substitutes this Program's built-in shader for a slot - a dict of "
+			"{osgx.Hook: osg.Shader} (preferred), a list of (osgx.Hook, osg.Shader) pairs, or a "
+			"single bare (osgx.Hook, osg.Shader) pair are all accepted. This Program supports "
+			"osgx.Hook.Skinning (a VERTEX osg.Shader defining osgx_gltf_ApplySkin(vec4, vec3, vec3), "
+			"REPLACING the default identity passthrough - pass "
+			"osgx.gltf.shader.SKINNING_HOOK_LINEAR_BLEND, wrapped in "
 			"osgx.gltf.pbribl.resolveShaderLibs(), to enable standard glTF joint-matrix skinning) and "
 			"osgx.Hook.Tonemap (a FRAGMENT osg.Shader defining osgx_Tonemap(vec3), REPLACING the "
 			"built-in PBR Neutral curve). Each hook substitutes rather than adds - GLSL permits one "
@@ -1011,12 +1036,23 @@ void bind_gltf(py::module_& m_gltf) {
 			"True applies the built-in (or hooks[osgx.Hook.Tonemap]-substituted) tonemap curve; "
 			"False leaves the result linear HDR, for a caller chaining further passes."
 		)
-		.def_readwrite(
-			"hooks", &osgx::gltf::pbribl::PBRIBLLightingPassOptions::hooks,
-			"An osgx.HookList substituting this pass's built-in shader for a slot - "
-			"osgx.Hook.DeferredLighting (the whole fragment main()), osgx.Hook.DirectLighting, "
-			"and osgx.Hook.Tonemap are supported. Each REPLACES its default, it does not add "
-			"alongside it."
+		.def_property(
+			"hooks",
+			// A property (not def_readwrite) purely so the setter can go through
+			// pyx::unpack_one_or_many<T>() (pybind11x.hpp) - same reasoning, and same accepted
+			// shapes, as PBRIBLScene.create()'s own "hooks" parameter above: a dict of
+			// {osgx.Hook: osg.Shader} (preferred), a list of (Hook, Shader) pairs, or a single
+			// bare pair. The getter is unchanged - reading back a plain osgx.HookList (a list of
+			// pairs) is unambiguous, there's nothing to disambiguate on the way out.
+			[](const osgx::gltf::pbribl::PBRIBLLightingPassOptions& self) { return self.hooks; },
+			[](osgx::gltf::pbribl::PBRIBLLightingPassOptions& self, py::object hooks) {
+				self.hooks = pyx::unpack_one_or_many<osgx::HookList::value_type>(hooks);
+			},
+			"Substitutes this pass's built-in shader for a slot - a dict of "
+			"{osgx.Hook: osg.Shader} (preferred), a list of (osgx.Hook, osg.Shader) pairs, or a "
+			"single bare (osgx.Hook, osg.Shader) pair are all accepted. osgx.Hook.DeferredLighting "
+			"(the whole fragment main()), osgx.Hook.DirectLighting, and osgx.Hook.Tonemap are "
+			"supported. Each REPLACES its default, it does not add alongside it."
 		)
 		.def_readwrite(
 			"shadowMap", &osgx::gltf::pbribl::PBRIBLLightingPassOptions::shadowMap,

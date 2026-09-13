@@ -325,7 +325,7 @@ void bind_core(py::module_& m) {
 			"zoomLimits",
 			&osgx::Ortho2DManipulator::getZoomLimits,
 			[](osgx::Ortho2DManipulator& self, py::object obj) {
-				auto vals = pyx::try_unpack_sequence<double, double>(obj);
+				auto vals = pyx::unpack_sequence<double, double>(obj);
 
 				if(!vals) throw py::type_error(
 					"Expected a (minHalfExtent, maxHalfExtent) sequence of length 2"
@@ -391,7 +391,7 @@ void bind_core(py::module_& m) {
 			"coverageLimits",
 			&osgx::OrbitAxisManipulator::getCoverageLimits,
 			[](osgx::OrbitAxisManipulator& self, py::object obj) {
-				auto vals = pyx::try_unpack_sequence<double, double>(obj);
+				auto vals = pyx::unpack_sequence<double, double>(obj);
 
 				if(!vals) throw py::type_error(
 					"Expected a (minCoverage, maxCoverage) sequence of length 2"
@@ -407,7 +407,7 @@ void bind_core(py::module_& m) {
 			"heightLimits",
 			&osgx::OrbitAxisManipulator::getHeightLimits,
 			[](osgx::OrbitAxisManipulator& self, py::object obj) {
-				auto vals = pyx::try_unpack_sequence<double, double>(obj);
+				auto vals = pyx::unpack_sequence<double, double>(obj);
 
 				if(!vals) throw py::type_error(
 					"Expected a (minHeight, maxHeight) sequence of length 2"
@@ -672,9 +672,12 @@ void bind_core(py::module_& m) {
 
 	// Shader-object substitution hook slots, the counterpart to resolveShaderLibs()' text
 	// splicing above - see osgx::applyHooks() (Shader.hpp) and PBRIBLScene.create()'s "hooks"
-	// parameter. A HookList is just `[(osgx.Hook.Tonemap, shader), ...]` in Python; no separate
-	// binding is needed for HookList itself, pybind11's stl.h vector/pair casters cover it once
-	// osgx.Hook is bound below.
+	// parameter. Every HookList-accepting binding goes through pyx::unpack_one_or_many<T>()
+	// (pybind11x.hpp), so a HookList is `{osgx.Hook.Tonemap: shader, ...}` in Python (preferred -
+	// a dict rules out two shaders for the same slot by construction), `[(osgx.Hook.Tonemap,
+	// shader), ...]`, or a single bare `(osgx.Hook.Tonemap, shader)` pair; no separate binding is
+	// needed for HookList itself, pybind11's stl.h vector/pair casters cover the list/pair shapes
+	// once osgx.Hook is bound below.
 	py::enum_<osgx::Hook>(
 		m,
 		"Hook",

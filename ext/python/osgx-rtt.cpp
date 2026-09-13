@@ -69,16 +69,23 @@ void bind_rtt(py::module_& m) {
 		)
 		.def(
 			"attach",
-			// &osgx::RTT::attach alone is ambiguous - `using osg::Camera::attach;` (RTT.hpp) brings
-			// several base overloads into this same name, so pybind11 can't deduce which one from an
-			// unqualified pointer-to-member-function. Disambiguate with an explicit cast.
-			static_cast<void (osgx::RTT::*)(const osgx::RTT::AttachmentList&)>(&osgx::RTT::attach),
-			"attachments"_a,
-			"Declarative multi-attachment setup: a list of (component, texture) pairs, attached in "
-			"order in one call - e.g. "
-			"rtt.attach([(osg.Camera.COLOR_BUFFER0, tex), (osg.Camera.DEPTH_BUFFER, depthTex)]). "
-			"AttachmentList is a std::vector (matches osgx.HookList's own shape exactly), so "
-			"pybind11/stl.h's vector/pair casters bind it directly - no wrapper needed."
+			// Accepts EITHER a single list of (component, texture) pairs OR the pairs given
+			// directly as separate arguments - pyx::unpack_list_or_args<T>() (pybind11x.hpp)
+			// covers both shapes uniformly. This is a py::args lambda rather than the plain
+			// &osgx::RTT::attach pointer-to-member the single-list form used before, both because
+			// py::args needs a callable wrapper and because &osgx::RTT::attach alone is ambiguous
+			// anyway - `using osg::Camera::attach;` (RTT.hpp) brings several base overloads into
+			// this same name.
+			[](osgx::RTT& self, py::args args) {
+				self.attach(pyx::unpack_list_or_args<osgx::RTT::AttachmentList::value_type>(args));
+			},
+			"Declarative multi-attachment setup - accepts a dict of {component: texture}, a list of "
+			"(component, texture) pairs, or the pairs given directly as separate arguments: "
+			"rtt.attach({osg.Camera.COLOR_BUFFER0: tex, osg.Camera.DEPTH_BUFFER: depthTex}), "
+			"rtt.attach([(osg.Camera.COLOR_BUFFER0, tex), (osg.Camera.DEPTH_BUFFER, depthTex)]), and "
+			"rtt.attach((osg.Camera.COLOR_BUFFER0, tex), (osg.Camera.DEPTH_BUFFER, depthTex)) are "
+			"all equivalent. Prefer the dict form - it rules out attaching two textures to the same "
+			"component by construction, the same reasoning osgSlug.Text.setHooks() uses."
 		)
 		.def_static(
 			"fullscreenQuad",
