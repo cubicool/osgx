@@ -301,6 +301,16 @@ void bind_imgui(py::module_& m_imgui) {
 			"Draws a radio button for each of `labels`; returns (changed, value) where `value` is "
 			"the selected index. `same_line`=True lays them out horizontally instead of stacked."
 		)
+		.def(
+			"combo",
+			&osgx::imgui::combo,
+			"label"_a,
+			"value"_a,
+			"labels"_a,
+			"Draws a dropdown showing `labels[value]`, expanding into the full list on click; "
+			"returns (changed, value) where `value` is the selected index. Collapsed alternative "
+			"to radio_group() when the option list is too long for a row of buttons."
+		)
 	;
 }
 

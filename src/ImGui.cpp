@@ -129,6 +129,27 @@ std::pair<bool, int> radioGroup(
 	return {changed, value};
 }
 
+std::pair<bool, int> combo(
+	const std::string& label,
+	int value,
+	const std::vector<std::string>& labels
+) {
+	std::vector<const char*> items;
+
+	items.reserve(labels.size());
+
+	for(const auto& l : labels) items.push_back(l.c_str());
+
+	const bool changed = ImGui::Combo(
+		label.c_str(),
+		&value,
+		items.data(),
+		static_cast<int>(items.size())
+	);
+
+	return {changed, value};
+}
+
 void drawTexture2D(
 	osg::Texture2D* texture,
 	osg::RenderInfo& ri,

@@ -116,6 +116,14 @@ std::pair<bool, int> radioGroup(
 	bool sameLine=true
 );
 
+// Collapsed alternative to radioGroup() - one line showing the current selection,
+// expands into the label list on click instead of laying every option out at once.
+std::pair<bool, int> combo(
+	const std::string& label,
+	int value,
+	const std::vector<std::string>& labels
+);
+
 void drawTexture2D(
 	osg::Texture2D* texture,
 	osg::RenderInfo& ri,
