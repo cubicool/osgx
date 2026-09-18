@@ -17,9 +17,12 @@ PYBIND11_MODULE(osgx, m) {
 	osgx_python::bind_callbacks(m);
 	osgx_python::bind_rtt(m);
 
-	// pbr/shadow/gbuffer/ibl/picking used to live in their own osgx::{foo}:: C++ namespaces; those
-	// collapsed into plain osgx:: this week, so their bindings now go straight onto the top-level
-	// module too instead of a submodule that no longer corresponds to anything in C++.
+	// pbr/shadow/gbuffer/ibl/picking/cursor used to live in their own osgx::{foo}:: C++
+	// namespaces; those collapsed into plain osgx:: this week, so their bindings now go straight
+	// onto the top-level module too instead of a submodule that no longer corresponds to anything
+	// in C++. bind_cursor() specifically used to live under osgx.platform (osgx::Cursor.hpp never
+	// actually needed anything X11-specific) - see ext/python/osgx-cursor.cpp.
+	osgx_python::bind_cursor(m);
 	osgx_python::bind_pbr(m);
 	osgx_python::bind_shadow(m);
 	osgx_python::bind_gbuffer(m);

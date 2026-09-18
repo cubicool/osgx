@@ -431,7 +431,7 @@ void bind_core(py::module_& m) {
 			&osgx::OrbitAxisManipulator::isLiveOrbitEnabled,
 			&osgx::OrbitAxisManipulator::setLiveOrbitEnabled,
 			"Disable to drive orbit/height exclusively via orbitByDelta() (e.g. from "
-			"osgx.platform.PointerCapture) instead of raw MOVE/DRAG cursor tracking."
+			"osgx.CursorCapture) instead of raw MOVE/DRAG cursor tracking."
 		)
 		.def_property_readonly("yaw", &osgx::OrbitAxisManipulator::getYaw, "Current yaw angle, in radians.")
 		.def_property_readonly("height", &osgx::OrbitAxisManipulator::getHeight, "Current height along upAxis.")

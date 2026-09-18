@@ -81,7 +81,7 @@ See `examples/osgx-picking.cpp` (full SYNC/ASYNC × click/continuous matrix) and
 
 - `MultiCameraManipulator` — composite manipulator routing input to one active `Target` (name, manipulator, optional dedicated camera/scene, optional `setActive` callback); `addTarget()`, `activate(index)`/`next()`, `getActiveIndex()`/`getNumTargets()`, key-toggle via `setToggleKey()` (default `'x'`).
 - `Ortho2DManipulator` — orthographic 2D camera manipulator owning both view *and* projection matrices. Pan (drag), geometric zoom (scroll), pixel-nudge zoom (Shift+scroll), optional Ctrl-drag 3D tilt (yaw/pitch tracked as independent angles, pitch clamped to ±89°), automatic near/far. Unrotated plane configurable via `setPlaneNormal()`/`setScreenUp()` (default XY, +Z normal).
-- `OrbitAxisManipulator` — a "turntable" manipulator: orbits a fixed vertical guide line through the model's bounds, always looking level, dollying on zoom. Mouse move/drag is always active (no button needed), bounded like a trackpad by the screen edge unless composed with `osgx::platform::PointerCapture` via `orbitByDelta()`/`setLiveOrbitEnabled(false)`. Orientation configurable via `setUpAxis()`/`setHomeDirection()` (default Z-up, from -Y).
+- `OrbitAxisManipulator` — a "turntable" manipulator: orbits a fixed vertical guide line through the model's bounds, always looking level, dollying on zoom. Mouse move/drag is always active (no button needed), bounded like a trackpad by the screen edge unless composed with `osgx::CursorCapture` via `orbitByDelta()`/`setLiveOrbitEnabled(false)`. Orientation configurable via `setUpAxis()`/`setHomeDirection()` (default Z-up, from -Y).
 - `CameraManipulator<Base=osgGA::TrackballManipulator>` — wraps any `osgGA::CameraManipulator` with `addUpdateCameraCallback(osg::Callback*, runOnce)` / `removeUpdateCameraCallback()`, an async-apply queue (safe to mutate mid-callback-iteration), and `currentTime()` sourced from the FRAME event (not a polled `osg::Timer`) for [`osgx::CameraIntents`](#osgxcameraintentshpp) to read.
 
 ## `osgx/CameraIntents.hpp`
@@ -92,7 +92,39 @@ Plain `osg::Callback` subclasses meant to be attached via `CameraManipulator<Bas
 - `FlyToCallback` — animates the camera through one or more `Viewpoint` legs (eye lerped, orientation slerped — never lerping two `lookAt()` centers directly). `osgAnimation::Motion::CLAMP` (default): on arrival, writes the exact final pose, resyncs the manipulator via `setByMatrix()`, then goes permanently inert. `Motion::LOOP`: the whole path repeats forever (author a waypoint list whose ends coincide for a seamless loop — same convention as `osg::AnimationPath`). `ease` is any `float(float)` callable (`defaultEase` = `InOutCubicFunction`), shared across every leg.
 - `ShakeCallback` — decaying rotational jitter, right-multiplied onto whatever's already in the camera's view matrix (never touches the manipulator's own state). `CLAMP` (default) decays once and goes inert; `LOOP` repeats for a persistent "idle rumble."
 
-See `examples/osgx-manipulator.cpp` for patrol (`LOOP`) and arrival-latch usage, and `docs/PLATFORM.md` for composing `OrbitAxisManipulator` with `PointerCapture`.
+See `examples/osgx-manipulator.cpp` for patrol (`LOOP`) and arrival-latch usage, and the `osgx/Cursor.hpp` section below for composing `OrbitAxisManipulator` with `CursorCapture`.
+
+## `osgx/Cursor.hpp`
+
+Cursor tracking, visibility, and soft capture, built purely on portable `osgGA`/`osgViewer`
+virtuals (`GraphicsWindow::useCursor()`, `View::requestWarpPointer()`, `GUIEventAdapter`). Used to
+live under `osgx::platform` (grouped there because that's where the motivating need — picking —
+first came from), but collapsed into plain `osgx::` since none of it actually needs X11; see
+[PLATFORM.md](PLATFORM.md) for the one piece that's genuinely platform-specific
+(`isCursorInWindow()`).
+
+- `setCursorVisible(view, visible=true)` / `warpCursor(view, x, y)` — small standalone action
+  helpers (not a get/set pair — OSG's `GraphicsWindow` has no visibility getter of its own).
+- `CursorState` — thread-safe, event-driven cursor position (`x()`/`y()`) plus `inWindow()`, the
+  generalized, picking-agnostic version of `osgx::PickReadback`'s positional half.
+- `CursorHandler` — a `GUIEventHandler` that forwards MOVE/DRAG events into a `CursorState`.
+  Always returns `false` so the active manipulator (or any other handler) still sees the event.
+- `CursorCallback` — an `osg::NodeCallback` that fires a `std::function<void(int, int)>` every
+  update traversal with the current cursor position; the consumer decides what "follow" means
+  (reposition a HUD quad, unproject onto a world plane, drive a rendered software cursor).
+  Optionally takes a second `std::function<bool()>` (`inWindowCheck`), polled every traversal to
+  refresh `CursorState::inWindow()` — deliberately not a hard call into
+  `osgx::platform::isCursorInWindow()` (this header is core; that function lives in the optional,
+  X11-only `osgx::platform` module), so a caller built with `OSGX_PLATFORM` wires it in explicitly:
+  `[cam]{ return osgx::platform::isCursorInWindow(cam); }`.
+- `CursorCapture` — a `GUIEventHandler` implementing the standard hide+warp+accumulate trick for
+  turntable/FPS-style relative-motion look controls: while `setCaptured(true)`, hides the cursor
+  and re-centers it on every move, accumulating the delta for `consume()` to poll once per update
+  traversal. **Not** true OS-level pointer confinement (nothing stops the cursor visibly darting to
+  the screen edge for one frame between warps on some window managers) — that needs real
+  `XGrabPointer` work, tracked in `ai/todo-platform.md`. Deliberately not wired into
+  `OrbitAxisManipulator` directly — compose the two at the application level instead (add both as
+  event handlers, feed `consume()`'d deltas into `orbitByDelta()`); see `examples/osgx-manipulator.cpp`.
 
 ## `osgx/Grid.hpp`
 

@@ -10,6 +10,11 @@ than the existing OpenGL dependency):
   coordinates; monitors are **not** assumed to be flush/adjacent).
 - `moveWindow(viewer, x, y, width=-1, height=-1)` — repositions (and optionally resizes) an
   already-realized X11 window, keeping OSG's own viewport/camera bookkeeping in sync.
+- `isCursorInWindow(camera)` / `isCursorInWindow(viewer)` — queries X11 directly for whether the
+  cursor is within the real window bounds; there is no "pointer left the window" `GUIEventAdapter`
+  event in OSG's own event stream. `osgx::PickCameraSync` (see [CORE.md](CORE.md)) already checks
+  this automatically every frame, and a caller can feed it into `osgx::CursorCallback`'s optional
+  `inWindowCheck` (see [CORE.md](CORE.md)'s `osgx/Cursor.hpp` section) the same way.
 
 `osgx/GraphicsWindowEGL.hpp` and `osgx/GraphicsWindowGBM.hpp` (gated behind `OSGX_EGL`/`OSGX_GBM`,
 requiring EGL and GBM+libdrm respectively via pkg-config; set via the `OSGX_WITH_EGL`/
@@ -22,19 +27,6 @@ pattern as `OSGX_WITH_IMGUI`) provide two experimental `osgViewer::GraphicsWindo
 - `createGBMWindow(traits)` — direct-scanout DRM/KMS + GBM, no X11 or window manager at all
   (kiosk/embedded-style). Requires exclusive DRM master access, so it fails under a running X
   server or Wayland compositor.
-
-`osgx/Cursor.hpp` provides mouse capture built purely on portable `osgGA`/`osgViewer` virtuals
-(`GraphicsWindow::useCursor()`, `View::requestWarpPointer()`) — no X11 dependency of its own, but
-grouped under `osgx::platform` since that's where the motivating need already lived:
-
-- `setCursorVisible(view, visible=true)` / `warpPointer(view, x, y)` — small standalone action
-  helpers (not a get/set pair — OSG's `GraphicsWindow` has no visibility getter of its own).
-- `PointerCapture` — a `GUIEventHandler` implementing the standard hide+warp+accumulate trick for
-  turntable/FPS-style relative-motion look controls: while `setCaptured(true)`, hides the cursor
-  and re-centers it on every move, accumulating the delta for `consume()` to poll once per update
-  traversal. **Not** true OS-level pointer confinement (nothing stops the cursor visibly darting to
-  the screen edge for one frame between warps on some window managers) — that needs real
-  `XGrabPointer` work, tracked in `TODO.md`.
 
 Migrated from `OpenSceneGraph.py`'s `pyosg/linux/` (it was never actually OSG.py-specific); see
 `examples/osgx-platform.cpp` for a worked example of all of the above, including both alternate

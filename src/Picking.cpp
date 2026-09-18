@@ -378,8 +378,8 @@ void PickReadbackSync::operator()(osg::Node* node, osg::NodeVisitor* nv) {
 				// Window-absolute -> viewport-local: see PickReadback::setWindowOrigin's own
 				// comment for why this subtraction has to happen before the imgW/_winW scale
 				// below, not after.
-				int wx = _x.load(std::memory_order_relaxed) - _winX;
-				int wy = _y.load(std::memory_order_relaxed) - _winY;
+				int wx = _x.load(std::memory_order_relaxed) - _winOrigin.x();
+				int wy = _y.load(std::memory_order_relaxed) - _winOrigin.y();
 
 				imgX = (imgW == _winW) ? wx : wx * imgW / _winW;
 				imgY = (imgH == _winH) ? wy : wy * imgH / _winH;
@@ -430,8 +430,8 @@ void PickReadbackAsync::operator()(osg::RenderInfo& ri) const {
 			ext->glMapBuffer(GL_PIXEL_PACK_BUFFER, GL_READ_ONLY)
 		);
 		if(ptr) {
-			int px = std::clamp(_pickX, 0, _imgW - 1);
-			int py = std::clamp(_pickY, 0, _imgH - 1);
+			int px = std::clamp(_pick.x(), 0, _imgW - 1);
+			int py = std::clamp(_pick.y(), 0, _imgH - 1);
 			uint32_t id = decodePickID(ptr + (py * _imgW + px) * 4);
 			if(_mode == Mode::CLICK) _fireClick(id);
 			else _fireHover(id);
@@ -446,8 +446,7 @@ void PickReadbackAsync::operator()(osg::RenderInfo& ri) const {
 		_requested.exchange(false, std::memory_order_acq_rel);
 
 	if(doDownload) {
-		_pickX = _x.load(std::memory_order_relaxed);
-		_pickY = _y.load(std::memory_order_relaxed);
+		_pick.set(_x.load(std::memory_order_relaxed), _y.load(std::memory_order_relaxed));
 		_tex->apply(state);
 		ext->glBindBuffer(GL_PIXEL_PACK_BUFFER, _pbo);
 		glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);

@@ -19,10 +19,9 @@ idioms (concepts, ranges, spans, lambdas) and adds five optional, explicitly-inc
   plus a two-phase GPU/CPU per-drawable profiler.
 - `osgx::imgui` — a Dear ImGui overlay (`Widget`/`Panel`) with pluggable sections and a built-in
   GPU-profiler, OSG-stats, and scene-texture browser.
-- `osgx::platform` — X11/XRandr window helpers (`alwaysOnTop`, `listMonitors`, `moveWindow`),
+- `osgx::platform` — X11/XRandr window helpers (`alwaysOnTop`, `listMonitors`, `moveWindow`), plus
   EGL- and GBM/DRM-backed `GraphicsWindow` factories for driving a window without GLX or X11 at
-  all, and `PointerCapture` for hide+warp+accumulate mouse capture (turntable/FPS-style look
-  controls).
+  all.
 - `osgx::gltf` — a glTF 2.0 loader (`osgdb_gltf`), plus an optional `osgx::gltf::pbribl` adapter that
   renders it using the generic PBR/IBL/shadow facilities living flat in `osgx::`. Merged in from the
   formerly separate `osgGLTF` repo.
@@ -144,12 +143,12 @@ Per-subsystem deep dives live in [`docs/`](docs/):
 
 - [`osgx` core](docs/CORE.md) — everything above that lives flat in `osgx::`: `Core`, `Visitors`,
   `Array`, `Callbacks`, `Picking`, `Manipulators`, `CameraIntents`, `Grid`, `Shapes`, `Shader`,
-  `PBR`, `Gizmos`, `Shadow`, `IBL`, `GBuffer`, and the cubemap-baking primitives it's built on.
+  `PBR`, `Gizmos`, `Shadow`, `IBL`, `GBuffer`, `Cursor`, and the cubemap-baking primitives it's
+  built on.
 - [`osgx::debug`](docs/DEBUG.md) — the three `GL_KHR_debug` systems, the two-phase GPU/CPU
   profiler, and `FrameByFrameViewer`.
 - [`osgx::imgui`](docs/IMGUI.md) — the Dear ImGui overlay.
-- [`osgx::platform`](docs/PLATFORM.md) — X11/XRandr, the EGL/GBM `GraphicsWindow` factories, and
-  `PointerCapture`.
+- [`osgx::platform`](docs/PLATFORM.md) — X11/XRandr and the EGL/GBM `GraphicsWindow` factories.
 - [`osgx::gltf`](docs/GLTF.md) — the loader, its shader interface, the optional PBR/IBL renderer,
   and the environment-baking tool.
 

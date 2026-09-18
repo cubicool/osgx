@@ -13,11 +13,11 @@
 // Pass a model path (after "orbit"/"intents", if present) to load and inspect it instead of the
 // grid.
 //
-// In "orbit" mode, press 'c' to toggle osgx::platform::PointerCapture: the cursor hides and
+// In "orbit" mode, press 'c' to toggle osgx::CursorCapture: the cursor hides and
 // warps back to window-center every frame, feeding accumulated deltas into
 // OrbitAxisManipulator::orbitByDelta() instead of the manipulator's own raw-cursor-position
 // tracking (which is bounded by the physical screen edge - this is the actual motivating test
-// for PointerCapture, see TODO.md's "osgx::platform later work"). The manipulator's own
+// for CursorCapture, see TODO.md's "osgx::platform later work"). The manipulator's own
 // MOVE/DRAG-driven orbit is disabled for the duration via setLiveOrbitEnabled(false), since OSG
 // delivers every event to both the manipulator and every other GUIEventHandler unconditionally
 // (see the comment on setLiveOrbitEnabled() in osgx/Manipulators.hpp for why that matters here).
@@ -80,13 +80,13 @@ static osg::ref_ptr<osg::Node> createDefaultScene() {
 	return root;
 }
 
-// Bridges osgx::platform::PointerCapture into OrbitAxisManipulator::orbitByDelta(): toggles
+// Bridges osgx::CursorCapture into OrbitAxisManipulator::orbitByDelta(): toggles
 // capture on 'c', and while captured, feeds each frame's accumulated pixel delta - normalized by
 // the window's half-width/half-height to match orbitByDelta()'s [-1, 1]-ish scale - into the
 // manipulator instead of letting it track the raw cursor itself.
 class OrbitCaptureBridge: public osgGA::GUIEventHandler {
 public:
-	OrbitCaptureBridge(osgx::platform::PointerCapture* capture, osgx::OrbitAxisManipulator* manip):
+	OrbitCaptureBridge(osgx::CursorCapture* capture, osgx::OrbitAxisManipulator* manip):
 	_capture(capture), _manip(manip) {}
 
 	bool handle(const osgGA::GUIEventAdapter& ea, osgGA::GUIActionAdapter&) override {
@@ -101,7 +101,7 @@ public:
 			capture->setCaptured(captured);
 			manip->setLiveOrbitEnabled(!captured);
 
-			std::cout << "PointerCapture: " << (captured ? "ON" : "OFF") << std::endl;
+			std::cout << "CursorCapture: " << (captured ? "ON" : "OFF") << std::endl;
 
 			return true;
 		}
@@ -117,7 +117,7 @@ public:
 		double w = ea.getXmax() - ea.getXmin();
 		double h = ea.getYmax() - ea.getYmin();
 
-		// PointerCapture reports raw ea.getX()/getY() units by design (see osgx/Cursor.hpp) - it
+		// CursorCapture reports raw ea.getX()/getY() units by design (see osgx/Cursor.hpp) - it
 		// doesn't know or care what those units mean to a caller. orbitByDelta()'s dy, though,
 		// matches getYnormalized() (up-positive), the same convention OrbitAxisManipulator's own
 		// live MOVE/DRAG tracking uses internally. Raw Y is up-positive or down-positive depending on
@@ -135,7 +135,7 @@ public:
 	}
 
 private:
-	osg::observer_ptr<osgx::platform::PointerCapture> _capture;
+	osg::observer_ptr<osgx::CursorCapture> _capture;
 	osg::observer_ptr<osgx::OrbitAxisManipulator> _manip;
 };
 
@@ -171,7 +171,7 @@ int main(int argc, char** argv) {
 
 		viewer.setCameraManipulator(manip);
 
-		auto capture = osgx::make_ref<osgx::platform::PointerCapture>(viewer);
+		auto capture = osgx::make_ref<osgx::CursorCapture>(viewer);
 
 		viewer.addEventHandler(capture);
 		viewer.addEventHandler(new OrbitCaptureBridge(capture, manip));
@@ -181,7 +181,7 @@ int main(int argc, char** argv) {
 			<< " Mouse move/drag orbit (X) + height (Y), always active" << std::endl
 			<< " Scroll dolly zoom (clamped to model coverage)" << std::endl
 			<< " Space/Home reset view" << std::endl
-			<< " 'c' toggle PointerCapture (hide+warp+accumulate; unbounded orbit/height)" << std::endl
+			<< " 'c' toggle CursorCapture (hide+warp+accumulate; unbounded orbit/height)" << std::endl
 		;
 	}
 

@@ -15,6 +15,7 @@ OSGX_DISABLE_WARNINGS
 #include <osg/Shader>
 #include <osg/State>
 #include <osg/Texture2D>
+#include <osg/Vec2i>
 #include <osg/observer_ptr>
 #include <osgGA/GUIEventHandler>
 
@@ -280,8 +281,7 @@ public:
 	}
 
 	void setWindowOrigin(int x, int y) override {
-		_winX = x;
-		_winY = y;
+		_winOrigin.set(x, y);
 	}
 
 	void operator()(osg::Node* node, osg::NodeVisitor* nv) override;
@@ -290,7 +290,7 @@ private:
 	int _pickSize;
 	PickRule _rule;
 	int _winW, _winH;
-	int _winX{0}, _winY{0};
+	osg::Vec2i _winOrigin{0, 0};
 	Mode _mode;
 	osg::ref_ptr<osg::Image> _image;
 };
@@ -324,7 +324,7 @@ private:
 	mutable GLuint _pbo{0};
 	mutable bool _init{false};
 	mutable bool _inFlight{false};
-	mutable int _pickX{0}, _pickY{0};
+	mutable osg::Vec2i _pick{0, 0};
 };
 
 // NodeCallback that syncs a pick camera's view/projection from the viewer camera each

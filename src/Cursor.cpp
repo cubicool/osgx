@@ -1,6 +1,5 @@
 #include "osgx/Cursor.hpp"
 
-#include "osgx/Linux.hpp"
 #include "osgx/Warnings.hpp"
 
 OSGX_DISABLE_WARNINGS
@@ -9,7 +8,7 @@ OSGX_DISABLE_WARNINGS
 
 OSGX_ENABLE_WARNINGS
 
-namespace osgx::platform {
+namespace osgx {
 
 namespace {
 
@@ -29,7 +28,7 @@ void setCursorVisible(osgViewer::View& view, bool visible) {
 	if(gw) gw->useCursor(visible);
 }
 
-void warpPointer(osgViewer::View& view, float x, float y) {
+void warpCursor(osgViewer::View& view, float x, float y) {
 	view.requestWarpPointer(x, y);
 }
 
@@ -41,7 +40,7 @@ bool CursorHandler::handle(const osgGA::GUIEventAdapter& ea, osgGA::GUIActionAda
 			ea.getEventType() == osgGA::GUIEventAdapter::DRAG
 		)
 	) {
-		_state->updateMouse(static_cast<int>(ea.getX()), static_cast<int>(ea.getY()));
+		_state->updateCursor(static_cast<int>(ea.getX()), static_cast<int>(ea.getY()));
 	}
 
 	return false;
@@ -49,7 +48,7 @@ bool CursorHandler::handle(const osgGA::GUIEventAdapter& ea, osgGA::GUIActionAda
 
 void CursorCallback::operator()(osg::Node* node, osg::NodeVisitor* nv) {
 	if(_state) {
-		if(auto* cam = _viewerCam.get()) _state->setInWindow(isCursorInWindow(cam));
+		if(_inWindowCheck) _state->setInWindow(_inWindowCheck());
 
 		if(_fn) _fn(_state->x(), _state->y());
 	}
@@ -57,7 +56,7 @@ void CursorCallback::operator()(osg::Node* node, osg::NodeVisitor* nv) {
 	traverse(node, nv);
 }
 
-void PointerCapture::setCaptured(bool captured) {
+void CursorCapture::setCaptured(bool captured) {
 	if(captured == _captured) return;
 
 	_captured = captured;
@@ -69,7 +68,7 @@ void PointerCapture::setCaptured(bool captured) {
 	_echoPending = false;
 }
 
-osg::Vec2 PointerCapture::consume() {
+osg::Vec2 CursorCapture::consume() {
 	osg::Vec2 result = _accum;
 
 	_accum.set(0.0f, 0.0f);
@@ -77,7 +76,7 @@ osg::Vec2 PointerCapture::consume() {
 	return result;
 }
 
-bool PointerCapture::handle(const osgGA::GUIEventAdapter& ea, osgGA::GUIActionAdapter& aa) {
+bool CursorCapture::handle(const osgGA::GUIEventAdapter& ea, osgGA::GUIActionAdapter& aa) {
 	if(ea.getEventType() == osgGA::GUIEventAdapter::RESIZE) _recenterPending = _captured;
 
 	if(!_captured) return false;
@@ -87,14 +86,16 @@ bool PointerCapture::handle(const osgGA::GUIEventAdapter& ea, osgGA::GUIActionAd
 		ea.getEventType() != osgGA::GUIEventAdapter::DRAG
 	) return false;
 
-	_centerX = 0.5f * (ea.getXmin() + ea.getXmax());
-	_centerY = 0.5f * (ea.getYmin() + ea.getYmax());
+	_center.set(
+		0.5f * (ea.getXmin() + ea.getXmax()),
+		0.5f * (ea.getYmin() + ea.getYmax())
+	);
 
 	if(_recenterPending) {
 		_recenterPending = false;
 		_echoPending = true;
 
-		aa.requestWarpPointer(_centerX, _centerY);
+		aa.requestWarpPointer(_center.x(), _center.y());
 
 		return false;
 	}
@@ -103,7 +104,7 @@ bool PointerCapture::handle(const osgGA::GUIEventAdapter& ea, osgGA::GUIActionAd
 	// implementations typically drain their native event queue in a loop and requestWarpPointer()
 	// forces a round trip (e.g. XWarpPointer+XSync on X11) before returning, so the synthetic
 	// MOVE/DRAG it generates is often already pending and gets processed in this same pass. That
-	// echo rarely lands exactly on (_centerX, _centerY) - float/int truncation in the warp call,
+	// echo rarely lands exactly on _center - float/int truncation in the warp call,
 	// plus a Y-flip round trip some GUIActionAdapter implementations apply - so treating it as real
 	// input would accumulate a small, consistently-signed leftover delta AND re-warp, forming a
 	// self-reinforcing loop that swamps real motion within a single frame. Absorb exactly one event
@@ -114,12 +115,12 @@ bool PointerCapture::handle(const osgGA::GUIEventAdapter& ea, osgGA::GUIActionAd
 		return false;
 	}
 
-	_accum.x() += ea.getX() - _centerX;
-	_accum.y() += ea.getY() - _centerY;
+	_accum.x() += ea.getX() - _center.x();
+	_accum.y() += ea.getY() - _center.y();
 
 	_echoPending = true;
 
-	aa.requestWarpPointer(_centerX, _centerY);
+	aa.requestWarpPointer(_center.x(), _center.y());
 
 	return true;
 }

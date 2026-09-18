@@ -338,7 +338,7 @@ osg::ref_ptr<osg::Node> normalizeSubject(osg::Node* subject) {
 
 class OrbitCaptureBridge: public osgGA::GUIEventHandler {
 public:
-	OrbitCaptureBridge(osgx::platform::PointerCapture* capture, osgx::OrbitAxisManipulator* manipulator):
+	OrbitCaptureBridge(osgx::CursorCapture* capture, osgx::OrbitAxisManipulator* manipulator):
 		_capture(capture),
 		_manipulator(manipulator) {}
 
@@ -353,7 +353,7 @@ public:
 
 			capture->setCaptured(captured);
 			manipulator->setLiveOrbitEnabled(!captured);
-			std::cout << "PointerCapture: " << (captured ? "ON" : "OFF") << std::endl;
+			std::cout << "CursorCapture: " << (captured ? "ON" : "OFF") << std::endl;
 
 			return true;
 		}
@@ -394,7 +394,7 @@ public:
 	}
 
 private:
-	osg::observer_ptr<osgx::platform::PointerCapture> _capture;
+	osg::observer_ptr<osgx::CursorCapture> _capture;
 	osg::observer_ptr<osgx::OrbitAxisManipulator> _manipulator;
 };
 
@@ -527,7 +527,7 @@ int main(int argc, char** argv) {
 		manipulator->setHeightLimits(minHeight, maxHeight);
 	}
 
-	auto capture = osgx::make_ref<osgx::platform::PointerCapture>(viewer);
+	auto capture = osgx::make_ref<osgx::CursorCapture>(viewer);
 
 	viewer.addEventHandler(capture);
 	viewer.addEventHandler(new OrbitCaptureBridge(capture, manipulator));
@@ -537,7 +537,7 @@ int main(int argc, char** argv) {
 		<< " Mouse move/drag orbit (X) + height (Y), always active" << std::endl
 		<< " Scroll dolly zoom" << std::endl
 		<< " Space/Home reset view" << std::endl
-		<< " 'c' toggle PointerCapture (unbounded orbit/height)" << std::endl
+		<< " 'c' toggle CursorCapture (unbounded orbit/height)" << std::endl
 		<< " 'x' toggle horizontal control direction" << std::endl
 		<< " 'i' toggle vertical control direction" << std::endl
 		<< " [model.gltf] loads a PBR glTF model (requires --env)" << std::endl

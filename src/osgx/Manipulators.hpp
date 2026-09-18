@@ -380,15 +380,15 @@ public:
 	// Applies a pre-computed (dx, dy) directly, in the same normalized (roughly [-1, 1] per axis)
 	// units as GUIEventAdapter::getXnormalized()/getYnormalized() - the same units handle()
 	// itself derives internally via _orbit(). This is the hook for driving orbit/height from
-	// something other than raw MOVE/DRAG events, e.g. osgx::platform::PointerCapture's
-	// accumulated delta (normalize its pixel delta by the window's half-width/half-height first
-	// to match this scale). Deliberately NOT wired to PointerCapture internally - see the
-	// layering note on osgx::platform::PointerCapture in osgx/Cursor.hpp.
+	// something other than raw MOVE/DRAG events, e.g. osgx::CursorCapture's accumulated delta
+	// (normalize its pixel delta by the window's half-width/half-height first to match this
+	// scale). Deliberately NOT wired to CursorCapture internally - see the layering note on
+	// osgx::CursorCapture in osgx/Cursor.hpp.
 	void orbitByDelta(double dx, double dy);
 
 	// Disables the raw MOVE/DRAG-driven orbit path (handle()'s call into _orbit()) without
 	// affecting scroll-zoom or Space/Home reset. orbitByDelta() always works regardless of this
-	// flag. Exists so an external mouse-capture scheme (e.g. osgx::platform::PointerCapture) can
+	// flag. Exists so an external cursor-capture scheme (e.g. osgx::CursorCapture) can
 	// drive orbitByDelta() exclusively: osgViewer::Viewer::eventTraversal() delivers every event
 	// to the camera manipulator AND every other installed GUIEventHandler unconditionally (a
 	// handler's return value does not stop propagation to the others), so without this the

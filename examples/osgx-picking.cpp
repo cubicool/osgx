@@ -26,6 +26,10 @@
 #include "osgx/Cursor.hpp"
 #include "osgx/Picking.hpp"
 
+#ifdef OSGX_PLATFORM
+#include "osgx/Linux.hpp"
+#endif
+
 OSGX_DISABLE_WARNINGS
 
 #include <osg/ArgumentParser>
@@ -204,17 +208,28 @@ int main(int argc, char** argv) {
 	root->addChild(pickCam);
 	root->addChild(scene);
 
-	// osgx::platform::CursorState/CursorHandler/CursorCallback quick smoke test - the general
-	// cursor-tracking primitive TODO.md just gained, unrelated to picking itself. Dumps to the
-	// console only when the position (or in-window state) actually changes, since a plain
-	// per-frame print would flood the terminal.
-	auto cursorState = osgx::make_ref<osgx::platform::CursorState>();
+	// osgx::CursorState/CursorHandler/CursorCallback quick smoke test - the general
+	// cursor-tracking primitive, unrelated to picking itself. Dumps to the console only when the
+	// position (or in-window state) actually changes, since a plain per-frame print would flood
+	// the terminal.
+	auto cursorState = osgx::make_ref<osgx::CursorState>();
 
-	viewer.addEventHandler(new osgx::platform::CursorHandler(cursorState.get()));
+	viewer.addEventHandler(new osgx::CursorHandler(cursorState.get()));
 
-	root->setUpdateCallback(new osgx::platform::CursorCallback(
+	// The in-window check is optional and platform-specific (osgx::platform::isCursorInWindow(),
+	// X11 only) - CursorCallback itself is core and never reaches for it directly (see its own
+	// comment in osgx/Cursor.hpp). Without OSGX_PLATFORM, inWindow() just stays at its fail-safe
+	// default.
+	std::function<bool()> inWindowCheck;
+
+#ifdef OSGX_PLATFORM
+	osg::Camera* viewerCam = viewer.getCamera();
+
+	inWindowCheck = [viewerCam]() { return osgx::platform::isCursorInWindow(viewerCam); };
+#endif
+
+	root->setUpdateCallback(new osgx::CursorCallback(
 		cursorState.get(),
-		viewer.getCamera(),
 		[cursorState](int x, int y) {
 			static int lastX = INT_MIN, lastY = INT_MIN;
 			static bool lastInWindow = true;
@@ -230,7 +245,8 @@ int main(int argc, char** argv) {
 			OSG_NOTICE
 				<< "Cursor -> (" << x << ", " << y << ")"
 				<< (inWindow ? "" : "  [outside window]") << std::endl;
-		}
+		},
+		inWindowCheck
 	));
 
 	viewer.setSceneData(root);

@@ -231,6 +231,7 @@ add_library(osgx ${OSGX_LIBRARY_TYPE}
 	src/Aura.cpp
 	src/CameraIntents.cpp
 	src/CaptureCubeMap.cpp
+	src/Cursor.cpp
 	src/Debug.cpp
 	src/GBuffer.cpp
 	src/GGXPrefilter.cpp
@@ -262,6 +263,7 @@ target_sources(osgx PUBLIC
 	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/Grid.hpp>"
 	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/IBL.hpp>"
 	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/CaptureCubeMap.hpp>"
+	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/Cursor.hpp>"
 	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/GBuffer.hpp>"
 	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/GGXPrefilter.hpp>"
 	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/LambertianBake.hpp>"
@@ -294,14 +296,12 @@ target_compile_options(osgx PRIVATE ${OSGX_WARNING_OPTIONS})
 
 if(OSGX_WITH_PLATFORM)
 	target_sources(osgx PRIVATE
-		src/Cursor.cpp
 		src/Linux.cpp
 	)
 	target_sources(osgx PUBLIC
 		"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/Linux.hpp>"
 		"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/GraphicsWindowEGL.hpp>"
 		"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/GraphicsWindowGBM.hpp>"
-		"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/Cursor.hpp>"
 	)
 	target_compile_definitions(osgx PUBLIC OSGX_PLATFORM)
 	target_link_libraries(osgx PRIVATE PkgConfig::X11)
@@ -383,14 +383,12 @@ if(OSGX_INSTALL)
 		PATTERN "Linux.hpp" EXCLUDE
 		PATTERN "GraphicsWindowEGL.hpp" EXCLUDE
 		PATTERN "GraphicsWindowGBM.hpp" EXCLUDE
-		PATTERN "Cursor.hpp" EXCLUDE
 	)
 	if(OSGX_WITH_PLATFORM)
 		install(FILES
 			src/osgx/Linux.hpp
 			src/osgx/GraphicsWindowEGL.hpp
 			src/osgx/GraphicsWindowGBM.hpp
-			src/osgx/Cursor.hpp
 			DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/osgx"
 		)
 	endif()
@@ -577,6 +575,7 @@ if(OSGX_BUILD_PYTHON AND Python3_Development.Module_FOUND)
 	add_library(osgx_python_bindings STATIC
 		"ext/python/osgx-core.cpp"
 		"ext/python/osgx-callbacks.cpp"
+		"ext/python/osgx-cursor.cpp"
 		"ext/python/osgx-rtt.cpp"
 		"ext/python/osgx-pbr.cpp"
 		"ext/python/osgx-shadow.cpp"
