@@ -105,8 +105,14 @@ first came from), but collapsed into plain `osgx::` since none of it actually ne
 
 - `setCursorVisible(view, visible=true)` / `warpCursor(view, x, y)` — small standalone action
   helpers (not a get/set pair — OSG's `GraphicsWindow` has no visibility getter of its own).
-- `CursorState` — thread-safe, event-driven cursor position (`x()`/`y()`) plus `inWindow()`, the
-  generalized, picking-agnostic version of `osgx::PickReadback`'s positional half.
+- `CursorState` — thread-safe, event-driven cursor position (`x()`/`y()`) plus `inWindow()` and
+  `yIncreasingDownwards()`, the generalized, picking-agnostic version of `osgx::PickReadback`'s
+  positional half. `yIncreasingDownwards()` mirrors the real `GUIEventAdapter::
+  getMouseYOrientation()` of whichever event last updated the state — pass it (not a hardcoded
+  literal) as `windowToNDC()`/`unprojectToPlane()`'s own `yIncreasingDownwards` argument
+  ([`osgx/Projection.hpp`](#osgxprojectionhpp) below documents why that value is real per-platform/
+  per-event state and can't be safely guessed). Fail-safe default is `false` - `(0, 0)` at the
+  bottom-left, matching GL/OSG's own native NDC/framebuffer convention - until the first refresh.
 - `CursorHandler` — a `GUIEventHandler` that forwards MOVE/DRAG events into a `CursorState`.
   Always returns `false` so the active manipulator (or any other handler) still sees the event.
 - `CursorCallback` — an `osg::NodeCallback` that fires a `std::function<void(int, int)>` every
@@ -117,6 +123,12 @@ first came from), but collapsed into plain `osgx::` since none of it actually ne
   `osgx::platform::isCursorInWindow()` (this header is core; that function lives in the optional,
   X11-only `osgx::platform` module), so a caller built with `OSGX_PLATFORM` wires it in explicitly:
   `[cam]{ return osgx::platform::isCursorInWindow(cam); }`.
+- `makeCursorUniformCallback(state, uniform, inWindowCheck={})` — convenience factory, not a new
+  class: builds a `CursorCallback` whose `fn` pushes `state`'s live position + in-window flag into
+  the caller-owned `uniform` (must be `FLOAT_VEC3`: x, y, `inWindow ? 1.0 : 0.0`) every update
+  traversal. Deliberately a plain `Uniform` + update callback, not a `StateAttribute` pushing the
+  uniform directly — see `osgx::LightSet::apply()`'s own history in [`osgx/PBR.hpp`](#osgxpbrhpp)
+  for why that specific shortcut is unreliable under a sibling `Program`'s `StateAttribute::OVERRIDE`.
 - `CursorCapture` — a `GUIEventHandler` implementing the standard hide+warp+accumulate trick for
   turntable/FPS-style relative-motion look controls: while `setCaptured(true)`, hides the cursor
   and re-centers it on every move, accumulating the delta for `consume()` to poll once per update
@@ -125,6 +137,100 @@ first came from), but collapsed into plain `osgx::` since none of it actually ne
   `XGrabPointer` work, tracked in `ai/todo-platform.md`. Deliberately not wired into
   `OrbitAxisManipulator` directly — compose the two at the application level instead (add both as
   event handlers, feed `consume()`'d deltas into `orbitByDelta()`); see `examples/osgx-manipulator.cpp`.
+
+## `osgx/Projection.hpp`
+
+CPU-side screen/world projection helpers — the C++ twin of a shared GLSL snippet, and a general
+primitive for cursor/screen-driven world-space interaction (a mouse-dragged gizmo, a ground-plane
+pick, a HUD element following a 3D point). Not cursor-specific itself and has no dependency on
+`osgx::CursorState`/`CursorCallback` — it earned its own header rather than living in `Cursor.hpp`
+for that reason. Motivated by `~/dev/osgSlug/examples/python/pyosgslug-cone-widget.py`'s prototype,
+whose own `make_unprojector()` reconstructed a camera basis from fovy/aspect by hand (a workaround
+only needed because the Python bindings there have no bound `vec * matrix` operator); this instead
+inverts `view*projection` directly, which also works for orthographic projections, unlike
+fovy/aspect reconstruction.
+
+- `windowToNDC(viewport, x, y, yIncreasingDownwards)` — window/event coordinates → NDC
+  (`[-1, 1]^2`, Y-up). `(x, y)` must be window-absolute (same space as `GUIEventAdapter::getX()`/
+  `getY()`); `yIncreasingDownwards` must match that same event's own
+  `GUIEventAdapter::getMouseYOrientation()` — real per-platform/per-event state, not something safe
+  to default.
+- `Ray { osg::Vec3d origin, direction; }` — `direction` is unit length.
+- `unprojectRay(camera, ndcX, ndcY)` — casts a world-space `Ray` from `camera` through an NDC
+  point, via `inverse(view*projection)` evaluated at the near/far planes.
+- `intersectRayPlane(ray, plane, outPoint)` — ray/plane intersection; `plane` must be normalized
+  (`a²+b²+c²=1` — same precondition as `osg::Plane::distance()`, which this reuses directly).
+  Returns `false` for a parallel ray or a hit behind the ray's origin.
+- `unprojectToPlane(camera, viewport, x, y, yIncreasingDownwards, plane, outPoint)` — one-call glue
+  of the three above; this is exactly what the cone-widget prototype's `make_unprojector()` +
+  `ndc_from_event()` + its own z=0-plane solve did by hand, per MOVE event.
+- `unprojectPoint(camera, ndcX, ndcY, ndcDepth)` — single-point unproject at an explicit depth,
+  the CPU-side twin of the shared GLSL `osgx_Unproject(vec2 ndc, float depth)` below, mirroring
+  its signature exactly (unlike `unprojectRay()`, which only ever exposes the near/far pair
+  together). Motivated by the `osgx-aoe` example's Mode 2: reading a G-buffer depth sample back
+  to the CPU at the cursor's pixel and turning that `(x, y, depth)` triple into a world point.
+- `registerProjectionShaderLibs()` — publishes two entries under the `osgx::projection`
+  shader-library catalog tag (not a C++ namespace — see [Namespaces](#namespaces)):
+  - `#pragma osgx::projection UNPROJECT` → `vec3 osgx_Unproject(vec2 ndc, float depth)`, matching
+    `unprojectRay()`'s own math exactly. Extracted from a GLSL function `examples/osgx-grid.cpp`
+    and `examples/osgx-turntable.cpp` used to duplicate verbatim; both now use the shared
+    `#pragma` instead.
+  - `#pragma osgx::projection DEPTH` → `float osgx_LinearizeDepth(float depth, mat4
+    projectionMatrix)` (depth-buffer sample → distance from the camera along the view axis),
+    deriving near/far implicitly from `projectionMatrix`'s own entries instead of a separate
+    `znear`/`zfar` uniform pair the caller must decompose by hand and keep in sync. Extracted
+    from `OpenSceneGraph.py/examples/pyosg-rtt.py`'s and `pyosg-mrt.py`'s own identical,
+    previously-duplicated `linearizeDepth(d, near, far)`. `projectionMatrix` is a REQUIRED
+    parameter, deliberately not read from the ambient `osg_ProjectionMatrix` uniform the way
+    `osgx_Unproject()` does: that ambient value is only ever the currently-drawing camera's own
+    projection, correct inline in the same pass that produced the depth, but silently wrong the
+    moment the depth sample came from a DIFFERENT camera — exactly the G-buffer-geometry-pass →
+    separate-composite-pass shape both files actually use, which is also why their own
+    `invProjectionMatrix`/`znear`/`zfar` uniforms need a `preDrawCallback` bridging the
+    original camera's live matrix into the composite pass every frame in the first place (same
+    shape as this repo's own `UpdateLightingPassCallback` in `examples/osgx-gbuffer.cpp`) — that
+    bridge can't be eliminated (OSG's automatic per-camera uniforms have no way to carry a
+    different camera's matrix across passes), only made unambiguous at the call site.
+
+## `osgx/SDF.hpp`
+
+A small catalog of pure, closed-form 2D signed-distance functions (negative = inside), published
+only as a GLSL shader-library entry — there is no CPU-side counterpart, unlike `Projection.hpp`'s
+CPU/GLSL twins, since these are pure per-fragment shape tests with no meaningful CPU-side
+analogue. Extracted 2026-09-18 from `osgSlug`'s `Atlas.shaders.cpp`, which originally defined
+these itself (as `osgSlug_SDF_*`) to back its own `slughorn::Mask` dispatch — every one of them
+was already pure math with zero dependency on osgSlug's own state, a clean extraction boundary.
+`osgSlug` now consumes the shared catalog instead of defining its own copies; only the
+Mask-struct-specific dispatch/coverage/MSDF glue stayed behind in `osgSlug`, since that part IS
+genuinely osgSlug-specific.
+
+- `registerSDFShaderLibs()` — publishes ONE entry, `#pragma osgx::sdf SHAPES`, expanding to all
+  nine functions below at once (not individually-selectable tags the way `Projection.hpp`'s
+  `UNPROJECT`/`DEPTH` are): a `Mask`-style runtime dispatch needs every shape function compiled
+  in regardless of which one is actually active per-fragment, so no real caller would ever want
+  a subset.
+- `float osgx_SDF_Circle(vec2 p, vec2 center, float r)`
+- `float osgx_SDF_Rect(vec2 p, vec2 center, vec2 halfExtents)`
+- `float osgx_SDF_Capsule(vec2 p, vec2 a, vec2 b, float r)`
+- `float osgx_SDF_Arc(vec2 p, vec2 center, float r, float angleStart, float angleEnd)` — filled
+  pie sector; angles in radians, standard math convention (0 = +X, CCW positive).
+- `float osgx_SDF_ArcBand(vec2 p, vec2 center, float r, float angleStart, float angleEnd, float strokeHalfWidth)`
+  — a stroked arc (annular band along an arc), not a filled sector.
+- `vec2 osgx_SDF_Rotate(vec2 p, float angle)` — rotates `p` by `angle` (CCW, radians); every
+  rotatable shape below pre-rotates its query point by `-rotation` into the shape's own local
+  frame, same trick each time.
+- `float osgx_SDF_Hexagon(vec2 p, vec2 center, float r, float rotation)` — flat-top at `rotation=0`.
+- `float osgx_SDF_Octagon(vec2 p, vec2 center, float r, float rotation)`
+- `float osgx_SDF_Star(vec2 p, vec2 center, float r, float points, float innerRatio, float rotation)`
+  — `points` rounded to the nearest integer ≥ 3; `innerRatio` in `[0, 1]` (0 = sharpest spikes,
+  1 = a regular n-gon).
+
+Hexagon/Octagon/Star are Inigo Quilez's exact SDFs
+([iquilezles.org/articles/distfunctions2d](https://iquilezles.org/articles/distfunctions2d/)).
+Two names changed during the extraction to match `slughorn::Mask::Type`'s own vocabulary (the
+actual public data-model API) rather than the GLSL functions' own previously-independent names:
+`osgSlug_SDF_Box` → `osgx_SDF_Rect`, `osgSlug_SDF_Pie` → `osgx_SDF_Arc`. Every other name carried
+over unchanged (just the `osgSlug_` → `osgx_` prefix swap).
 
 ## `osgx/Grid.hpp`
 

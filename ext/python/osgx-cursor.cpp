@@ -66,6 +66,16 @@ void bind_cursor(py::module_& m) {
 			"'pointer left the window' GUIEventAdapter event to react to instead. True (fail-safe) "
 			"until the first refresh."
 		)
+		.def_property(
+			"yIncreasingDownwards",
+			&osgx::CursorState::yIncreasingDownwards,
+			&osgx::CursorState::setYIncreasingDownwards,
+			"Whether x/y increase downwards or upwards - the real GUIEventAdapter.mouseYOrientation "
+			"of whichever event last updated this state, refreshed by CursorHandler on every "
+			"MOVE/DRAG event. Pass this (not a hardcoded literal) as windowToNDC()/"
+			"unprojectToPlane()'s own yIncreasingDownwards argument. False (fail-safe - (0, 0) at "
+			"the bottom-left, matching GL/OSG's own native convention) until the first refresh."
+		)
 	;
 
 	py::class_<
@@ -116,6 +126,33 @@ void bind_cursor(py::module_& m) {
 			"lambda: osgx.platform.isCursorInWindow(viewer) when osgx.platform is available."
 		)
 	;
+
+	// Convenience factory, not a new class: builds a CursorCallback that pushes state's live
+	// position + in-window flag into `uniform` (must be FLOAT_VEC3: x, y, inWindow ? 1.0 : 0.0)
+	// every update traversal. See its own C++ comment (osgx/Cursor.hpp) for why this is a plain
+	// Uniform + update callback rather than a StateAttribute pushing the uniform directly
+	// (osgx.LightSet.apply()'s own history already proved that unreliable under a sibling
+	// Program's StateAttribute.OVERRIDE elsewhere in the same frame).
+	m.def(
+		"makeCursorUniformCallback",
+		&osgx::makeCursorUniformCallback,
+		"state"_a,
+		"uniform"_a,
+		"inWindowCheck"_a,
+		"Builds a CursorCallback pushing state's live position + in-window flag into `uniform` "
+		"(FLOAT_VEC3) every update traversal. Install the result via setUpdateCallback()."
+	);
+
+	m.def(
+		"makeCursorUniformCallback",
+		[](osgx::CursorState* state, osg::Uniform* uniform) {
+			return osgx::makeCursorUniformCallback(state, uniform);
+		},
+		"state"_a,
+		"uniform"_a,
+		"Same as the other overload, without an inWindowCheck - the uniform's in-window component "
+		"then just reflects state.inWindow's last known value (true until first set)."
+	);
 
 	// Software hide+warp+accumulate cursor capture for turntable/FPS-style relative-motion look
 	// controls. NOT true OS-level pointer confinement - see osgx/Cursor.hpp.

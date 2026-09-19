@@ -143,7 +143,7 @@ Per-subsystem deep dives live in [`docs/`](docs/):
 
 - [`osgx` core](docs/CORE.md) — everything above that lives flat in `osgx::`: `Core`, `Visitors`,
   `Array`, `Callbacks`, `Picking`, `Manipulators`, `CameraIntents`, `Grid`, `Shapes`, `Shader`,
-  `PBR`, `Gizmos`, `Shadow`, `IBL`, `GBuffer`, `Cursor`, and the cubemap-baking primitives it's
+  `PBR`, `Gizmos`, `Shadow`, `IBL`, `GBuffer`, `Cursor`, `Projection`, and the cubemap-baking primitives it's
   built on.
 - [`osgx::debug`](docs/DEBUG.md) — the three `GL_KHR_debug` systems, the two-phase GPU/CPU
   profiler, and `FrameByFrameViewer`.

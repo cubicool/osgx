@@ -50,6 +50,8 @@ PYBIND11_MODULE(osgx, m) {
 	osgx_python::bind_shapes(m);
 	osgx_python::bind_gizmos(m);
 	osgx_python::bind_pixel_text(m);
+	osgx_python::bind_projection(m);
+	osgx_python::bind_sdf(m);
 
 #ifdef OSGX_GLTF
 	auto m_gltf = m.def_submodule("gltf", "osgx::gltf - glTF 2.0 loader + optional PBR/IBL adapter");

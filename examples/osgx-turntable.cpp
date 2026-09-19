@@ -7,6 +7,8 @@
 #include "osgx/Cursor.hpp"
 #include "osgx/IBL.hpp"
 #include "osgx/Manipulators.hpp"
+#include "osgx/Projection.hpp"
+#include "osgx/Shader.hpp"
 #include "osgx/gltf/PBRIBL.hpp"
 
 OSGX_DISABLE_WARNINGS
@@ -124,27 +126,16 @@ void main() {
 constexpr const char INFINITE_FLOOR_VERTEX_SHADER[] = R"GLSL(
 #version 430 core
 
-uniform mat4 osg_ProjectionMatrix;
-uniform mat4 osg_ViewMatrixInverse;
+#pragma osgx::projection UNPROJECT
 
 in vec4 osg_Vertex;
 
 out vec3 nearPoint;
 out vec3 farPoint;
 
-vec3 unproject(vec2 ndc, float depth) {
-	vec4 view = inverse(osg_ProjectionMatrix) * vec4(ndc, depth, 1.0);
-
-	view /= view.w;
-
-	vec4 world = osg_ViewMatrixInverse * view;
-
-	return world.xyz / world.w;
-}
-
 void main() {
-	nearPoint = unproject(osg_Vertex.xy, -1.0);
-	farPoint = unproject(osg_Vertex.xy, 1.0);
+	nearPoint = osgx_Unproject(osg_Vertex.xy, -1.0);
+	farPoint = osgx_Unproject(osg_Vertex.xy, 1.0);
 	gl_Position = osg_Vertex;
 }
 )GLSL";
@@ -250,9 +241,13 @@ osg::ref_ptr<osg::Node> makeHemisphereSky(
 }
 
 osg::ref_ptr<osg::Node> makeInfiniteFloor() {
+	osgx::registerProjectionShaderLibs();
+
 	auto program = osgx::make_ref<osg::Program>();
 
-	program->addShader(new osg::Shader(osg::Shader::VERTEX, INFINITE_FLOOR_VERTEX_SHADER));
+	program->addShader(new osg::Shader(
+		osg::Shader::VERTEX, osgx::resolveShaderLibs(INFINITE_FLOOR_VERTEX_SHADER)
+	));
 	program->addShader(new osg::Shader(osg::Shader::FRAGMENT, INFINITE_FLOOR_FRAGMENT_SHADER));
 
 	auto floor = makeFullscreenTriangle();

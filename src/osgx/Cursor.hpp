@@ -6,7 +6,9 @@ OSGX_DISABLE_WARNINGS
 
 #include <osg/NodeCallback>
 #include <osg/Referenced>
+#include <osg/Uniform>
 #include <osg/Vec2>
+#include <osg/Vec3>
 #include <osg/observer_ptr>
 #include <osg/ref_ptr>
 #include <osgGA/GUIEventHandler>
@@ -56,10 +58,29 @@ public:
 	bool inWindow() const { return _inWindow.load(std::memory_order_relaxed); }
 	void setInWindow(bool inWindow) { _inWindow.store(inWindow, std::memory_order_relaxed); }
 
+	// Whether x()/y() increase downwards (top of window = smaller y) or upwards - the same
+	// per-platform/per-event state osgx::windowToNDC()/unprojectToPlane() (Projection.hpp) require
+	// explicitly and document as "not something safe to default": it comes from the real
+	// GUIEventAdapter::getMouseYOrientation() of whichever event last updated this state, not a
+	// guess. Refreshed by CursorHandler on every MOVE/DRAG event, same cadence as updateCursor().
+	// A caller unprojecting x()/y() onto a world plane should pass THIS, not a hardcoded literal -
+	// the osgx-aoe example's Mode 1 hardcoded true here first and got a Y-inverted decal, which is
+	// exactly the failure this accessor exists to prevent. False (Y_INCREASING_UPWARDS - (0, 0) at
+	// the bottom-left, matching GL/OSG's own native NDC/framebuffer convention) is the fail-safe
+	// placeholder until the first real event refreshes it.
+	bool yIncreasingDownwards() const {
+		return _yIncreasingDownwards.load(std::memory_order_relaxed);
+	}
+
+	void setYIncreasingDownwards(bool yIncreasingDownwards) {
+		_yIncreasingDownwards.store(yIncreasingDownwards, std::memory_order_relaxed);
+	}
+
 private:
 	std::atomic<int> _x{0};
 	std::atomic<int> _y{0};
 	std::atomic<bool> _inWindow{true};
+	std::atomic<bool> _yIncreasingDownwards{false};
 };
 
 // GUIEventHandler that forwards MOVE/DRAG events into a CursorState. Same shape as
@@ -110,6 +131,27 @@ private:
 	std::function<void(int, int)> _fn;
 	std::function<bool()> _inWindowCheck;
 };
+
+// Convenience factory: builds a CursorCallback that pushes state's live position and in-window
+// flag into `uniform` every update traversal, as osg::Vec3(x, y, inWindow ? 1.0 : 0.0) in the same
+// view/event coordinate space as CursorState::x()/y() - `uniform` must be FLOAT_VEC3. No new class
+// here, and deliberately not a StateAttribute: osgx::LightSet::apply() (see PBR.cpp) already tried
+// pushing a uniform live from inside a StateAttribute via OSG's Program-targeted uniform-push
+// machinery (applyShaderCompositionUniform()/getLastAppliedProgramObject()) for osgx_lightCount,
+// and both broke the moment any sibling Program elsewhere in the same frame used
+// StateAttribute::OVERRIDE (confirmed live 2026-09-03 - see PBR.hpp's own history comment).
+// A plain Uniform refreshed by an ordinary update callback goes through OSG's normal per-StateSet
+// uniform stack instead and never shares that failure mode, so that's what this builds - just a
+// named CursorCallback construction, not a new mechanism.
+//
+// The caller owns `uniform`: create it and addUniform() it onto whatever StateSet needs to read
+// it (picking its own name), then install the returned callback via setUpdateCallback() same as
+// any other CursorCallback. inWindowCheck is forwarded as-is - see CursorCallback's own comment.
+osg::ref_ptr<CursorCallback> makeCursorUniformCallback(
+	CursorState* state,
+	osg::Uniform* uniform,
+	std::function<bool()> inWindowCheck = nullptr
+);
 
 // Software "soft capture" of the cursor: hides it and re-centers it every time it moves,
 // accumulating the raw motion as a delta instead of exposing absolute screen position -- the

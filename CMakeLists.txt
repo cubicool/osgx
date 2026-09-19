@@ -243,7 +243,9 @@ add_library(osgx ${OSGX_LIBRARY_TYPE}
 	src/PBR.cpp
 	src/Picking.cpp
 	src/PixelText.cpp
+	src/Projection.cpp
 	src/RTT.cpp
+	src/SDF.cpp
 	src/Shadow.cpp
 	src/Shapes.cpp
 	src/Shader.cpp
@@ -271,7 +273,9 @@ target_sources(osgx PUBLIC
 	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/PBR.hpp>"
 	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/Picking.hpp>"
 	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/PixelText.hpp>"
+	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/Projection.hpp>"
 	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/RTT.hpp>"
+	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/SDF.hpp>"
 	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/Shadow.hpp>"
 	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/Shapes.hpp>"
 	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/Shader.hpp>"
@@ -586,6 +590,8 @@ if(OSGX_BUILD_PYTHON AND Python3_Development.Module_FOUND)
 		"ext/python/osgx-shapes.cpp"
 		"ext/python/osgx-gizmos.cpp"
 		"ext/python/osgx-pixel-text.cpp"
+		"ext/python/osgx-projection.cpp"
+		"ext/python/osgx-sdf.cpp"
 		"ext/python/osgx-aura.cpp"
 	)
 

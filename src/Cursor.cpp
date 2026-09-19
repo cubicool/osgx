@@ -41,6 +41,9 @@ bool CursorHandler::handle(const osgGA::GUIEventAdapter& ea, osgGA::GUIActionAda
 		)
 	) {
 		_state->updateCursor(static_cast<int>(ea.getX()), static_cast<int>(ea.getY()));
+		_state->setYIncreasingDownwards(
+			ea.getMouseYOrientation() == osgGA::GUIEventAdapter::Y_INCREASING_DOWNWARDS
+		);
 	}
 
 	return false;
@@ -54,6 +57,24 @@ void CursorCallback::operator()(osg::Node* node, osg::NodeVisitor* nv) {
 	}
 
 	traverse(node, nv);
+}
+
+osg::ref_ptr<CursorCallback> makeCursorUniformCallback(
+	CursorState* state,
+	osg::Uniform* uniform,
+	std::function<bool()> inWindowCheck
+) {
+	osg::ref_ptr<osg::Uniform> uniformRef(uniform);
+
+	return new CursorCallback(
+		state,
+		[state, uniformRef](int x, int y) {
+			uniformRef->set(osg::Vec3(
+				static_cast<float>(x), static_cast<float>(y), state->inWindow() ? 1.0f : 0.0f
+			));
+		},
+		std::move(inWindowCheck)
+	);
 }
 
 void CursorCapture::setCaptured(bool captured) {
