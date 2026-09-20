@@ -30,3 +30,32 @@ def test_register_sdf_shader_libs_is_idempotent():
 	# catalog (e.g. called from more than one module/example) must be a safe no-op.
 	osgx.registerSDFShaderLibs()
 	osgx.registerSDFShaderLibs()
+
+def test_sampling_and_texture_expand_in_order():
+	osgx.registerSDFShaderLibs()
+
+	resolved = osgx.resolveShaderLibs("#pragma osgx::sdf SAMPLING,TEXTURE\n")
+
+	for name in (
+		"osgx_SDF_Median",
+		"osgx_SDF_ScreenPixelRange",
+		"osgx_SDF_CoverageFromDistance",
+		"osgx_SDF_Coverage",
+		"osgx_sdfTexture",
+	):
+		assert name in resolved
+
+	# TEXTURE calls into SAMPLING, so SAMPLING must be spliced first (GLSL needs declare-before-use).
+	assert resolved.index("osgx_SDF_Median") < resolved.index("osgx_SDF_Coverage(vec2 uv)")
+
+def test_sdf_attribute_roundtrip_and_defaults():
+	sdf = osgx.SDF()
+
+	assert sdf.sdfType == osgx.SDF.SDFType.SDF
+	assert sdf.pixelRange == 4.0
+
+	sdf.sdfType = osgx.SDF.SDFType.MSDF
+	sdf.pixelRange = 8.0
+
+	assert sdf.sdfType == osgx.SDF.SDFType.MSDF
+	assert sdf.pixelRange == 8.0

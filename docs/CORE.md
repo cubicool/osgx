@@ -232,6 +232,26 @@ actual public data-model API) rather than the GLSL functions' own previously-ind
 `osgSlug_SDF_Box` → `osgx_SDF_Rect`, `osgSlug_SDF_Pie` → `osgx_SDF_Arc`. Every other name carried
 over unchanged (just the `osgSlug_` → `osgx_` prefix swap).
 
+### Baked distance fields: `SAMPLING`, `TEXTURE`, and the `SDF` attribute
+
+The same header also renders BAKED SDF/MSDF textures from any producer (msdfgen, slughorn's
+exporter, a hand-authored PNG) - osgx only ever consumes them, never generates them.
+
+- `#pragma osgx::sdf SAMPLING` - pure helpers: `osgx_SDF_Median(vec3)`,
+  `osgx_SDF_ScreenPixelRange(vec2 uv, vec2 texSize, float pixelRange)` (Chlumsky's screenPixelRange,
+  derivative-driven, so correct under magnification/minification/rotation), and
+  `osgx_SDF_CoverageFromDistance(float d, float screenPixelRange)`.
+- `#pragma osgx::sdf TEXTURE` - declares the `SDF` attribute's inputs and
+  `float osgx_SDF_Coverage(vec2 uv)` (tile-local `uv` in `[0, 1]`). Must be listed after
+  `SAMPLING`: `#pragma osgx::sdf SAMPLING,TEXTURE`. Requires `#version 430`+.
+- `osgx::SDF::makeTexture(image)` - builds the `Texture2D` a distance field must be sampled from (bilinear, no
+  mipmaps, clamped; a single-channel grayscale PNG, which OSG loads as `GL_LUMINANCE`, is relabeled
+  `GL_RED`/`GL_R8`). Loading a whole atlas from a glTF manifest: `docs/GLTF.md`, "`osgx_sdf`".
+- `osgx::SDF` - a `StateAttribute` (CAPABILITY member 3, SSBO binding 5, texture unit 10) holding
+  the texture, `sdfType` (`SDFType::SDF`/`SDFType::MSDF`), `pixelRange` (texels, msdfgen's `-pxrange`), and
+  `uvRect` `(u0, v0, u1, v1)` (whole-texture space; `v0 > v1` flips the tile). Same design as
+  `Material`/`GridSettings`.
+
 ## `osgx/Grid.hpp`
 
 - `Grid` draws a procedurally generated, antialiased grid as either a screen-space overlay or a perspective ground plane. The shader is adapted from Ben Golus's [The Best Darn Grid Shader (Yet)](https://bgolus.medium.com/the-best-darn-grid-shader-yet-727f9278b9d8) (credited in `src/Grid.cpp`/`src/osgx/Grid.hpp` as well).

@@ -1,5 +1,16 @@
 #include "osgx/SDF.hpp"
+#include "osgx/Array.hpp"
 #include "osgx/Shader.hpp"
+
+OSGX_DISABLE_WARNINGS
+
+#include <osg/BufferIndexBinding>
+#include <osg/BufferObject>
+#include <osg/State>
+
+OSGX_ENABLE_WARNINGS
+
+#include <stdexcept>
 
 namespace osgx {
 
@@ -121,14 +132,164 @@ float osgx_SDF_Star(
 }
 )GLSL";
 
+// Pure reconstruction helpers for baked distance fields - see SDF.hpp for the contracts. The
+// screenPixelRange technique is Viktor Chlumsky's (msdfgen's README); it works identically for a
+// single-channel SDF, which is why nothing here cares which type `d` came from.
+constexpr const char* SDF_SAMPLING_SRC = R"GLSL(
+float osgx_SDF_Median(vec3 msd) {
+	return max(min(msd.r, msd.g), min(max(msd.r, msd.g), msd.b));
+}
+
+float osgx_SDF_ScreenPixelRange(vec2 uv, vec2 texSize, float pixelRange) {
+	vec2 unitRange = vec2(pixelRange) / texSize;
+	vec2 screenTexSize = vec2(1.0) / max(fwidth(uv), vec2(1e-8));
+
+	return max(0.5 * dot(unitRange, screenTexSize), 1.0);
+}
+
+float osgx_SDF_CoverageFromDistance(float d, float screenPixelRange) {
+	return clamp((d - 0.5) * screenPixelRange + 0.5, 0.0, 1.0);
+}
+)GLSL";
+
+// Must match SDF::_write()'s layout: 8 floats, std430 (vec4 + 4 scalars, no implicit padding).
+// `sdfType` is a float (0 = SDF, 1 = MSDF) purely to keep the backing store a single FloatArray, the
+// same trick Material's has*Map flags use.
+constexpr const char* SDF_TEXTURE_SRC = R"GLSL(
+layout(binding = 10) uniform sampler2D osgx_sdfTexture;
+
+layout(std430, binding = 5) readonly buffer osgx_SDFBuffer {
+	vec4 uvRect;
+	float pixelRange;
+	float sdfType;
+	float pad0;
+	float pad1;
+} osgx_sdf;
+
+float osgx_SDF_Coverage(vec2 uv) {
+	vec2 texUV = mix(osgx_sdf.uvRect.xy, osgx_sdf.uvRect.zw, uv);
+	vec4 texel = texture(osgx_sdfTexture, texUV);
+	float d = osgx_sdf.sdfType < 0.5 ? texel.r : osgx_SDF_Median(texel.rgb);
+	float spr = osgx_SDF_ScreenPixelRange(texUV, vec2(textureSize(osgx_sdfTexture, 0)), osgx_sdf.pixelRange);
+
+	return osgx_SDF_CoverageFromDistance(d, spr);
+}
+)GLSL";
+
 }
 
 void registerSDFShaderLibs() {
 	static constexpr ShaderLib libs[] = {
-		{"SHAPES", "osgx_SDF_Circle", SDF_SHAPES_SRC}
+		{"SHAPES", "osgx_SDF_Circle", SDF_SHAPES_SRC},
+		{"SAMPLING", "osgx_SDF_Median", SDF_SAMPLING_SRC},
+		{"TEXTURE", "osgx_SDF_Coverage", SDF_TEXTURE_SRC}
 	};
 
 	registerShaderLibs("osgx::sdf", libs);
+}
+
+SDF::SDF() {
+	registerSDFShaderLibs();
+	_initBuffer();
+}
+
+SDF::SDF(const SDF& sdf, const osg::CopyOp& copyop):
+osg::StateAttribute(sdf, copyop),
+_texture(static_cast<osg::Texture2D*>(copyop(sdf._texture.get()))),
+_sdfType(sdf._sdfType),
+_pixelRange(sdf._pixelRange),
+_uvRect(sdf._uvRect) {
+	_initBuffer();
+}
+
+SDF::~SDF() {}
+
+// Built once (not per-write) so every setter can mutate it in place via dirty() instead of
+// standing up a new osg::ShaderStorageBufferObject/GL buffer each call - same as Material.
+void SDF::_initBuffer() {
+	_buffer = osgx::make_ref<osgx::FloatArray>(static_cast<std::size_t>(8));
+	_buffer->setBufferObject(new osg::ShaderStorageBufferObject());
+
+	_binding = new osg::ShaderStorageBufferBinding(
+		SDF_BINDING, _buffer, 0, static_cast<GLsizeiptr>(_buffer->getTotalDataSize())
+	);
+
+	_write();
+}
+
+// Layout must match SDF_TEXTURE_SRC's osgx_SDFBuffer block exactly.
+void SDF::_write() {
+	// [6], [7]: trailing padding, left at 0.
+	_buffer->set({
+		_uvRect.x(), _uvRect.y(), _uvRect.z(), _uvRect.w(),
+		_pixelRange,
+		_sdfType == SDFType::MSDF ? 1.0f : 0.0f
+	});
+
+	_buffer->dirty();
+}
+
+int SDF::compare(const osg::StateAttribute& sa) const {
+	COMPARE_StateAttribute_Types(SDF, sa)
+
+	COMPARE_StateAttribute_Parameter(_texture)
+	COMPARE_StateAttribute_Parameter(_sdfType)
+	COMPARE_StateAttribute_Parameter(_pixelRange)
+	COMPARE_StateAttribute_Parameter(_uvRect)
+
+	return 0;
+}
+
+// Read-only over this object's state - see Material::apply() (PBR.cpp) for why that matters.
+void SDF::apply(osg::State& state) const {
+	if(_texture.valid()) state.applyTextureAttribute(SDF_TEXTURE_UNIT, _texture.get());
+
+	state.applyAttribute(_binding.get());
+}
+
+osg::ref_ptr<osg::Texture2D> SDF::makeTexture(osg::Image* image) {
+	if(!image) return nullptr;
+
+	if(image->getPixelFormat() == GL_LUMINANCE) {
+		image->setPixelFormat(GL_RED);
+		image->setInternalTextureFormat(GL_R8);
+	}
+
+	osg::ref_ptr<osg::Texture2D> texture = new osg::Texture2D(image);
+
+	texture->setFilter(osg::Texture::MIN_FILTER, osg::Texture::LINEAR);
+	texture->setFilter(osg::Texture::MAG_FILTER, osg::Texture::LINEAR);
+	texture->setWrap(osg::Texture::WRAP_S, osg::Texture::CLAMP_TO_EDGE);
+	texture->setWrap(osg::Texture::WRAP_T, osg::Texture::CLAMP_TO_EDGE);
+
+	// A tile atlas is almost never a power of two, and OSG's default is to RESCALE such an image up
+	// to one (with a "resizing" warning) - which silently shifts every tile's rect/uvRect and smears
+	// the distance field it holds.
+	texture->setResizeNonPowerOfTwoHint(false);
+
+	return texture;
+}
+
+void SDF::setTexture(osg::Texture2D* texture) {
+	_texture = texture;
+}
+
+void SDF::setSDFType(SDFType sdfType) {
+	_sdfType = sdfType;
+
+	_write();
+}
+
+void SDF::setPixelRange(float pixelRange) {
+	_pixelRange = pixelRange;
+
+	_write();
+}
+
+void SDF::setUVRect(const osg::Vec4& uvRect) {
+	_uvRect = uvRect;
+
+	_write();
 }
 
 }

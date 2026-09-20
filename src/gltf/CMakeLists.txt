@@ -6,6 +6,7 @@ add_library(osgx_gltf STATIC
 	Reader.cpp
 	ReaderImpl.cpp
 	Scene.cpp
+	SDF.cpp
 	Skin.cpp
 	Texture.cpp
 	"${PROJECT_SOURCE_DIR}/ext/tinygltf/tiny_gltf_v3.c"
@@ -17,6 +18,7 @@ target_include_directories(osgx_gltf PRIVATE "${PROJECT_SOURCE_DIR}/ext/tinygltf
 target_link_libraries(osgx_gltf PUBLIC osgx::osgx)
 target_sources(osgx_gltf PUBLIC
 	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../osgx/gltf/Reader.hpp>"
+	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../osgx/gltf/SDF.hpp>"
 	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../osgx/gltf/Shader.hpp>"
 	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../osgx/gltf/SimplePlayer.hpp>"
 )

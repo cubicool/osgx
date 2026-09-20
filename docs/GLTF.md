@@ -18,9 +18,9 @@ both a "contract" (for custom renderers, via `osgx/gltf/Shader.hpp`) and a "read
 helper functions (`osgx::gltf::pbribl`).
 
 `osgx::gltf` and its optional `osgx::gltf::pbribl` adapter, along with `osgx::ktx2` (the KTX2
-reader/writer), were merged in from the formerly separate `osgGLTF` repo: the loader already
-depended on `osgx::core`, and the PBR/IBL adapter already depended on the full `osgx::osgx` layer,
-so keeping them in a separate repo bought nothing but cross-repo build/version friction.
+reader/writer), were merged in from the formerly separate `osgGLTF` repo: both already depended on
+`osgx::osgx`, so keeping them in a separate repo bought nothing but cross-repo build/version
+friction.
 
 Be sure to call `osgDB::Registry::instance()->addFileExtensionAlias("glb", "gltf");` if you want to
 support GLB loading through the same plugin registration path as `.gltf`.
@@ -30,10 +30,10 @@ support GLB loading through the same plugin registration path as `.gltf`.
 `OSGX_BUILD_GLTF` (default ON at the top level, OFF when embedded) gates two static-library
 targets, plus the `osgdb_gltf` osgDB plugin:
 
-- `osgx::gltf` — the loader itself. Depends only on `osgx::core` and the vendored `ext/tinygltf`
-  submodule. This is what `osgdb_gltf` links, so loading a `.gltf`/`.glb` through generic
-  `osgDB::readNodeFile()` never drags in the rest of `osgx::osgx` (X11, ImGui, the debug profiler,
-  etc.) just to parse geometry.
+- `osgx::gltf` — the loader itself, plus the small `osgx_sdf` tile-set loader
+  (`osgx/gltf/SDF.hpp`). Links `osgx::osgx` publicly and the vendored `ext/tinygltf` submodule; the
+  SDF loader needs `osgx::SDF`, so it lives here rather than in its own target. This is also what
+  `osgdb_gltf` links.
 - `osgx::gltf_pbribl` — the optional PBR/IBL adapter (`osgx/gltf/PBRIBL.hpp`). Links `osgx::gltf` plus the
   full `osgx::osgx` PBR/IBL layer. Only an explicit consumer pays for this.
 
@@ -80,6 +80,45 @@ emissive texture units. These helpers are optional; the named constants in the s
 used when an application needs different program or StateSet ownership.
 
 The Python bindings expose the same constants, GLSL source, and helpers under `osgx.gltf.shader`.
+
+
+## `osgx_sdf` - baked distance-field tiles (`osgx/gltf/SDF.hpp`)
+
+Part of `osgx::gltf` (no extra target). A glTF-shaped manifest carrying a root `osgx_sdf` extension
+describes one or more baked SDF/MSDF atlases; `osgx::gltf::sdf::TileSet::load(path)` turns a `data[]`
+entry into ONE shared `osg::Texture2D` plus named tiles, and `TileSet::attribute(name)` hands back an
+`osgx::SDF` per tile (see `docs/CORE.md`, "Baked distance fields"). osgx only ever consumes distance
+fields - whoever baked them is irrelevant (slughorn's `bin/slughorn sdf x.slug -o a.png` writes
+`a.png` + `a.gltf` in exactly this schema).
+
+```json
+{
+  "asset": {"version": "2.0", "generator": "slughorn"},
+  "extensionsUsed": ["osgx_sdf"],
+  "extensions": {"osgx_sdf": {"data": [{
+    "type": "MSDF",
+    "texture": {"uri": "atlas.png"},
+    "tiles": {"circle": {"rect": [100, 10, 96, 88], "pixelRange": 16.0,
+                         "range": 0.1, "texelsPerEm": 80.0, "emOrigin": [-0.1, -0.1]}}
+  }]}}
+}
+```
+
+- `type`: `"SDF"` (read `.r`) or `"MSDF"` (median of `.rgb`). `data` is an array, like `osgx_pbribl`'s
+  `environments`, so one asset can carry several sheets.
+- `texture`: `{"uri": ...}`, relative to the manifest. `{"index": n}` (a glTF `textures[]` entry) is
+  reserved for embedding in a real asset and is not implemented; like `osgx_pbribl`, only a standalone
+  manifest is decoded today.
+- `tiles[name].rect` is `[x, y, width, height]` in PIXELS with the origin at the TOP-left of the image
+  (glTF's own convention); the image must be stored upright. The loader derives OSG texture-space UVs
+  itself (`TileSet::uvRect(name)`, V = 0 at the bottom), so a manifest never has to get a Y flip right.
+- `pixelRange` is the total distance range in TEXELS (msdfgen's `-pxrange`). Required, with `type`,
+  `texture` and `rect`.
+- `range`/`texelsPerEm`/`emOrigin` are an optional em-space frame for effects that work in shape units;
+  a generic renderer ignores them.
+
+Bad tiles (malformed, or a rect outside the image) are skipped with a warning; the set is invalid only
+when the file, the extension, the image, or every tile is unusable. Python: `osgx.gltf.sdf.TileSet`.
 
 ## Optional PBR/IBL Renderer
 

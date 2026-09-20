@@ -9,6 +9,7 @@
 
 #include "osgx/gltf/PBRIBL.hpp"
 #include "osgx/gltf/Reader.hpp"
+#include "osgx/gltf/SDF.hpp"
 #include "osgx/gltf/Shader.hpp"
 #include "osgx/gltf/SimplePlayer.hpp"
 #include "osgx/Shadow.hpp"
@@ -740,6 +741,86 @@ namespace osgx_python {
 // namespace (osgx::gltf::shader, osgx::gltf::pbribl).
 void bind_gltf(py::module_& m_gltf) {
 	osgx::gltf::pbribl::registerShaderLibs();
+
+	auto m_gltf_sdf = m_gltf.def_submodule(
+		"sdf",
+		"The `osgx_sdf` glTF extension: baked SDF/MSDF tiles, loaded as osgx.SDF attributes. osgx only "
+		"ever consumes distance fields; whoever produced them (slughorn's `bin/slughorn sdf`, an "
+		"msdfgen post-process, ...) is irrelevant."
+	);
+
+	py::class_<osgx::gltf::sdf::Tile>(
+		m_gltf_sdf,
+		"Tile",
+		"One tile as declared in the manifest: a pixel rect (origin TOP-left, like glTF UVs) plus "
+		"pixelRange, and slughorn's optional em-space frame."
+	)
+		.def_readonly("x", &osgx::gltf::sdf::Tile::x)
+		.def_readonly("y", &osgx::gltf::sdf::Tile::y)
+		.def_readonly("w", &osgx::gltf::sdf::Tile::w)
+		.def_readonly("h", &osgx::gltf::sdf::Tile::h)
+		.def_readonly(
+			"pixelRange", &osgx::gltf::sdf::Tile::pixelRange,
+			"Total distance range in TEXELS (msdfgen -pxrange)."
+		)
+		.def_readonly(
+			"hasEmFrame", &osgx::gltf::sdf::Tile::hasEmFrame,
+			"True when the optional em-space frame (range/texelsPerEm/emOrigin) was declared."
+		)
+		.def_readonly("range", &osgx::gltf::sdf::Tile::range)
+		.def_readonly("texelsPerEm", &osgx::gltf::sdf::Tile::texelsPerEm)
+		.def_property_readonly("emOrigin", [](const osgx::gltf::sdf::Tile& tile) {
+			return py::make_tuple(tile.emOrigin.x(), tile.emOrigin.y());
+		})
+	;
+
+	py::class_<osgx::gltf::sdf::TileSet>(
+		m_gltf_sdf,
+		"TileSet",
+		"A loaded `osgx_sdf` `data[]` entry: one shared distance-field texture plus named tiles. "
+		"attribute(name) returns an osgx.SDF per tile, all sharing the texture."
+	)
+		.def(py::init<>(), "Constructs an empty, invalid TileSet.")
+		.def_static(
+			"load",
+			[](const std::string& manifestPath, std::size_t index) {
+				return osgx::gltf::sdf::TileSet::load(manifestPath, index);
+			},
+			"manifestPath"_a,
+			"index"_a=0,
+			"Loads the index-th `data[]` entry of the `osgx_sdf` extension in a standalone glTF-shaped "
+			"manifest; its image is resolved relative to that file. Returns an invalid TileSet (after "
+			"an OSG warning) on any failure."
+		)
+		.def("valid", &osgx::gltf::sdf::TileSet::valid, "True once a texture and at least one tile loaded.")
+		.def_property_readonly("sdfType", &osgx::gltf::sdf::TileSet::sdfType, "osgx.SDF.SDFType.SDF or SDFType.MSDF.")
+		.def_property_readonly(
+			"texture", &osgx::gltf::sdf::TileSet::texture,
+			"The shared osg.Texture2D (bilinear, no mipmaps, clamped)."
+		)
+		.def("names", &osgx::gltf::sdf::TileSet::names, "Tile names, sorted.")
+		.def("has", &osgx::gltf::sdf::TileSet::has, "name"_a)
+		.def(
+			"tile", &osgx::gltf::sdf::TileSet::tile, "name"_a,
+			"The tile as declared. Raises IndexError for an unknown name."
+		)
+		.def(
+			"uvRect",
+			[](const osgx::gltf::sdf::TileSet& set, const std::string& name) {
+				const osg::Vec4 uv = set.uvRect(name);
+
+				return py::make_tuple(uv.x(), uv.y(), uv.z(), uv.w());
+			},
+			"name"_a,
+			"The tile's rect in OSG texture space, (u0, v0, u1, v1) with V = 0 at the bottom - what "
+			"osgx.SDF.uvRect takes. Raises IndexError for an unknown name."
+		)
+		.def(
+			"attribute", &osgx::gltf::sdf::TileSet::attribute, "name"_a,
+			"A ready-to-attach osgx.SDF for one tile (shared texture, sdfType, pixelRange, uvRect); None "
+			"for an unknown name."
+		)
+	;
 
 	auto m_gltf_shader = m_gltf.def_submodule(
 		"shader",

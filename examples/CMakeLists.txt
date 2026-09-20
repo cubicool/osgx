@@ -32,6 +32,9 @@ endforeach()
 # target_link_libraries(osgx-picking PRIVATE OpenGL::GL)
 
 if(OSGX_BUILD_GLTF)
+	osgx_add_executable("osgx" "sdf")
+	target_link_libraries(osgx-sdf PRIVATE osgx::gltf)
+
 	osgx_add_executable("osgx" "turntable")
 	target_link_libraries(osgx-turntable PRIVATE osgx::gltf_pbribl)
 
@@ -48,7 +51,7 @@ if(OSGX_BUILD_GLTF)
 	target_link_libraries(osgx-gbuffer-edgewear PRIVATE osgx::gltf_pbribl)
 
 else()
-	message(STATUS "OSGX_BUILD_GLTF is OFF; skipping osgx-turntable and osgx-gbuffer")
+	message(STATUS "OSGX_BUILD_GLTF is OFF; skipping osgx-sdf, osgx-turntable and osgx-gbuffer")
 endif()
 
 # OSGX_WITH_IMGUI + the Dear ImGui detection (IMGUI_FOUND, etc.) come from the root
