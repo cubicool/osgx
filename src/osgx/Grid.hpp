@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Array.hpp"
 #include "Core.hpp"
 
 OSGX_DISABLE_WARNINGS
@@ -82,7 +83,7 @@ private:
 	void _initBuffer();
 	float* _data() const;
 
-	osg::ref_ptr<osg::FloatArray> _buffer;
+	osg::ref_ptr<osgx::FloatArray> _buffer;
 	osg::ref_ptr<osg::ShaderStorageBufferBinding> _binding;
 };
 

@@ -242,13 +242,6 @@ constexpr std::size_t GRID_SETTINGS_FLOATS = 20;
 float intBitsToFloat(int value) { return std::bit_cast<float>(value); }
 int floatBitsToInt(float value) { return std::bit_cast<int>(value); }
 
-void setVec4(float* data, std::size_t offset, const osg::Vec4& value) {
-	data[offset] = value.r();
-	data[offset + 1] = value.g();
-	data[offset + 2] = value.b();
-	data[offset + 3] = value.a();
-}
-
 osg::Vec4 getVec4(const float* data, std::size_t offset) {
 	return osg::Vec4(data[offset], data[offset + 1], data[offset + 2], data[offset + 3]);
 }
@@ -262,7 +255,7 @@ GridSettings::GridSettings() {
 
 GridSettings::GridSettings(const GridSettings& settings, const osg::CopyOp& copyop):
 osg::StateAttribute(settings, copyop),
-_buffer(static_cast<osg::FloatArray*>(copyop(settings._buffer.get()))) {
+_buffer(static_cast<osgx::FloatArray*>(copyop(settings._buffer.get()))) {
 	if(!_buffer) throw std::logic_error("GridSettings copy has no backing buffer");
 
 	_binding = new osg::ShaderStorageBufferBinding(
@@ -273,7 +266,7 @@ _buffer(static_cast<osg::FloatArray*>(copyop(settings._buffer.get()))) {
 GridSettings::~GridSettings() {}
 
 void GridSettings::_initBuffer() {
-	_buffer = new osg::FloatArray(static_cast<unsigned int>(GRID_SETTINGS_FLOATS));
+	_buffer = new osgx::FloatArray(static_cast<std::size_t>(GRID_SETTINGS_FLOATS));
 	std::fill(_buffer->begin(), _buffer->end(), 0.0f);
 	_buffer->setBufferObject(new osg::ShaderStorageBufferObject());
 	_binding = new osg::ShaderStorageBufferBinding(
@@ -310,10 +303,7 @@ void GridSettings::apply(osg::State& state) const {
 }
 
 void GridSettings::setCanvasSize(const osg::Vec2& value) {
-	auto* data = _data();
-
-	data[CANVAS_SIZE_OFFSET] = value.x();
-	data[CANVAS_SIZE_OFFSET + 1] = value.y();
+	_buffer->set({value.x(), value.y()}, CANVAS_SIZE_OFFSET);
 	_buffer->dirty();
 }
 
@@ -366,21 +356,21 @@ void GridSettings::setLineMode(LineMode value) {
 GridSettings::LineMode GridSettings::getLineMode() const { return static_cast<LineMode>(floatBitsToInt(_data()[LINE_MODE_OFFSET])); }
 
 void GridSettings::setColorBg(const osg::Vec4& value) {
-	setVec4(_data(), COLOR_BG_OFFSET, value);
+	_buffer->set({value.r(), value.g(), value.b(), value.a()}, COLOR_BG_OFFSET);
 	_buffer->dirty();
 }
 
 osg::Vec4 GridSettings::getColorBg() const { return getVec4(_data(), COLOR_BG_OFFSET); }
 
 void GridSettings::setColorLine(const osg::Vec4& value) {
-	setVec4(_data(), COLOR_LINE_OFFSET, value);
+	_buffer->set({value.r(), value.g(), value.b(), value.a()}, COLOR_LINE_OFFSET);
 	_buffer->dirty();
 }
 
 osg::Vec4 GridSettings::getColorLine() const { return getVec4(_data(), COLOR_LINE_OFFSET); }
 
 void GridSettings::setColorLineStrong(const osg::Vec4& value) {
-	setVec4(_data(), COLOR_LINE_STRONG_OFFSET, value);
+	_buffer->set({value.r(), value.g(), value.b(), value.a()}, COLOR_LINE_STRONG_OFFSET);
 	_buffer->dirty();
 }
 

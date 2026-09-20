@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Array.hpp"
 #include "Shader.hpp"
 #include "Core.hpp"
 
@@ -229,7 +230,7 @@ class Material: public osg::StateAttribute {
 		osg::ref_ptr<osg::Texture2D> _metallicRoughnessMap;
 		osg::ref_ptr<osg::Texture2D> _emissiveMap;
 
-		osg::ref_ptr<osg::FloatArray> _buffer;
+		osg::ref_ptr<osgx::FloatArray> _buffer;
 		osg::ref_ptr<osg::ShaderStorageBufferBinding> _binding;
 };
 
@@ -881,10 +882,13 @@ struct LightSet: public osg::StateAttribute {
 	// Backing store for every light's packed osgx_Light struct (MAX_LIGHTS * LIGHT_STRUCT_FLOATS
 	// floats, std430 layout - see LIGHT_UNIFORMS' struct comment), bound through _binding at
 	// LIGHT_BINDING. It stays private so it cannot be replaced independently of that binding.
-		osg::ref_ptr<osg::FloatArray> _lights;
+		osg::ref_ptr<osgx::FloatArray> _lights;
 		osg::ref_ptr<osg::ShaderStorageBufferBinding> _binding;
 		osg::ref_ptr<osg::Uniform> _lightCount;
 
+		// Validates the LightSet and `index`, then returns the float offset of that light's struct
+		// within _lights (the base every osgx_Light field offset is added to).
+		std::size_t lightOffset(std::size_t index) const;
 		float* lightFloats(std::size_t index, std::size_t offset) const;
 };
 

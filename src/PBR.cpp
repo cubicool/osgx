@@ -54,17 +54,16 @@ void Material::_initBuffer() {
 }
 
 void Material::_writeFactors() {
-	(*_buffer)[0] = _baseColor.r();
-	(*_buffer)[1] = _baseColor.g();
-	(*_buffer)[2] = _baseColor.b();
-	(*_buffer)[3] = _baseColor.a();
-	(*_buffer)[4] = _roughness;
-	(*_buffer)[5] = _metallic;
-	(*_buffer)[6] = _baseColorMap.valid() ? 1.0f : 0.0f;
-	(*_buffer)[7] = _metallicRoughnessMap.valid() ? 1.0f : 0.0f;
-	(*_buffer)[8] = _hasOcclusion ? 1.0f : 0.0f;
-	(*_buffer)[9] = _normalMap.valid() ? 1.0f : 0.0f;
 	// [10], [11]: trailing std430 padding, left at 0.
+	_buffer->set({
+		_baseColor.r(), _baseColor.g(), _baseColor.b(), _baseColor.a(),
+		_roughness,
+		_metallic,
+		_baseColorMap.valid() ? 1.0f : 0.0f,
+		_metallicRoughnessMap.valid() ? 1.0f : 0.0f,
+		_hasOcclusion ? 1.0f : 0.0f,
+		_normalMap.valid() ? 1.0f : 0.0f
+	});
 
 	_buffer->dirty();
 }
@@ -200,7 +199,7 @@ int floatBitsToInt(float value) { return std::bit_cast<int>(value); }
 }
 
 LightSet::LightSet() {
-	_lights = new osg::FloatArray(static_cast<unsigned int>(MAX_LIGHTS * LIGHT_STRUCT_FLOATS));
+	_lights = new osgx::FloatArray(static_cast<std::size_t>(MAX_LIGHTS * LIGHT_STRUCT_FLOATS));
 
 	std::fill(_lights->begin(), _lights->end(), 0.0f);
 	_lights->setBufferObject(new osg::ShaderStorageBufferObject());
@@ -214,7 +213,7 @@ LightSet::LightSet() {
 
 LightSet::LightSet(const LightSet& lights, const osg::CopyOp& copyop):
 osg::StateAttribute(lights, copyop),
-_lights(static_cast<osg::FloatArray*>(copyop(lights._lights.get()))),
+_lights(static_cast<osgx::FloatArray*>(copyop(lights._lights.get()))),
 _lightCount(static_cast<osg::Uniform*>(copyop(lights._lightCount.get()))) {
 	_binding = new osg::ShaderStorageBufferBinding(
 		LIGHT_BINDING, _lights, 0, static_cast<GLsizeiptr>(_lights->getTotalDataSize())
@@ -249,11 +248,15 @@ bool LightSet::valid() const {
 	return _lights.valid() && _binding.valid() && _lightCount.valid();
 }
 
-float* LightSet::lightFloats(std::size_t index, std::size_t offset) const {
+std::size_t LightSet::lightOffset(std::size_t index) const {
 	if(!valid()) throw std::logic_error("LightSet is invalid");
 	if(index >= static_cast<std::size_t>(MAX_LIGHTS)) throw std::out_of_range("LightSet index out of range");
 
-	return &(*_lights)[index * LIGHT_STRUCT_FLOATS + offset];
+	return index * LIGHT_STRUCT_FLOATS;
+}
+
+float* LightSet::lightFloats(std::size_t index, std::size_t offset) const {
+	return &(*_lights)[lightOffset(index) + offset];
 }
 
 void LightSet::setPoint(
@@ -263,22 +266,17 @@ void LightSet::setPoint(
 	float intensity,
 	float sourceRadius
 ) const {
-	auto* posIntensity = lightFloats(index, detail::POS_INTENSITY_OFFSET);
-	auto* colorFloats = lightFloats(index, detail::COLOR_OFFSET);
-	auto* typeFloats = lightFloats(index, detail::TYPE_OFFSET);
-	auto* radiusFloats = lightFloats(index, detail::SOURCE_RADIUS_OFFSET);
-	auto* enabledFloats = lightFloats(index, detail::ENABLED_OFFSET);
+	const auto base = lightOffset(index);
+	const float typeBits = detail::intBitsToFloat(static_cast<int>(LightType::Point));
 
-	posIntensity[0] = position.x();
-	posIntensity[1] = position.y();
-	posIntensity[2] = position.z();
-	posIntensity[3] = intensity;
-	colorFloats[0] = color.x();
-	colorFloats[1] = color.y();
-	colorFloats[2] = color.z();
-	typeFloats[0] = detail::intBitsToFloat(static_cast<int>(LightType::Point));
-	radiusFloats[0] = sourceRadius;
-	enabledFloats[0] = detail::intBitsToFloat(1);
+	_lights->set(
+		{position.x(), position.y(), position.z(), intensity},
+		base + detail::POS_INTENSITY_OFFSET
+	);
+	_lights->set({color.x(), color.y(), color.z()}, base + detail::COLOR_OFFSET);
+	_lights->set({typeBits}, base + detail::TYPE_OFFSET);
+	_lights->set({sourceRadius}, base + detail::SOURCE_RADIUS_OFFSET);
+	_lights->set({detail::intBitsToFloat(1)}, base + detail::ENABLED_OFFSET);
 
 	_lights->dirty();
 }
@@ -289,26 +287,15 @@ void LightSet::setDirectional(
 	const osg::Vec3& color,
 	float intensity
 ) const {
-	auto* posIntensity = lightFloats(index, detail::POS_INTENSITY_OFFSET);
-	auto* colorFloats = lightFloats(index, detail::COLOR_OFFSET);
-	auto* typeFloats = lightFloats(index, detail::TYPE_OFFSET);
-	auto* dirFloats = lightFloats(index, detail::DIR_OFFSET);
-	auto* radiusFloats = lightFloats(index, detail::SOURCE_RADIUS_OFFSET);
-	auto* enabledFloats = lightFloats(index, detail::ENABLED_OFFSET);
+	const auto base = lightOffset(index);
+	const float typeBits = detail::intBitsToFloat(static_cast<int>(LightType::Directional));
 
-	posIntensity[0] = 0.0f;
-	posIntensity[1] = 0.0f;
-	posIntensity[2] = 0.0f;
-	posIntensity[3] = intensity;
-	colorFloats[0] = color.x();
-	colorFloats[1] = color.y();
-	colorFloats[2] = color.z();
-	typeFloats[0] = detail::intBitsToFloat(static_cast<int>(LightType::Directional));
-	dirFloats[0] = direction.x();
-	dirFloats[1] = direction.y();
-	dirFloats[2] = direction.z();
-	radiusFloats[0] = 0.0f;
-	enabledFloats[0] = detail::intBitsToFloat(1);
+	_lights->set({0.0f, 0.0f, 0.0f, intensity}, base + detail::POS_INTENSITY_OFFSET);
+	_lights->set({color.x(), color.y(), color.z()}, base + detail::COLOR_OFFSET);
+	_lights->set({typeBits}, base + detail::TYPE_OFFSET);
+	_lights->set({direction.x(), direction.y(), direction.z()}, base + detail::DIR_OFFSET);
+	_lights->set({0.0f}, base + detail::SOURCE_RADIUS_OFFSET);
+	_lights->set({detail::intBitsToFloat(1)}, base + detail::ENABLED_OFFSET);
 
 	_lights->dirty();
 }
@@ -323,29 +310,22 @@ void LightSet::setSpot(
 	float outerConeAngle,
 	float sourceRadius
 ) const {
-	auto* posIntensity = lightFloats(index, detail::POS_INTENSITY_OFFSET);
-	auto* colorFloats = lightFloats(index, detail::COLOR_OFFSET);
-	auto* typeFloats = lightFloats(index, detail::TYPE_OFFSET);
-	auto* dirFloats = lightFloats(index, detail::DIR_OFFSET);
-	auto* radiusFloats = lightFloats(index, detail::SOURCE_RADIUS_OFFSET);
-	auto* spotFloats = lightFloats(index, detail::SPOT_ANGLES_OFFSET);
-	auto* enabledFloats = lightFloats(index, detail::ENABLED_OFFSET);
+	const auto base = lightOffset(index);
+	const float typeBits = detail::intBitsToFloat(static_cast<int>(LightType::Spot));
 
-	posIntensity[0] = position.x();
-	posIntensity[1] = position.y();
-	posIntensity[2] = position.z();
-	posIntensity[3] = intensity;
-	colorFloats[0] = color.x();
-	colorFloats[1] = color.y();
-	colorFloats[2] = color.z();
-	typeFloats[0] = detail::intBitsToFloat(static_cast<int>(LightType::Spot));
-	dirFloats[0] = direction.x();
-	dirFloats[1] = direction.y();
-	dirFloats[2] = direction.z();
-	radiusFloats[0] = sourceRadius;
-	spotFloats[0] = std::cos(innerConeAngle);
-	spotFloats[1] = std::cos(outerConeAngle);
-	enabledFloats[0] = detail::intBitsToFloat(1);
+	_lights->set(
+		{position.x(), position.y(), position.z(), intensity},
+		base + detail::POS_INTENSITY_OFFSET
+	);
+	_lights->set({color.x(), color.y(), color.z()}, base + detail::COLOR_OFFSET);
+	_lights->set({typeBits}, base + detail::TYPE_OFFSET);
+	_lights->set({direction.x(), direction.y(), direction.z()}, base + detail::DIR_OFFSET);
+	_lights->set({sourceRadius}, base + detail::SOURCE_RADIUS_OFFSET);
+	_lights->set(
+		{std::cos(innerConeAngle), std::cos(outerConeAngle)},
+		base + detail::SPOT_ANGLES_OFFSET
+	);
+	_lights->set({detail::intBitsToFloat(1)}, base + detail::ENABLED_OFFSET);
 
 	_lights->dirty();
 }
@@ -368,20 +348,19 @@ void LightSet::setCount(std::size_t count) const {
 }
 
 void LightSet::setEnabled(std::size_t index, bool enabled) const {
-	auto* f = lightFloats(index, detail::ENABLED_OFFSET);
-
-	f[0] = detail::intBitsToFloat(enabled ? 1 : 0);
+	_lights->set(
+		{detail::intBitsToFloat(enabled ? 1 : 0)},
+		lightOffset(index) + detail::ENABLED_OFFSET
+	);
 
 	_lights->dirty();
 }
 
 void LightSet::setPosition(std::size_t index, const osg::Vec3& position, float intensity) const {
-	auto* posIntensity = lightFloats(index, detail::POS_INTENSITY_OFFSET);
-
-	posIntensity[0] = position.x();
-	posIntensity[1] = position.y();
-	posIntensity[2] = position.z();
-	posIntensity[3] = intensity;
+	_lights->set(
+		{position.x(), position.y(), position.z(), intensity},
+		lightOffset(index) + detail::POS_INTENSITY_OFFSET
+	);
 
 	_lights->dirty();
 }

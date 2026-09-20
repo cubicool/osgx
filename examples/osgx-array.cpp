@@ -17,6 +17,7 @@ OSGX_ENABLE_WARNINGS
 #include <cassert>
 #include <filesystem>
 #include <iostream>
+#include <stdexcept>
 #include <string_view>
 #include <type_traits>
 
@@ -76,6 +77,34 @@ int main(int argc, char** argv) {
 	assert(nav2_3->size() == 3);
 	assert((*nav2_3)[2] == osg::Vec2(55_v, 66_v));
 
+	// set(): in-place overwrite at an offset - no resize, and elements outside the written span are
+	// left alone.
+	av3_3.set({{-1_v, -2_v, -3_v}, {-4_v, -5_v, -6_v}}, 1);
+
+	assert(av3_3.size() == 5);
+	assert(av3_3[0] == osg::Vec3(1_v, 2_v, 3_v));
+	assert(av3_3[1] == osg::Vec3(-1_v, -2_v, -3_v));
+	assert(av3_3[2] == osg::Vec3(-4_v, -5_v, -6_v));
+	assert(av3_3[3] == osg::Vec3(1000_v, 2000_v, 3000_v));
+
+	// A span that would run past the end throws, and a rejected set() writes nothing.
+	bool setThrew = false;
+
+	try {
+		nav2_3->set({{0_v, 0_v}, {1_v, 1_v}}, 2); // needs 4 elements, has 3
+	}
+
+	catch(const std::out_of_range&) {
+		setThrew = true;
+	}
+
+	bool setWorks = check(setThrew, "set() throws std::out_of_range when the span does not fit");
+
+	setWorks &= check(
+		nav2_3->size() == 3 && (*nav2_3)[2] == osg::Vec2(55_v, 66_v),
+		"a rejected set() leaves the array untouched"
+	);
+
 	// Interchangeability checks: osgx::Array should be usable anywhere its native OSG base is used,
 	// including OSG's runtime type system, cloning, and serialization.
 	static_assert(std::derived_from<osgx::Vec3Array, osg::Vec3Array>);
@@ -101,6 +130,28 @@ int main(int argc, char** argv) {
 	interchangeable &= check(
 		clonedArray && clonedArray->size() == nav3_2->size() && (*clonedArray)[2] == (*nav3_2)[2],
 		"preserves values through a deep clone"
+	);
+
+	// A clone (deep or via a CopyOp) is still an osgx::Array, so old code that static_casts
+	// `copyop(array)` back to the wrapper type is safe - and cloneType() agrees.
+	interchangeable &= check(
+		dynamic_cast<osgx::Vec3Array*>(clone.get()) != nullptr,
+		"a deep clone is still an osgx::Vec3Array"
+	);
+
+	osg::ref_ptr<osg::Object> clonedType = nav3_2->cloneType();
+
+	interchangeable &= check(
+		dynamic_cast<osgx::Vec3Array*>(clonedType.get()) != nullptr &&
+		std::string_view(clonedType->className()) == native->className(),
+		"cloneType() is an osgx::Vec3Array with the native class name"
+	);
+
+	osg::CopyOp shallowCopy(osg::CopyOp::SHALLOW_COPY);
+
+	interchangeable &= check(
+		shallowCopy(static_cast<const osg::Vec3Array*>(nav3_2.get())) == nav3_2.get(),
+		"a shallow CopyOp still shares the same array"
 	);
 
 	auto geometry = osgx::make_ref<osg::Geometry>();
@@ -168,5 +219,5 @@ int main(int argc, char** argv) {
 	std::filesystem::remove(path, ec);
 	std::filesystem::remove(nativePath, ec);
 
-	return interchangeable ? 0 : 1;
+	return interchangeable && setWorks ? 0 : 1;
 }

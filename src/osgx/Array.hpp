@@ -9,9 +9,11 @@ OSGX_DISABLE_WARNINGS
 
 OSGX_ENABLE_WARNINGS
 
+#include <algorithm>
 #include <initializer_list>
 #include <ranges>
 #include <span>
+#include <stdexcept>
 
 // Every osg::XxxArray typedef (IntArray, Vec3Array, FloatArray, ...) derives, via
 // osg::TemplateArray/TemplateIndexArray, from an osg::MixinVector<T> specialization. Unlike
@@ -150,8 +152,14 @@ public:
 		(( (*this)[i++] = ElementDataType(std::forward<Args>(args)) ), ...);
 	}
 
-	// osg::Object* cloneType() const override { return new Array(); }
-	// osg::Object* clone(const osg::CopyOp&) const override { return new Array(*this); }
+	// Clones stay osgx::Array (not the plain osg::XxxArray base): old OSG-style code that copies an
+	// array through a CopyOp and then static_casts the result back to this type - e.g.
+	// `static_cast<osgx::FloatArray*>(copyop(other._array.get()))` in a copy constructor - would
+	// otherwise be undefined behavior on a deep copy. Identity is unchanged: className()/
+	// libraryName() are still the native ones, so a clone is still an osg::XxxArray everywhere OSG
+	// looks (serialization, isSameKindAs, dynamic_cast to the base).
+	osg::Object* cloneType() const override { return new Array(); }
+	osg::Object* clone(const osg::CopyOp& copyop) const override { return new Array(*this, copyop); }
 
 	template<std::ranges::input_range R>
 	void append_range(R&& r) {
@@ -191,6 +199,18 @@ public:
 		append_range(std::views::iota(0_sz, n) | std::views::transform([&](auto) {
 			return value;
 		}));
+	}
+
+	// Overwrites values.size() elements IN PLACE, starting at `offset` - no resize, and throws
+	// std::out_of_range if they would not fit. For fixed-layout buffers (an SSBO/UBO mirror written
+	// field by field), where assign()/append_range() would change the size and `(*arr)[i] = ...` per
+	// field is just noise. Call dirty() afterward as usual.
+	void set(std::initializer_list<ElementDataType> values, std::size_t offset=0) {
+		if(offset + values.size() > size()) throw std::out_of_range("osgx::Array::set: range exceeds size");
+
+		std::ranges::copy(values, begin() + static_cast<
+			typename std::iterator_traits<decltype(begin())>::difference_type
+		>(offset));
 	}
 
 	// --- Full-span access ----------------------------------------------------
