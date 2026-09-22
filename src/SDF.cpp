@@ -152,6 +152,16 @@ float osgx_SDF_CoverageFromDistance(float d, float screenPixelRange) {
 }
 )GLSL";
 
+// Declaration-only twin of SDF_SAMPLING_SRC, for a second shader object in the SAME Program that
+// needs to CALL these but must not re-define them (GLSL rejects one function defined twice across a
+// Program's shader objects). Same idea as PBR's *_DECL entries; exactly one object pulls in
+// SAMPLING, every other one pulls in SAMPLING_DECL.
+constexpr const char* SDF_SAMPLING_DECL_SRC = R"GLSL(
+float osgx_SDF_Median(vec3 msd);
+float osgx_SDF_ScreenPixelRange(vec2 uv, vec2 texSize, float pixelRange);
+float osgx_SDF_CoverageFromDistance(float d, float screenPixelRange);
+)GLSL";
+
 // Must match SDF::_write()'s layout: 8 floats, std430 (vec4 + 4 scalars, no implicit padding).
 // `sdfType` is a float (0 = SDF, 1 = MSDF) purely to keep the backing store a single FloatArray, the
 // same trick Material's has*Map flags use.
@@ -182,6 +192,7 @@ void registerSDFShaderLibs() {
 	static constexpr ShaderLib libs[] = {
 		{"SHAPES", "osgx_SDF_Circle", SDF_SHAPES_SRC},
 		{"SAMPLING", "osgx_SDF_Median", SDF_SAMPLING_SRC},
+		{"SAMPLING_DECL", "osgx_SDF_MedianDecl", SDF_SAMPLING_DECL_SRC},
 		{"TEXTURE", "osgx_SDF_Coverage", SDF_TEXTURE_SRC}
 	};
 

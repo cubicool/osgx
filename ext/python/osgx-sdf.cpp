@@ -12,7 +12,8 @@ void bind_sdf(py::module_& m) {
 		&osgx::registerSDFShaderLibs,
 		"Registers the '#pragma osgx::sdf' shader-library entries: SHAPES (nine closed-form 2D "
 		"signed-distance functions, negative = inside), SAMPLING (osgx_SDF_Median/"
-		"ScreenPixelRange/CoverageFromDistance for baked fields), and TEXTURE (the SDF "
+		"ScreenPixelRange/CoverageFromDistance for baked fields), SAMPLING_DECL (the same "
+		"signatures, declarations only, for a second shader object in one Program), and TEXTURE (the SDF "
 		"attribute's own inputs + osgx_SDF_Coverage(uv); list it AFTER SAMPLING). See SDF.hpp's "
 		"own doc comment for full per-function signatures."
 	);

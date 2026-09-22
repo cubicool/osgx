@@ -67,7 +67,7 @@ namespace osg {
 namespace osgx {
 
 // GLSL `#pragma osgx::sdf` catalog registration - see registerShaderLibs()/resolveShaderLibs() in
-// Shader.hpp. Publishes three entries:
+// Shader.hpp. Publishes four entries:
 //
 //   SHAPES   - the nine closed-form functions listed above.
 //   SAMPLING - pure, texture-agnostic reconstruction helpers for BAKED distance fields (SDF or
@@ -82,6 +82,11 @@ namespace osgx {
 //                float osgx_SDF_CoverageFromDistance(float d, float screenPixelRange) - `d` is the
 //                    raw texture value (0.5 = edge, > 0.5 = inside); returns antialiased [0, 1]
 //                    coverage.
+//   SAMPLING_DECL - the same three function signatures as SAMPLING, declarations only. GLSL rejects
+//              one function defined twice across the shader objects of one Program, so exactly ONE
+//              object pulls in SAMPLING (or TEXTURE's dependency on it) and any other object in the
+//              same Program that merely CALLS these lists SAMPLING_DECL instead - the same pattern
+//              as PBR's *_DECL entries.
 //   TEXTURE  - declares the SDF StateAttribute's own inputs (sampler + std430 block, see the class
 //              below) and float osgx_SDF_Coverage(vec2 uv), the whole "sample + reconstruct +
 //              antialias" pipeline in one call; `uv` is tile-local [0, 1] (mapped through
