@@ -164,9 +164,28 @@ int main(int argc, char** argv) {
 		std::string_view(elements->className()) == nativeElements->className(),
 		"DrawElements reports the native OSG identity"
 	);
+	osg::ref_ptr<osg::Object> clonedElements = elements->clone(osg::CopyOp::DEEP_COPY_ALL);
+
 	interchangeable &= check(
-		dynamic_cast<osg::DrawElementsUShort*>(elements->clone(osg::CopyOp::DEEP_COPY_ALL)) != nullptr,
+		dynamic_cast<osg::DrawElementsUShort*>(clonedElements.get()) != nullptr,
 		"DrawElements clones as a native-compatible object"
+	);
+
+	// Same guarantee as the Array clones above: the clone is still an osgx::DrawElements, so
+	// static_casting `copyop(elements)` back to the wrapper type is safe - and cloneType() agrees.
+	auto* clonedWrapper = dynamic_cast<osgx::DrawElementsUShort*>(clonedElements.get());
+
+	interchangeable &= check(
+		clonedWrapper != nullptr && clonedWrapper != elements.get() &&
+		clonedWrapper->size() == elements->size() && (*clonedWrapper)[2] == (*elements)[2],
+		"a deep clone is still an osgx::DrawElementsUShort with the same indices"
+	);
+
+	osg::ref_ptr<osg::Object> clonedElementsType = elements->cloneType();
+
+	interchangeable &= check(
+		dynamic_cast<osgx::DrawElementsUShort*>(clonedElementsType.get()) != nullptr,
+		"DrawElements::cloneType() is an osgx::DrawElementsUShort"
 	);
 
 	geometry->addPrimitiveSet(elements.get());

@@ -299,6 +299,11 @@ public:
 	DrawElements(const DrawElements& rhs, const osg::CopyOp& co=osg::CopyOp::SHALLOW_COPY):
 	BaseElements(rhs, co) {}
 
+	// Clones stay osgx::DrawElements for the same reason osgx::Array's do (see the comment there):
+	// a static_cast of `copyop(elements)` back to the wrapper would otherwise be UB on a deep copy.
+	osg::Object* cloneType() const override { return new DrawElements(); }
+	osg::Object* clone(const osg::CopyOp& copyop) const override { return new DrawElements(*this, copyop); }
+
 	DrawElements(GLenum mode, std::initializer_list<value_type> init):
 	BaseElements(mode) {
 		assign(init.begin(), init.end());
