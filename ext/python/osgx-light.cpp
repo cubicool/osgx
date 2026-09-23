@@ -20,6 +20,7 @@ void bind_light(py::module_& m) {
 	m.attr("DIRECT_LIGHT") = osgx::DIRECT_LIGHT;
 	m.attr("DIRECTIONAL_LIGHT_RADIANCE") = osgx::DIRECTIONAL_LIGHT_RADIANCE;
 	m.attr("SPOT_LIGHT_RADIANCE") = osgx::SPOT_LIGHT_RADIANCE;
+	m.attr("LIGHT_SAMPLE") = osgx::LIGHT_SAMPLE;
 	m.attr("SPHERE_LIGHT_SPECULAR") = osgx::SPHERE_LIGHT_SPECULAR;
 	m.attr("DIRECT_LIGHT_SPHERE") = osgx::DIRECT_LIGHT_SPHERE;
 	m.attr("MAX_LIGHTS") = osgx::MAX_LIGHTS;

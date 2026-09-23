@@ -137,6 +137,185 @@ inline constexpr int NORMAL_TEXTURE_UNIT = 1;
 inline constexpr int ORM_TEXTURE_UNIT = 2;
 inline constexpr int EMISSIVE_TEXTURE_UNIT = 3;
 
+// GLSL read side of osgx::Material (below): the factor buffer it builds plus its four texture maps.
+// Every material value lives in ONE std430 SSBO - no loose per-material uniforms - and the four
+// samplers carry their own `layout(binding = N)` texture unit, so nothing on the C++ side has to set
+// sampler uniforms either (GLSL forbids layout(binding) on struct members, which is why these are
+// four plain samplers rather than a struct). Every hardcoded number here must match its C++
+// constant above (MATERIAL_BINDING, *_TEXTURE_UNIT) - same hardcode-and-cross-reference pattern
+// LIGHT_UNIFORMS (Light.hpp) uses for its own binding. The glTF loader produces osgx::Material
+// too, so this is the one material interface for both hand-built and glTF-loaded geometry.
+//
+// Packed layout (std430; 16 floats / 64 bytes - must match Material::_writeFactors() in PBR.cpp):
+//   vec4  baseColorFactor           floats  0-3
+//   vec3  emissiveFactor                    4-6
+//   float roughnessFactor                   7
+//   float metallicFactor                    8
+//   float alphaMode                         9   (OSGX_ALPHA_MODE_* below)
+//   float alphaCutoff                      10
+//   float hasBaseColorMap                  11
+//   float hasMetallicRoughnessMap          12
+//   float hasOcclusion                     13
+//   float hasNormalMap                     14
+//   float hasEmissiveMap                   15
+inline constexpr const char* MATERIAL_INPUTS = R"GLSL(
+#define OSGX_ALPHA_MODE_OPAQUE 0.0
+#define OSGX_ALPHA_MODE_MASK 1.0
+#define OSGX_ALPHA_MODE_BLEND 2.0
+
+layout(std430, binding = 0) readonly buffer osgx_MaterialInputs {
+	vec4 baseColorFactor;
+	vec3 emissiveFactor;
+	float roughnessFactor;
+	float metallicFactor;
+	float alphaMode;
+	float alphaCutoff;
+	float hasBaseColorMap;
+	float hasMetallicRoughnessMap;
+	float hasOcclusion;
+	float hasNormalMap;
+	float hasEmissiveMap;
+} osgx_materialInputs;
+
+layout(binding = 0) uniform sampler2D osgx_baseColorMap;
+layout(binding = 1) uniform sampler2D osgx_normalMap;
+layout(binding = 2) uniform sampler2D osgx_ormMap;
+layout(binding = 3) uniform sampler2D osgx_emissiveMap;
+)GLSL";
+
+// Reads MATERIAL_INPUTS into an osgx_Material (MATERIAL_STRUCT). Requires MATERIAL_INPUTS and
+// MATERIAL_STRUCT already in scope.
+//
+// Every texture read here is conditioned on the matching `has*Map` flag rather than sampled
+// unconditionally: a factor-only material (no baseColorTexture/metallicRoughnessTexture/
+// occlusionTexture - common in the glTF-Sample-Models conformance set, e.g. Fox ships
+// roughnessFactor=0.58 with no texture at all) would otherwise read an unbound texture unit as
+// black/zero and silently discard the authored factor instead of falling back to it.
+inline constexpr const char* GET_MATERIAL = R"GLSL(
+osgx_Material osgx_GetMaterial(vec2 baseColorUV, vec2 ormUV) {
+	osgx_Material mat;
+
+	// Base color is texture * factor (glTF), matching GET_ALPHA below; the loader does not
+	// pre-multiply the factor into the texture.
+	mat.albedo = osgx_materialInputs.baseColorFactor.rgb;
+
+	if(bool(osgx_materialInputs.hasBaseColorMap))
+		mat.albedo *= texture(osgx_baseColorMap, baseColorUV).rgb;
+	mat.ao = bool(osgx_materialInputs.hasOcclusion) ? texture(osgx_ormMap, ormUV).r : 1.0;
+	mat.roughness = bool(osgx_materialInputs.hasMetallicRoughnessMap)
+		? texture(osgx_ormMap, ormUV).g * osgx_materialInputs.roughnessFactor
+		: osgx_materialInputs.roughnessFactor
+	;
+	mat.metallic = bool(osgx_materialInputs.hasMetallicRoughnessMap)
+		? texture(osgx_ormMap, ormUV).b * osgx_materialInputs.metallicFactor
+		: osgx_materialInputs.metallicFactor
+	;
+
+	mat.F0 = mix(vec3(0.04), mat.albedo, mat.metallic);
+
+	return mat;
+}
+)GLSL";
+
+// Emissive radiance from MATERIAL_INPUTS: the emissive map (when present) times emissiveFactor. With
+// no map this is just emissiveFactor, which osgx::Material defaults to black. Requires
+// MATERIAL_INPUTS already in scope.
+inline constexpr const char* GET_EMISSIVE = R"GLSL(
+vec3 osgx_GetEmissive(vec2 emissiveUV) {
+	vec3 emissive = bool(osgx_materialInputs.hasEmissiveMap)
+		? texture(osgx_emissiveMap, emissiveUV).rgb
+		: vec3(1.0)
+	;
+
+	return emissive * osgx_materialInputs.emissiveFactor;
+}
+)GLSL";
+
+// Surface alpha from MATERIAL_INPUTS: the base color map's alpha (when present) times
+// baseColorFactor.a. Returned as a plain value, not baked into a discard, since BLEND callers want
+// the alpha itself; a MASK caller does its own
+// `if(osgx_materialInputs.alphaMode == OSGX_ALPHA_MODE_MASK && alpha < osgx_materialInputs.alphaCutoff) discard;`.
+// Requires MATERIAL_INPUTS already in scope.
+inline constexpr const char* GET_ALPHA = R"GLSL(
+float osgx_GetAlpha(vec2 baseColorUV) {
+	float alpha = bool(osgx_materialInputs.hasBaseColorMap)
+		? texture(osgx_baseColorMap, baseColorUV).a
+		: 1.0
+	;
+
+	return alpha * osgx_materialInputs.baseColorFactor.a;
+}
+)GLSL";
+
+// Shading normal from MATERIAL_INPUTS' normal map: TBN reconstructed per-pixel from screen-space
+// derivatives of position/UV (Christian Schuler's "normal mapping without precomputed tangents" -
+// http://www.thetenthplanet.de/archives/1180) when the mesh's own tangent is degenerate/absent,
+// falling back to the vertex tangent otherwise. glTF's TANGENT accessor is optional and frequently
+// absent (DamagedHelmet, MetalRoughSpheres, Fox in glTF-Sample-Models all ship without one); an
+// unbound osg_Tangent attribute reads OpenGL's default (0,0,0,1), and normalizing that zero vector
+// produces NaN, so the degenerate check here isn't optional. Returns normalize(Ngeom) unchanged
+// when the material has no normal map. FRAGMENT-ONLY (dFdx/dFdy). Requires MATERIAL_INPUTS
+// already in scope.
+inline constexpr const char* GET_SHADING_NORMAL = R"GLSL(
+vec3 osgx_GetShadingNormal(vec3 Ngeom, vec4 tangent, vec3 position, vec2 normalUV) {
+	vec3 Nb = normalize(Ngeom);
+
+	if(!bool(osgx_materialInputs.hasNormalMap)) return Nb;
+
+	// The Khronos reference normalizes in tangent space before applying TBN. Keeping that
+	// normalization here matters when interpolation leaves TBN slightly non-orthonormal.
+	vec3 tangentNormal = normalize(texture(osgx_normalMap, normalUV).rgb * 2.0 - 1.0);
+	vec3 T, B;
+
+	// TODO: How much is this conditional hurting us? It might be worth looking into having two
+	// separate functions instead...
+	if(dot(tangent.xyz, tangent.xyz) > 1e-10) {
+		T = normalize(tangent.xyz);
+		B = normalize(cross(Nb, T)) * tangent.w;
+	}
+
+	else {
+		vec3 q1 = dFdx(position);
+		vec3 q2 = dFdy(position);
+		vec2 st1 = dFdx(normalUV);
+		vec2 st2 = dFdy(normalUV);
+
+		// Derive both tangent axes from position and UV derivatives.  The
+		// determinant carries the UV handedness: constructing B from a fixed
+		// +/-cross(N, T) works on only one side of a mirrored UV layout.
+		float determinant = st1.s * st2.t - st1.t * st2.s;
+
+		if(abs(determinant) <= 1e-10) return Nb;
+
+		float inverseDeterminant = 1.0 / determinant;
+		T = (q1 * st2.t - q2 * st1.t) * inverseDeterminant;
+		B = (q2 * st1.s - q1 * st2.s) * inverseDeterminant;
+
+		// Projection keeps the reconstructed basis orthogonal to an interpolated
+		// vertex normal, and the final Gram-Schmidt step preserves B's derived
+		// handedness rather than imposing one.
+		T -= Nb * dot(Nb, T);
+		B -= Nb * dot(Nb, B);
+
+		if(dot(T, T) <= 1e-10 || dot(B, B) <= 1e-10) return Nb;
+
+		T = normalize(T);
+		B -= T * dot(T, B);
+
+		if(dot(B, B) <= 1e-10) return Nb;
+
+		// NormalTangentTest verifies the glTF normal-map convention for this
+		// runtime-derived basis. Its bitangent is opposite the derivative-space
+		// orientation above; invert only this no-authored-tangent fallback.
+		B = -normalize(B);
+	}
+
+	mat3 TBN = mat3(T, B, Nb);
+
+	return normalize(TBN * tangentNormal);
+}
+)GLSL";
+
 // Custom osg::StateAttribute wrapping a PBR material's scalar factors and up to four texture maps
 // into ONE state-graph object: `stateSet.setAttributeAndModes(new osgx::Material(...))` replaces
 // the old attachMaterialFactors() free function plus however many manual
@@ -147,7 +326,7 @@ inline constexpr int EMISSIVE_TEXTURE_UNIT = 3;
 // (a StateAttribute wrapping glMaterial state) more than on osgEarth::PBRTexture (a StateAttribute
 // wrapping just texture refs, paired with a separate plain PBRMaterial value struct) - osgx::
 // Material owns BOTH the scalar factors and the maps together, since MATERIAL_INPUTS/GET_MATERIAL
-// (Shader.hpp/PBRIBL.cpp) already treat them as one interface.
+// (above) already treat them as one interface.
 //
 // has*Map (the flags GET_MATERIAL gates every texture read behind) are no longer separate bools a
 // caller can drift out of sync with reality - they're derived directly from whether the
@@ -179,6 +358,15 @@ class Material: public osg::StateAttribute {
 	public:
 		static constexpr Type MATERIAL_TYPE = CAPABILITY;
 
+		// Matches MATERIAL_INPUTS' OSGX_ALPHA_MODE_* defines (and glTF's alphaMode). Only the
+		// shader-visible value lives here - render state a mode implies (BLEND's GL_BLEND/
+		// BlendFunc/depth-write setup) is the caller's job.
+		enum class AlphaMode: int {
+			Opaque = 0,
+			Mask = 1,
+			Blend = 2
+		};
+
 		Material();
 		Material(const Material& material, const osg::CopyOp& copyop = osg::CopyOp::SHALLOW_COPY);
 
@@ -195,6 +383,17 @@ class Material: public osg::StateAttribute {
 
 		void setMetallic(float metallic);
 		float getMetallic() const { return _metallic; }
+
+		// Multiplies the emissive map (or stands alone without one); defaults to black.
+		void setEmissiveFactor(const osg::Vec3& emissiveFactor);
+		const osg::Vec3& getEmissiveFactor() const { return _emissiveFactor; }
+
+		void setAlphaMode(AlphaMode alphaMode);
+		AlphaMode getAlphaMode() const { return _alphaMode; }
+
+		// Only meaningful for AlphaMode::Mask; defaults to 0.5 (glTF's default).
+		void setAlphaCutoff(float alphaCutoff);
+		float getAlphaCutoff() const { return _alphaCutoff; }
 
 		// See the class comment - occlusion has no dedicated unit of its own, so unlike the four
 		// map setters below, this doesn't derive from a ref_ptr.
@@ -224,6 +423,9 @@ class Material: public osg::StateAttribute {
 		osg::Vec4 _baseColor{1.0f, 1.0f, 1.0f, 1.0f};
 		float _roughness = 1.0f;
 		float _metallic = 1.0f;
+		osg::Vec3 _emissiveFactor{0.0f, 0.0f, 0.0f};
+		AlphaMode _alphaMode = AlphaMode::Opaque;
+		float _alphaCutoff = 0.5f;
 		bool _hasOcclusion = false;
 
 		osg::ref_ptr<osg::Texture2D> _baseColorMap;

@@ -35,13 +35,6 @@ struct tg3json_value;
 
 namespace osgx::gltf::pbribl {
 
-// GLSL helpers that interpret the exact material interface declared by Shader.hpp. These are
-// glTF-specific adapters over the renderer-independent snippets provided by osgx::pbr.
-extern const char GET_MATERIAL[];
-extern const char SHADING_NORMAL[];
-extern const char EMISSIVE[];
-extern const char ALPHA_COVERAGE[];
-
 // Registers the osgx::gltf shader catalog used by `#pragma osgx::gltf ...`. Registration is
 // idempotent.
 void registerShaderLibs();

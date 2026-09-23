@@ -839,16 +839,6 @@ void bind_gltf(py::module_& m_gltf) {
 	m_gltf_shader.attr("NORMAL_TEXTURE_UNIT") = osgx::gltf::shader::NORMAL_TEXTURE_UNIT;
 	m_gltf_shader.attr("ORM_TEXTURE_UNIT") = osgx::gltf::shader::ORM_TEXTURE_UNIT;
 	m_gltf_shader.attr("EMISSIVE_TEXTURE_UNIT") = osgx::gltf::shader::EMISSIVE_TEXTURE_UNIT;
-	m_gltf_shader.attr("BASE_COLOR_SAMPLER") = py::str(osgx::gltf::shader::BASE_COLOR_SAMPLER);
-	m_gltf_shader.attr("NORMAL_SAMPLER") = py::str(osgx::gltf::shader::NORMAL_SAMPLER);
-	m_gltf_shader.attr("ORM_SAMPLER") = py::str(osgx::gltf::shader::ORM_SAMPLER);
-	m_gltf_shader.attr("EMISSIVE_SAMPLER") = py::str(osgx::gltf::shader::EMISSIVE_SAMPLER);
-	m_gltf_shader.attr("ALPHA_MODE_UNIFORM") = py::str(osgx::gltf::shader::ALPHA_MODE_UNIFORM);
-	m_gltf_shader.attr("ALPHA_CUTOFF_UNIFORM") = py::str(osgx::gltf::shader::ALPHA_CUTOFF_UNIFORM);
-	m_gltf_shader.attr("ALPHA_MODE_OPAQUE") = osgx::gltf::shader::ALPHA_MODE_OPAQUE;
-	m_gltf_shader.attr("ALPHA_MODE_MASK") = osgx::gltf::shader::ALPHA_MODE_MASK;
-	m_gltf_shader.attr("ALPHA_MODE_BLEND") = osgx::gltf::shader::ALPHA_MODE_BLEND;
-	m_gltf_shader.attr("MATERIAL_INPUTS") = py::str(osgx::gltf::shader::MATERIAL_INPUTS);
 	m_gltf_shader.attr("SKINNING_HOOK_IDENTITY") =
 		py::str(osgx::gltf::shader::SKINNING_HOOK_IDENTITY);
 	m_gltf_shader.attr("SKINNING_HOOK_LINEAR_BLEND") =
@@ -860,11 +850,6 @@ void bind_gltf(py::module_& m_gltf) {
 			"Binds the tangent/skinning generic vertex attribute locations (TANGENT_ATTRIBUTE, "
 			"JOINT_INDICES_ATTRIBUTE, JOINT_WEIGHTS_ATTRIBUTE) on `program`."
 		)
-		.def(
-			"configureStateSet", &osgx::gltf::shader::configureStateSet, "stateSet"_a,
-			"Binds the four material sampler uniforms (base color/normal/ORM/emissive) on "
-			"`stateSet` to their fixed texture units."
-		)
 	;
 
 	auto m_gltf_pbribl = m_gltf.def_submodule(
@@ -872,15 +857,11 @@ void bind_gltf(py::module_& m_gltf) {
 		"Optional osgx::gltf rendering using the generic osgx PBR and IBL facilities"
 	);
 
-	m_gltf_pbribl.attr("GET_MATERIAL") = py::str(osgx::gltf::pbribl::GET_MATERIAL);
-	m_gltf_pbribl.attr("SHADING_NORMAL") = py::str(osgx::gltf::pbribl::SHADING_NORMAL);
-	m_gltf_pbribl.attr("EMISSIVE") = py::str(osgx::gltf::pbribl::EMISSIVE);
-	m_gltf_pbribl.attr("ALPHA_COVERAGE") = py::str(osgx::gltf::pbribl::ALPHA_COVERAGE);
 	m_gltf_pbribl.def(
 		"registerShaderLibs", &osgx::gltf::pbribl::registerShaderLibs,
-		"Registers the pbribl-specific `#pragma osgx::gltf ...` GLSL catalogs (GET_MATERIAL, "
-		"SHADING_NORMAL, EMISSIVE, ALPHA_COVERAGE, DEFERRED_LIGHTING_INPUTS, GET_GBUFFER) so "
-		"resolveShaderLibs() can expand them. Idempotent; called automatically on module import."
+		"Registers the pbribl-specific `#pragma osgx::gltf ...` GLSL catalog "
+		"(DEFERRED_LIGHTING_INPUTS, GET_GBUFFER) so resolveShaderLibs() can expand it. "
+		"Idempotent; called automatically on module import."
 	);
 	m_gltf_pbribl.def("resolveShaderLibs", [](const std::string& source) {
 		return osgx::gltf::pbribl::resolveShaderLibs(source);

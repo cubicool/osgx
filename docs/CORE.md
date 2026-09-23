@@ -290,7 +290,13 @@ key only, unrelated to the C++ namespace; see [Namespaces](#namespaces) below).
   snippets, concatenated into a consuming fragment shader via `registerPBRShaderLibs()`/
   `resolveShaderLibs()`, not full shaders of their own.
 - `Material` — a `StateAttribute` carrying PBR material factors (base color/roughness/metallic/
-  occlusion) and up to four texture maps, applied via a `std430` shader storage buffer.
+  occlusion/emissive factor/alpha mode + cutoff) and up to four texture maps, applied via ONE
+  `std430` shader storage buffer - no per-material uniforms, and no sampler uniforms to set.
+- Material read side — `MATERIAL_INPUTS` (the `osgx_materialInputs` buffer plus four samplers
+  that declare their own units via `layout(binding)`), `GET_MATERIAL` (`osgx_GetMaterial(bcUV,
+  ormUV)` → `osgx_Material`), `GET_SHADING_NORMAL` (normal map + derivative-TBN fallback,
+  fragment-only), `GET_EMISSIVE`, and `GET_ALPHA`. Any shader reading any `osgx::Material` -
+  hand-built or glTF-loaded - uses these; nothing here is glTF-specific.
 
 Direct lights (`LightSet`/`LightType`/`OrbitLightRig`) split out to `osgx/Light.hpp` 2026-09-23 -
 see that file's own section below. This file has no C++ dependency on it; a consumer wanting both
@@ -310,7 +316,8 @@ Vocabulary note: this codebase calls the group "direct" lights, not glTF's "punc
 not, so "punctual" would misdescribe it. "Direct" instead answers the question that actually
 matters here: computed explicitly per-light, as opposed to baked/prefiltered ambient/IBL.
 
-- `LightSet` — a `StateAttribute` owning a `std430`-SSBO-backed array of typed direct lights (`LightType::Point`/`Directional`/`Spot`; a sphere light is a `Point`/`Spot` with non-zero `sourceRadius`, not a fourth type) and its `osgx_lightCount` uniform. Construct it, then attach it through `StateSet::setAttributeAndModes()` (size `MAX_LIGHTS`, zero-initialized, everything off until `setCount()`+`setPoint()`/`setDirectional()`/`setSpot()`). Its `apply()` binds the SSBO and forwards the owned count uniform through OSG's shader-composition uniform path, so callers cannot desynchronize the two. Each slot also has an `enabled` flag, so `setEnabled()` can toggle a configured light without changing its count or packed data. Typed setters/getters (`getType()`, `getPosIntensity()`, `getColor()`, `getSourceRadius()`, `getDirection()`, `getSpotAngles()`, …) replace the old parallel-`osg::Uniform`-array contract.
+- `LightSet` — a `StateAttribute` owning a `std430`-SSBO-backed array of typed direct lights (`LightType::Point`/`Directional`/`Spot`; a sphere light is a `Point`/`Spot` with non-zero `sourceRadius`, not a fourth type) Construct it, then attach it through `StateSet::setAttributeAndModes()` (size `MAX_LIGHTS`, zero-initialized, everything off until `setPoint()`/`setDirectional()`/`setSpot()`, each of which enables its slot). Its `apply()` binds the SSBO only. Shaders loop the compile-time `OSGX_MAX_LIGHTS` bound and skip slots whose `enabled` flag is 0; `setEnabled()` toggles a configured light without changing its packed data. The GLSL-side `osgx_lightCount` uniform is never pushed (see `DIRECT_LIGHTING_HOOK_DEFAULT`'s history comment); `setCount()`/`getCount()` are CPU-side only - `setCount(n)` disables slots `>= n`, and `LightGizmos` only draws slots below the count. Typed setters/getters (`getType()`, `getPosIntensity()`, `getColor()`, `getSourceRadius()`, `getDirection()`, `getSpotAngles()`, …) replace the old parallel-`osg::Uniform`-array contract.
+- `LIGHT_SAMPLE` (`osgx_SampleLight(osgx_Light, worldPos)` → `osgx_LightSample{L, radiance, toLight, sourceRadius}`) — the Material-free per-light evaluation: picks the right `*_LIGHT_RADIANCE` function for the light's type and returns the incoming light, nothing about surface response. The seam between lights and materials: `DIRECT_LIGHTING_HOOK_DEFAULT` (and `Shadow.hpp`'s shadowed variant) consume it for PBR, and a Lambert/toon/NPR shader can consume it directly with no `osgx_Material` in scope - list `LIGHT_UNIFORMS, POINT_LIGHT_RADIANCE, DIRECTIONAL_LIGHT_RADIANCE, SPOT_LIGHT_RADIANCE, LIGHT_SAMPLE` on one `#pragma osgx::light` line.
 - `OrbitLightRig` — the animated counterpart: an `osg::NodeCallback` that writes orbiting position/intensity into a `LightSet` every update traversal (for the subset of lights that should move; a `LightSet` can be shared between a static rig and an orbiting one).
 
 ## `osgx/Gizmos.hpp`

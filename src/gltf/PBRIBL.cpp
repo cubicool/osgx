@@ -38,147 +38,13 @@ OSGX_ENABLE_WARNINGS
 #include <fstream>
 
 // ================================================================================================
-// osgx::gltf::pbribl - the glue between the glTF loader material interface
-// and osgx::pbr's material-agnostic BRDF math: reads the material-buffer/texture-unit interface the C++ loader
-// populates per primitive into an osgx_Material (see osgx::MATERIAL_STRUCT), plus a couple
-// of small glTF-specific fragment helpers (shading normal, emissive, alpha coverage) that need
-// the same texture interface.
-//
-// Candidates identified by porting OpenSceneGraph.py/examples/pyosg-lighting/09-ibl.py's material-
-// reading fragment code (getMaterial()/getShadingNormal()/getEmissive()/getAlphaCoverage()) down
-// to OpenSceneGraph.py/examples/pyosg-voxelize.py's trimmed no-IBL-required PBR fallback shader --
-// the same material-reading code was about to get copy-pasted a third time, which is exactly what
-// this adapter exists to avoid. Shader.hpp's MATERIAL_INPUTS is the fixed external interface (field
-// order/types must match Material.cpp's layout exactly); everything else is GLSL glue.
+// osgx::gltf::pbribl - ready-made forward/deferred PBR+IBL wiring on top of the generic osgx::
+// material/light/IBL pieces. Material reads use osgx::pbr's MATERIAL_INPUTS/GET_* snippets
+// (PBR.hpp); this file's own `#pragma osgx::gltf` catalog is the deferred G-buffer read contract
+// (DEFERRED_LIGHTING_INPUTS, GET_GBUFFER).
 // ================================================================================================
 
 namespace osgx::gltf::pbribl {
-
-// Reads MATERIAL_INPUTS into an osgx_Material (osgx::MATERIAL_STRUCT). Requires
-// MATERIAL_INPUTS and MATERIAL_STRUCT already in scope.
-//
-// Every texture read here is conditioned on the matching `has*Map` flag rather than sampled
-// unconditionally: a factor-only material (no baseColorTexture/metallicRoughnessTexture/
-// occlusionTexture - common in the glTF-Sample-Models conformance set, e.g. Fox ships
-// roughnessFactor=0.58 with no texture at all) would otherwise read an unbound texture unit as
-// black/zero and silently discard the authored factor instead of falling back to it.
-const char GET_MATERIAL[] = R"GLSL(
-osgx_Material osgx_gltf_GetMaterial(vec2 baseColorUV, vec2 ormUV, vec3 N) {
-	osgx_Material mat;
-
-	mat.albedo = bool(osgx_gltf_material.hasBaseColorMap)
-		? texture(osgx_gltf_textures.baseColor, baseColorUV).rgb
-		: osgx_gltf_material.baseColorFactor.rgb
-	;
-	mat.ao = bool(osgx_gltf_material.hasOcclusion) ? texture(osgx_gltf_textures.orm, ormUV).r : 1.0;
-	mat.roughness = bool(osgx_gltf_material.hasMetallicRoughnessMap)
-		? texture(osgx_gltf_textures.orm, ormUV).g * osgx_gltf_material.roughnessFactor
-		: osgx_gltf_material.roughnessFactor
-	;
-	mat.metallic = bool(osgx_gltf_material.hasMetallicRoughnessMap)
-		? texture(osgx_gltf_textures.orm, ormUV).b * osgx_gltf_material.metallicFactor
-		: osgx_gltf_material.metallicFactor
-	;
-
-	mat.F0 = mix(vec3(0.04), mat.albedo, mat.metallic);
-
-	return mat;
-}
-)GLSL";
-
-// TBN reconstructed per-pixel from screen-space derivatives of position/UV (Christian Schuler's
-// "normal mapping without precomputed tangents" - http://www.thetenthplanet.de/archives/1180)
-// when the mesh's own TANGENT is degenerate/absent, falling back to the vertex TANGENT otherwise.
-// glTF's TANGENT accessor is optional and frequently absent (DamagedHelmet, MetalRoughSpheres,
-// Fox in glTF-Sample-Models all ship without one); an unbound osg_Tangent attribute reads OpenGL's
-// default (0,0,0,1), and normalizing that zero vector produces NaN, so the degenerate check here
-// isn't optional. Requires MATERIAL_INPUTS already in scope.
-const char SHADING_NORMAL[] = R"GLSL(
-vec3 osgx_gltf_ShadingNormal(vec3 Ngeom, vec4 tangent, vec3 position, vec2 normalUV) {
-	vec3 Nb = normalize(Ngeom);
-
-	if(!bool(osgx_gltf_material.hasNormalMap)) return Nb;
-
-	// The Khronos reference normalizes in tangent space before applying TBN. Keeping that
-	// normalization here matters when interpolation leaves TBN slightly non-orthonormal.
-	vec3 tangentNormal = normalize(texture(osgx_gltf_textures.normal, normalUV).rgb * 2.0 - 1.0);
-	vec3 T, B;
-
-	// TODO: How much is this conditional hurting us? It might be worth looking into having two
-	// separate functions instead...
-	if(dot(tangent.xyz, tangent.xyz) > 1e-10) {
-		T = normalize(tangent.xyz);
-		B = normalize(cross(Nb, T)) * tangent.w;
-	}
-
-	else {
-		vec3 q1 = dFdx(position);
-		vec3 q2 = dFdy(position);
-		vec2 st1 = dFdx(normalUV);
-		vec2 st2 = dFdy(normalUV);
-
-		// Derive both tangent axes from position and UV derivatives.  The
-		// determinant carries the UV handedness: constructing B from a fixed
-		// +/-cross(N, T) works on only one side of a mirrored UV layout.
-		float determinant = st1.s * st2.t - st1.t * st2.s;
-
-		if(abs(determinant) <= 1e-10) return Nb;
-
-		float inverseDeterminant = 1.0 / determinant;
-		T = (q1 * st2.t - q2 * st1.t) * inverseDeterminant;
-		B = (q2 * st1.s - q1 * st2.s) * inverseDeterminant;
-
-		// Projection keeps the reconstructed basis orthogonal to an interpolated
-		// vertex normal, and the final Gram-Schmidt step preserves B's derived
-		// handedness rather than imposing one.
-		T -= Nb * dot(Nb, T);
-		B -= Nb * dot(Nb, B);
-
-		if(dot(T, T) <= 1e-10 || dot(B, B) <= 1e-10) return Nb;
-
-		T = normalize(T);
-		B -= T * dot(T, B);
-
-		if(dot(B, B) <= 1e-10) return Nb;
-
-		// NormalTangentTest verifies the glTF normal-map convention for this
-		// runtime-derived basis. Its bitangent is opposite the derivative-space
-		// orientation above; invert only this no-authored-tangent fallback.
-		B = -normalize(B);
-	}
-
-	mat3 TBN = mat3(T, B, Nb);
-
-	return normalize(TBN * tangentNormal);
-}
-)GLSL";
-
-// Requires MATERIAL_INPUTS already in scope.
-const char EMISSIVE[] = R"GLSL(
-vec3 osgx_gltf_Emissive(vec2 emissiveUV) {
-	vec3 emissive = osgx_gltf_hasEmissiveMap != 0
-		? texture(osgx_gltf_textures.emissive, emissiveUV).rgb
-		: vec3(1.0)
-	;
-
-	return emissive * osgx_gltf_emissiveFactor;
-}
-)GLSL";
-
-// MASK-mode coverage test input (caller still does `if(osgx_gltf_alphaMode == 1.0 && alpha <
-// osgx_gltf_alphaCutoff) discard;` itself - kept as a plain value here, not baked into a
-// discard, since some callers want the alpha for BLEND instead). Requires MATERIAL_INPUTS
-// already in scope.
-const char ALPHA_COVERAGE[] = R"GLSL(
-float osgx_gltf_AlphaCoverage(vec2 baseColorUV) {
-	float alpha = bool(osgx_gltf_material.hasBaseColorMap)
-		? texture(osgx_gltf_textures.baseColor, baseColorUV).a
-		: 1.0
-	;
-
-	return alpha * osgx_gltf_material.baseColorFactor.a;
-}
-)GLSL";
 
 // The minimum declarations ANY osgx::Hook::DeferredLighting override needs against
 // PBRIBLLightingScene::create()'s fullscreen quad - the five G-buffer sampler uniforms
@@ -207,7 +73,7 @@ out vec4 fragColor;
 )GLSL";
 
 // Structured decode of PBRIBLGBuffer::create()'s fixed 5-channel layout, the same "struct +
-// osgx_GetX(uv)" shape osgx_gltf_GetMaterial() uses for MATERIAL_INPUTS - lets an
+// osgx_GetX(uv)" shape osgx_GetMaterial() (PBR.hpp) uses for MATERIAL_INPUTS - lets an
 // osgx::Hook::DeferredLighting override read `gb.albedo`/`gb.normal`/etc. instead of hand-sampling
 // five textures and unpacking channels itself. `normal`/`position` stay VIEW-space, exactly as
 // PBRIBLGBuffer writes them (see PBRIBLGBuffer::normalTexture/positionTexture's own comments in
@@ -251,11 +117,6 @@ namespace osgx::gltf::pbribl {
 
 void registerShaderLibs() {
 	static const osgx::ShaderLib libs[] = {
-		{"MATERIAL_INPUTS", "osgx_gltf_Material", shader::MATERIAL_INPUTS},
-		{"GET_MATERIAL", "osgx_gltf_GetMaterial", GET_MATERIAL},
-		{"SHADING_NORMAL", "osgx_gltf_ShadingNormal", SHADING_NORMAL},
-		{"EMISSIVE", "osgx_gltf_Emissive", EMISSIVE},
-		{"ALPHA_COVERAGE", "osgx_gltf_AlphaCoverage", ALPHA_COVERAGE},
 		{"DEFERRED_LIGHTING_INPUTS", "osgx_gltf_DeferredLightingInputs", DEFERRED_LIGHTING_INPUTS},
 		{"GET_GBUFFER", "osgx_GetGBuffer", GET_GBUFFER}
 	};
@@ -372,10 +233,9 @@ constexpr const char FULL_PBR_FRAGMENT_SHADER_SRC[] = R"GLSL(
 
 const float PI = 3.14159265359;
 
-#pragma osgx::pbr MATERIAL_STRUCT, F_MULTISCATTER, SPECULAR_AA, TONEMAP_DECL
+#pragma osgx::pbr MATERIAL_STRUCT, MATERIAL_INPUTS, GET_MATERIAL, GET_SHADING_NORMAL, GET_EMISSIVE, GET_ALPHA, F_MULTISCATTER, SPECULAR_AA, TONEMAP_DECL
 #pragma osgx::light DIRECT_LIGHTING_DECL
 #pragma osgx::ibl IBL_LIGHTING_INPUTS, EVALUATE_IBL
-#pragma osgx::gltf MATERIAL_INPUTS, GET_MATERIAL, SHADING_NORMAL, EMISSIVE, ALPHA_COVERAGE
 
 in vec3 vNGeom;
 in vec3 vPosition;
@@ -413,21 +273,21 @@ vec3 osgx_LinearToSRGB(vec3 c) {
 }
 
 void main() {
-	float alpha = osgx_gltf_AlphaCoverage(vBaseColorUV);
+	float alpha = osgx_GetAlpha(vBaseColorUV);
 
-	if(osgx_gltf_alphaMode == 1.0 && alpha < osgx_gltf_alphaCutoff) discard;
+	if(osgx_materialInputs.alphaMode == OSGX_ALPHA_MODE_MASK && alpha < osgx_materialInputs.alphaCutoff) discard;
 
-	vec3 N = osgx_gltf_ShadingNormal(vNGeom, vTangent, vPosition, vNormalUV);
+	vec3 N = osgx_GetShadingNormal(vNGeom, vTangent, vPosition, vNormalUV);
 
 #ifdef OSGX_PBRIBL_DIAGNOSTICS
 	if(disableNormalMap != 0) N = normalize(vNGeom);
 #endif
 	vec3 V = normalize(-vPosition);
-	osgx_Material mat = osgx_gltf_GetMaterial(vBaseColorUV, vOrmUV, N);
+	osgx_Material mat = osgx_GetMaterial(vBaseColorUV, vOrmUV);
 
 
 #ifdef OSGX_PBRIBL_DIAGNOSTICS
-	if(disableRoughnessMap != 0) mat.roughness = osgx_gltf_material.roughnessFactor;
+	if(disableRoughnessMap != 0) mat.roughness = osgx_materialInputs.roughnessFactor;
 
 	// Match pyosg-khronos-viewer.py's material/coordinate diagnostics. These deliberately return
 	// before lighting so a channel can be compared without IBL, Fresnel, or tonemapping involved.
@@ -439,13 +299,13 @@ void main() {
 	if(debugMode == 4) { fragColor = vec4(vec3(mat.roughness), alpha); return; }
 	if(debugMode == 5) { fragColor = vec4(vec3(mat.metallic), alpha); return; }
 	if(debugMode == 6) {
-		vec3 raw = texture(osgx_gltf_textures.normal, vNormalUV).rgb;
-		fragColor = vec4(bool(osgx_gltf_material.hasNormalMap) ? normalize(raw * 2.0 - 1.0) * 0.5 + 0.5 : vec3(1.0), alpha);
+		vec3 raw = texture(osgx_normalMap, vNormalUV).rgb;
+		fragColor = vec4(bool(osgx_materialInputs.hasNormalMap) ? normalize(raw * 2.0 - 1.0) * 0.5 + 0.5 : vec3(1.0), alpha);
 		return;
 	}
 	if(debugMode == 7) {
 		fragColor = vec4(
-			bool(osgx_gltf_material.hasNormalMap) ? texture(osgx_gltf_textures.normal, vNormalUV).rgb : vec3(1.0),
+			bool(osgx_materialInputs.hasNormalMap) ? texture(osgx_normalMap, vNormalUV).rgb : vec3(1.0),
 			alpha
 		);
 		return;
@@ -483,7 +343,7 @@ void main() {
 
 	osgx_Lighting ambient = osgx_EvaluateIBL(mat, N_world, V_world);
 	vec3 surface = ambient.diffuse + ambient.specular;
-	vec3 emissive = osgx_gltf_Emissive(vEmissiveUV);
+	vec3 emissive = osgx_GetEmissive(vEmissiveUV);
 
 #ifdef OSGX_PBRIBL_DIAGNOSTICS
 	surface = (debugMode == 1 || debugMode == 12)
@@ -521,7 +381,7 @@ void main() {
 // Geometry-pass fragment shader for the deferred split (PBRIBLGBuffer::create() below) --
 // material only, no lighting at all, not even emissive combine (emissive is stored, not added
 // yet). Reuses FULL_PBR_VERTEX_SHADER above unchanged: its view-space position/normal/tangent and
-// per-slot UV varyings are already exactly what osgx_gltf_ShadingNormal()/osgx_gltf_GetMaterial()
+// per-slot UV varyings are already exactly what osgx_GetShadingNormal()/osgx_GetMaterial()
 // need, and are already VIEW
 // space, which is exactly the convention gNormal below stores (matching the main camera whose
 // real matrices PBRIBLLightingScene::create()'s fullscreen quad reconstructs world-space values
@@ -529,8 +389,7 @@ void main() {
 constexpr const char GBUFFER_FRAGMENT_SHADER_SRC[] = R"GLSL(
 #version 460 core
 
-#pragma osgx::pbr MATERIAL_STRUCT
-#pragma osgx::gltf MATERIAL_INPUTS, GET_MATERIAL, SHADING_NORMAL, EMISSIVE, ALPHA_COVERAGE
+#pragma osgx::pbr MATERIAL_STRUCT, MATERIAL_INPUTS, GET_MATERIAL, GET_SHADING_NORMAL, GET_EMISSIVE, GET_ALPHA
 
 in vec3 vNGeom;
 in vec3 vPosition;
@@ -547,17 +406,17 @@ layout(location = 3) out vec4 gEmissive; // rgb = emissive (HDR), a = alpha cove
 layout(location = 4) out vec4 gPosition; // rgb = view-space position
 
 void main() {
-	float alpha = osgx_gltf_AlphaCoverage(vBaseColorUV);
+	float alpha = osgx_GetAlpha(vBaseColorUV);
 
-	if(osgx_gltf_alphaMode == 1.0 && alpha < osgx_gltf_alphaCutoff) discard;
+	if(osgx_materialInputs.alphaMode == OSGX_ALPHA_MODE_MASK && alpha < osgx_materialInputs.alphaCutoff) discard;
 
-	vec3 N = osgx_gltf_ShadingNormal(vNGeom, vTangent, vPosition, vNormalUV);
-	osgx_Material mat = osgx_gltf_GetMaterial(vBaseColorUV, vOrmUV, N);
+	vec3 N = osgx_GetShadingNormal(vNGeom, vTangent, vPosition, vNormalUV);
+	osgx_Material mat = osgx_GetMaterial(vBaseColorUV, vOrmUV);
 
 	gAlbedo = vec4(mat.albedo, mat.ao);
 	gNormal = vec4(normalize(N), 0.0);
 	gMaterial = vec4(mat.roughness, mat.metallic, 0.0, 0.0);
-	gEmissive = vec4(osgx_gltf_Emissive(vEmissiveUV), alpha);
+	gEmissive = vec4(osgx_GetEmissive(vEmissiveUV), alpha);
 	// Real eye-space position, straight from the vertex shader - NOT reconstructed from depth
 	// in the lighting pass (see PBRIBLGBuffer::positionTexture's comment in PBRIBL.hpp for why).
 	gPosition = vec4(vPosition, 1.0);
@@ -1050,16 +909,6 @@ PBRIBLScene PBRIBLScene::create(
 
 	ss->addUniform(iblAxis);
 
-	// The glTF Material helper binds the actual baseColor/normal/orm/emissive Texture2Ds to units
-	// 0-3 per geometry, but deliberately stays shader-agnostic
-	// and never sets the sampler *uniforms* that tell osgx_gltf_textures which unit is which --
-	// that's the shader glue's job (see MATERIAL_INPUTS's "unit N" comments above). Without this,
-	// every sampler in the GLTFTextures struct silently defaults to unit 0 per the GLSL spec, so
-	// normal/orm/emissive all end up reading the baseColor texture instead - corrupted shading
-	// normals, scrambled roughness/metallic, and the whole baseColor image re-added as fake
-	// "emissive" light. Same fix pyosg-khronos-viewer.py applies via its own uniforms.update(...).
-	shader::configureStateSet(*ss);
-
 	if(diagnostics) {
 		pis.debugMode = new osg::Uniform("debugMode", 0);
 		pis.disableNormalMap = new osg::Uniform("disableNormalMap", 0);
@@ -1129,10 +978,6 @@ PBRIBLGBuffer PBRIBLGBuffer::create(osg::Node* node, int width, int height) {
 	auto* ss = node->getOrCreateStateSet();
 
 	ss->setAttributeAndModes(prog, osg::StateAttribute::ON | osg::StateAttribute::OVERRIDE);
-
-	// Same texture-unit-labeling fix PBRIBLScene::create() needs - the loader binds the actual
-	// Texture2Ds per geometry but never sets the sampler uniforms naming which unit is which.
-	shader::configureStateSet(*ss);
 
 	static constexpr osgx::AttachmentFormat formats[] = {
 		osgx::AttachmentFormat::RGBA8,   // gAlbedo

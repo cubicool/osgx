@@ -185,9 +185,10 @@ float osgx_ShadowFactor(vec3 worldPos) {
 )GLSL";
 
 // Shadowed counterpart to osgx::DIRECT_LIGHTING_HOOK_DEFAULT (Light.hpp) - identical per-light
-// dispatch loop, except the light at index `osgx_shadowCasterIndex` (default 0, the "index 0 is
-// the key light" convention every existing pyosg-lighting example already follows) has its
-// contribution multiplied by osgx_ShadowFactor(worldPos), computed once per fragment (not once per
+// loop (both share LIGHT_SAMPLE's osgx_SampleLight() dispatch), except the light at index
+// `osgx_shadowCasterIndex` (default 0, the "index 0 is the key light" convention every existing
+// pyosg-lighting example already follows) has its contribution multiplied by
+// osgx_ShadowFactor(worldPos), computed once per fragment (not once per
 // light - it only depends on position, not which light is being evaluated). A caller with a
 // ShadowMap adds THIS shader object instead of DIRECT_LIGHTING_HOOK_DEFAULT - same hook-swap
 // mechanism (see Light.hpp's DIRECT_LIGHTING_DECL/DIRECT_LIGHTING_HOOK_DEFAULT contract comment),
@@ -201,7 +202,7 @@ inline constexpr const char* DIRECT_LIGHTING_HOOK_SHADOWED = R"GLSL(
 const float PI = 3.14159265359;
 
 #pragma osgx::pbr MATERIAL_STRUCT, D_GGX, G_SCHLICK, G_SMITH, F_SCHLICK
-#pragma osgx::light DIRECT_SPECULAR, DIRECT_DIFFUSE, POINT_LIGHT_RADIANCE, LIGHT_UNIFORMS, DIRECT_LIGHT, DIRECTIONAL_LIGHT_RADIANCE, SPOT_LIGHT_RADIANCE, SPHERE_LIGHT_SPECULAR, DIRECT_LIGHT_SPHERE
+#pragma osgx::light DIRECT_SPECULAR, DIRECT_DIFFUSE, POINT_LIGHT_RADIANCE, LIGHT_UNIFORMS, DIRECT_LIGHT, DIRECTIONAL_LIGHT_RADIANCE, SPOT_LIGHT_RADIANCE, LIGHT_SAMPLE, SPHERE_LIGHT_SPECULAR, DIRECT_LIGHT_SPHERE
 #pragma osgx::shadow SHADOW_UNIFORMS, SHADOW_FACTOR
 
 vec3 osgx_DirectLighting(vec3 N, vec3 V, vec3 worldPos, osgx_Material mat) {
@@ -215,33 +216,15 @@ vec3 osgx_DirectLighting(vec3 N, vec3 V, vec3 worldPos, osgx_Material mat) {
 
 		if(light.enabled == 0) continue;
 
-		vec3 L;
-		vec3 radiance;
-
-		if(light.type == OSGX_LIGHT_TYPE_DIRECTIONAL) {
-			radiance = osgx_DirectionalLightRadiance(light.dir, light.color, light.posIntensity.w, L);
-		}
-
-		else if(light.type == OSGX_LIGHT_TYPE_SPOT) {
-			radiance = osgx_SpotLightRadiance(
-				light.posIntensity, light.color, light.dir, light.spotAngles, worldPos, L
-			);
-		}
-
-		else {
-			radiance = osgx_PointLightRadiance(light.posIntensity, light.color, worldPos, L);
-		}
-
+		osgx_LightSample s = osgx_SampleLight(light, worldPos);
 		vec3 contribution;
 
-		if(light.sourceRadius > 0.0 && light.type != OSGX_LIGHT_TYPE_DIRECTIONAL) {
-			contribution = osgx_DirectLightSphere(
-				N, V, L, light.posIntensity.xyz - worldPos, radiance, mat, light.sourceRadius
-			);
+		if(s.sourceRadius > 0.0) {
+			contribution = osgx_DirectLightSphere(N, V, s.L, s.toLight, s.radiance, mat, s.sourceRadius);
 		}
 
 		else {
-			contribution = osgx_DirectLight(N, V, L, radiance, mat);
+			contribution = osgx_DirectLight(N, V, s.L, s.radiance, mat);
 		}
 
 		color += contribution * ((i == osgx_shadowCasterIndex) ? shadow : 1.0);

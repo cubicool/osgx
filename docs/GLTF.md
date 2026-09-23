@@ -55,29 +55,31 @@ reader implementation or instantiates its own copy of tinygltf/STB source.
 
 ## Shader Interface
 
-`osgx::gltf` loads geometry and materials without imposing a particular renderer. The public
-`osgx/gltf/Shader.hpp` header defines the attribute locations, buffer bindings, texture units,
-uniform names, and canonical GLSL material declaration populated by the loader.
+`osgx::gltf` loads geometry and materials without imposing a particular renderer. Every glTF
+material becomes a plain `osgx::Material` StateAttribute (`osgx/PBR.hpp`) - factors, alpha mode/
+cutoff, emissive factor, and the four texture maps - so a custom renderer reads it exactly the way
+it would read any hand-built `osgx::Material`: `#pragma osgx::pbr MATERIAL_INPUTS, GET_MATERIAL`
+(plus `GET_SHADING_NORMAL`, `GET_EMISSIVE`, `GET_ALPHA` as needed). Nothing on the material side
+is glTF-specific, and no sampler uniforms need setting - the GLSL declares its own texture units.
 
-Custom renderers can use the GLSL declaration directly and apply the matching program setup:
+The public `osgx/gltf/Shader.hpp` header covers what IS glTF-specific: the tangent and skinning
+vertex attribute locations, the joint-matrix buffer binding, and the skinning hook shaders.
 
 ```cpp
 #include <osgx/gltf/Shader.hpp>
 
 auto program = new osg::Program();
-auto stateSet = model->getOrCreateStateSet();
 
-// Add shaders using osgx::gltf::shader::MATERIAL_INPUTS as part of the fragment source.
+// Fragment source uses `#pragma osgx::pbr MATERIAL_INPUTS, GET_MATERIAL`, resolved via
+// osgx::resolveShaderLibs().
 osgx::gltf::shader::configureProgram(*program);
-osgx::gltf::shader::configureStateSet(*stateSet);
 
-stateSet->setAttributeAndModes(program);
+model->getOrCreateStateSet()->setAttributeAndModes(program);
 ```
 
-`configureProgram()` maps the tangent and skinning inputs to the locations used by the loader.
-`configureStateSet()` maps the material samplers to the loader's base-color, normal, ORM, and
-emissive texture units. These helpers are optional; the named constants in the same header can be
-used when an application needs different program or StateSet ownership.
+`configureProgram()` maps the tangent and skinning inputs to the locations used by the loader. It
+is optional; the named constants in the same header can be used when an application needs
+different program ownership.
 
 The Python bindings expose the same constants, GLSL source, and helpers under `osgx.gltf.shader`.
 
@@ -163,10 +165,11 @@ auto scene = osgx::gltf::pbribl::PBRIBLScene::create(model, environment, 1.0f, 1
 });
 ```
 
-The material GLSL helpers are registered under `#pragma osgx::gltf ...`, and their canonical
-uniform/attribute names use the `osgx_gltf_*` prefix (for example, `osgx_gltf_Material` and
-`osgx_gltf_textures`). Their canonical material declaration comes directly from
-`osgx/gltf/Shader.hpp`. Python exposes the same API under
+The material GLSL helpers these shaders use are the generic `#pragma osgx::pbr` ones
+(`MATERIAL_INPUTS`, `GET_MATERIAL`, `GET_SHADING_NORMAL`, `GET_EMISSIVE`, `GET_ALPHA`, reading the
+`osgx_materialInputs` buffer and `osgx_baseColorMap`/`osgx_normalMap`/`osgx_ormMap`/
+`osgx_emissiveMap` samplers). `#pragma osgx::gltf ...` now holds only the deferred G-buffer read
+contract (`DEFERRED_LIGHTING_INPUTS`, `GET_GBUFFER`). Python exposes the same API under
 `osgx.gltf.pbribl`. `utils/osgx-gltf-viewer` is the corresponding complete C++ consumer.
 
 ### Deferred split

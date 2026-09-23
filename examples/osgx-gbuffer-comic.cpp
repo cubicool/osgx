@@ -63,7 +63,7 @@
 // NOTE on "AO Mask": now combines TWO genuinely different occlusion signals, multiplicatively --
 // same convention the built-in lighting shader's own `mat.ao *= texture(aoTex, vUV).r;` uses
 // (PBRIBL.cpp). `gb.ao` is the glTF material's BAKED occlusion texture value
-// (osgx_gltf_GetMaterial()'s mat.ao, PBRIBL.cpp), defaulting to a flat 1.0 (fully unoccluded) when
+// (osgx_GetMaterial()'s mat.ao, PBR.hpp), defaulting to a flat 1.0 (fully unoccluded) when
 // the loaded model has no dedicated occlusion texture - CONFIRMED 2026-08-21 as why the slider
 // once looked dead on Batman (a non-Khronos custom asset with no occlusion texture at all), not a
 // pipeline bug: it works correctly on models that actually carry one, e.g. the Khronos

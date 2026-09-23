@@ -469,38 +469,26 @@ void MaterialBuilder::applyMaterial(
 	materialAttr->setMetallic(static_cast<float>(pbr.metallic_factor));
 	materialAttr->setHasOcclusion(haveOcclusion);
 
-	geom->getOrCreateStateSet()->setAttributeAndModes(materialAttr.get());
+	// Alpha mode/cutoff and emissive factor are stored in osgx::Material's buffer
+	// (MATERIAL_INPUTS, PBR.hpp) with every other factor. hasEmissiveMap is derived from
+	// setEmissiveMap() above.
+	auto alphaMode = osgx::Material::AlphaMode::Opaque;
 
-	// Alpha coverage is a core glTF material property, but this loader deliberately
-	// does not impose a particular PBR shader. Export its values as namespaced
-	// uniforms so downstream shaders can apply the required fragment discard
-	// (MASK) or write the source alpha (BLEND). alphaMode is encoded as:
-	// 0 = OPAQUE, 1 = MASK, 2 = BLEND. The glTF default alphaCutoff is 0.5.
-	float alphaMode = osgx::gltf::shader::ALPHA_MODE_OPAQUE;
-	if(tg3_str_equals_cstr(mat.alpha_mode, "MASK")) alphaMode = osgx::gltf::shader::ALPHA_MODE_MASK;
-	else if(tg3_str_equals_cstr(mat.alpha_mode, "BLEND")) alphaMode = osgx::gltf::shader::ALPHA_MODE_BLEND;
+	if(tg3_str_equals_cstr(mat.alpha_mode, "MASK")) alphaMode = osgx::Material::AlphaMode::Mask;
+	else if(tg3_str_equals_cstr(mat.alpha_mode, "BLEND")) alphaMode = osgx::Material::AlphaMode::Blend;
+
+	materialAttr->setAlphaMode(alphaMode);
+	materialAttr->setAlphaCutoff(static_cast<float>(mat.alpha_cutoff));
+	materialAttr->setEmissiveFactor(osg::Vec3(
+		static_cast<float>(mat.emissive_factor[0]),
+		static_cast<float>(mat.emissive_factor[1]),
+		static_cast<float>(mat.emissive_factor[2])
+	));
 
 	auto* stateSet = geom->getOrCreateStateSet();
-	stateSet->addUniform(new osg::Uniform(
-		osgx::gltf::shader::ALPHA_MODE_UNIFORM,
-		alphaMode
-	));
-	stateSet->addUniform(new osg::Uniform(
-		osgx::gltf::shader::ALPHA_CUTOFF_UNIFORM,
-		static_cast<float>(mat.alpha_cutoff)
-	));
-	stateSet->addUniform(new osg::Uniform(
-		"osgx_gltf_emissiveFactor",
-		osg::Vec3(
-			static_cast<float>(mat.emissive_factor[0]),
-			static_cast<float>(mat.emissive_factor[1]),
-			static_cast<float>(mat.emissive_factor[2])
-		)
-	));
-	stateSet->addUniform(new osg::Uniform(
-		"osgx_gltf_hasEmissiveMap",
-		mat.emissive_texture.index >= 0 ? 1 : 0
-	));
+
+	stateSet->setAttributeAndModes(materialAttr.get());
+
 	if(tg3_str_equals_cstr(mat.alpha_mode, "BLEND")) {
 		// glTF BLEND uses conventional non-premultiplied source-over alpha.
 		// Render it after opaque geometry and leave depth testing enabled while

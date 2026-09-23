@@ -290,6 +290,7 @@ void registerLightShaderLibs() {
 		{"DIRECT_LIGHT", "osgx_DirectLight", DIRECT_LIGHT},
 		{"DIRECTIONAL_LIGHT_RADIANCE", "osgx_DirectionalLightRadiance", DIRECTIONAL_LIGHT_RADIANCE},
 		{"SPOT_LIGHT_RADIANCE", "osgx_SpotLightRadiance", SPOT_LIGHT_RADIANCE},
+		{"LIGHT_SAMPLE", "osgx_SampleLight", LIGHT_SAMPLE},
 		{"SPHERE_LIGHT_SPECULAR", "osgx_SphereLightDir", SPHERE_LIGHT_SPECULAR},
 		{"DIRECT_LIGHT_SPHERE", "osgx_DirectLightSphere", DIRECT_LIGHT_SPHERE},
 		{"DIRECT_LIGHTING_DECL", "osgx_DirectLighting", DIRECT_LIGHTING_DECL}

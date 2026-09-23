@@ -38,44 +38,9 @@ inline constexpr int NORMAL_TEXTURE_UNIT = osgx::NORMAL_TEXTURE_UNIT;
 inline constexpr int ORM_TEXTURE_UNIT = osgx::ORM_TEXTURE_UNIT;
 inline constexpr int EMISSIVE_TEXTURE_UNIT = osgx::EMISSIVE_TEXTURE_UNIT;
 
-inline constexpr char BASE_COLOR_SAMPLER[] = "osgx_gltf_textures.baseColor";
-inline constexpr char NORMAL_SAMPLER[] = "osgx_gltf_textures.normal";
-inline constexpr char ORM_SAMPLER[] = "osgx_gltf_textures.orm";
-inline constexpr char EMISSIVE_SAMPLER[] = "osgx_gltf_textures.emissive";
-
-inline constexpr char ALPHA_MODE_UNIFORM[] = "osgx_gltf_alphaMode";
-inline constexpr char ALPHA_CUTOFF_UNIFORM[] = "osgx_gltf_alphaCutoff";
-
-inline constexpr float ALPHA_MODE_OPAQUE = 0.0f;
-inline constexpr float ALPHA_MODE_MASK = 1.0f;
-inline constexpr float ALPHA_MODE_BLEND = 2.0f;
-
-// Canonical GLSL declaration matching the data uploaded by the loader. osgx::gltf defines
-// this interface but deliberately does not impose a particular material or lighting shader.
-inline constexpr char MATERIAL_INPUTS[] = R"GLSL(
-layout(std430, binding = 0) readonly buffer osgx_gltf_Material {
-	vec4 baseColorFactor;
-	float roughnessFactor;
-	float metallicFactor;
-	float hasBaseColorMap;
-	float hasMetallicRoughnessMap;
-	float hasOcclusion;
-	float hasNormalMap;
-} osgx_gltf_material;
-
-struct GLTFTextures {
-	sampler2D baseColor;
-	sampler2D normal;
-	sampler2D orm;
-	sampler2D emissive;
-};
-
-uniform GLTFTextures osgx_gltf_textures;
-uniform float osgx_gltf_alphaMode;
-uniform float osgx_gltf_alphaCutoff;
-uniform vec3 osgx_gltf_emissiveFactor;
-uniform int osgx_gltf_hasEmissiveMap;
-)GLSL";
+// Material data (factors, maps, emissive, alpha) is a plain osgx::Material, read in GLSL via
+// osgx::MATERIAL_INPUTS/GET_MATERIAL (PBR.hpp). This header covers only what is glTF-specific:
+// tangent/skinning vertex attributes, the joint-matrix binding, and the skinning hooks.
 
 // Vertex-side hook: FULL_PBR_VERTEX_SHADER (PBRIBL.cpp) forward-declares osgx_gltf_ApplySkin() and
 // calls it on the raw glTF-authored vertex/normal/tangent before applying any camera transform --
@@ -143,13 +108,6 @@ inline void configureProgram(osg::Program& program) {
 	program.addBindAttribLocation(TANGENT_ATTRIBUTE_NAME, TANGENT_ATTRIBUTE);
 	program.addBindAttribLocation(JOINT_INDICES_ATTRIBUTE_NAME, JOINT_INDICES_ATTRIBUTE);
 	program.addBindAttribLocation(JOINT_WEIGHTS_ATTRIBUTE_NAME, JOINT_WEIGHTS_ATTRIBUTE);
-}
-
-inline void configureStateSet(osg::StateSet& stateSet) {
-	stateSet.addUniform(new osg::Uniform(BASE_COLOR_SAMPLER, BASE_COLOR_TEXTURE_UNIT));
-	stateSet.addUniform(new osg::Uniform(NORMAL_SAMPLER, NORMAL_TEXTURE_UNIT));
-	stateSet.addUniform(new osg::Uniform(ORM_SAMPLER, ORM_TEXTURE_UNIT));
-	stateSet.addUniform(new osg::Uniform(EMISSIVE_SAMPLER, EMISSIVE_TEXTURE_UNIT));
 }
 
 }

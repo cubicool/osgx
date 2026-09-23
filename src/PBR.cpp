@@ -27,6 +27,9 @@ osg::StateAttribute(material, copyop),
 _baseColor(material._baseColor),
 _roughness(material._roughness),
 _metallic(material._metallic),
+_emissiveFactor(material._emissiveFactor),
+_alphaMode(material._alphaMode),
+_alphaCutoff(material._alphaCutoff),
 _hasOcclusion(material._hasOcclusion),
 _baseColorMap(static_cast<osg::Texture2D*>(copyop(material._baseColorMap.get()))),
 _normalMap(static_cast<osg::Texture2D*>(copyop(material._normalMap.get()))),
@@ -35,11 +38,11 @@ _emissiveMap(static_cast<osg::Texture2D*>(copyop(material._emissiveMap.get()))) 
 	_initBuffer();
 }
 
-// Field order/padding must match MATERIAL_INPUTS' `osgx_gltf_Material` std430 block (Shader.hpp)
-// exactly. Built once here (not per-write) so every setter can mutate it in place via dirty()
+// Field order must match MATERIAL_INPUTS' `osgx_MaterialInputs` std430 block (PBR.hpp) exactly.
+// Built once here (not per-write) so every setter can mutate it in place via dirty()
 // instead of standing up a new osg::ShaderStorageBufferObject/GL buffer on every call.
 void Material::_initBuffer() {
-	_buffer = osgx::make_ref<osgx::FloatArray>(static_cast<std::size_t>(12));
+	_buffer = osgx::make_ref<osgx::FloatArray>(static_cast<std::size_t>(16));
 	_buffer->setBufferObject(new osg::ShaderStorageBufferObject());
 
 	_binding = new osg::ShaderStorageBufferBinding(
@@ -50,15 +53,20 @@ void Material::_initBuffer() {
 }
 
 void Material::_writeFactors() {
-	// [10], [11]: trailing std430 padding, left at 0.
+	// 16 floats, no padding: vec3 emissiveFactor packs into the 16-byte slot after baseColorFactor
+	// with roughnessFactor filling its fourth component (std430 vec3 alignment).
 	_buffer->set({
 		_baseColor.r(), _baseColor.g(), _baseColor.b(), _baseColor.a(),
+		_emissiveFactor.x(), _emissiveFactor.y(), _emissiveFactor.z(),
 		_roughness,
 		_metallic,
+		static_cast<float>(_alphaMode),
+		_alphaCutoff,
 		_baseColorMap.valid() ? 1.0f : 0.0f,
 		_metallicRoughnessMap.valid() ? 1.0f : 0.0f,
 		_hasOcclusion ? 1.0f : 0.0f,
-		_normalMap.valid() ? 1.0f : 0.0f
+		_normalMap.valid() ? 1.0f : 0.0f,
+		_emissiveMap.valid() ? 1.0f : 0.0f
 	});
 
 	_buffer->dirty();
@@ -75,6 +83,9 @@ int Material::compare(const osg::StateAttribute& sa) const {
 	COMPARE_StateAttribute_Parameter(_baseColor)
 	COMPARE_StateAttribute_Parameter(_roughness)
 	COMPARE_StateAttribute_Parameter(_metallic)
+	COMPARE_StateAttribute_Parameter(_emissiveFactor)
+	COMPARE_StateAttribute_Parameter(_alphaMode)
+	COMPARE_StateAttribute_Parameter(_alphaCutoff)
 
 	return 0;
 }
@@ -117,6 +128,24 @@ void Material::setMetallic(float metallic) {
 	_writeFactors();
 }
 
+void Material::setEmissiveFactor(const osg::Vec3& emissiveFactor) {
+	_emissiveFactor = emissiveFactor;
+
+	_writeFactors();
+}
+
+void Material::setAlphaMode(AlphaMode alphaMode) {
+	_alphaMode = alphaMode;
+
+	_writeFactors();
+}
+
+void Material::setAlphaCutoff(float alphaCutoff) {
+	_alphaCutoff = alphaCutoff;
+
+	_writeFactors();
+}
+
 void Material::setHasOcclusion(bool hasOcclusion) {
 	_hasOcclusion = hasOcclusion;
 
@@ -155,6 +184,11 @@ void registerPBRShaderLibs() {
 		{"F_SCHLICK", "osgx_F_Schlick", F_SCHLICK},
 		{"F_SCHLICK_ROUGHNESS", "osgx_F_Schlick_roughness", F_SCHLICK_ROUGHNESS},
 		{"MATERIAL_STRUCT", "osgx_Material", MATERIAL_STRUCT},
+		{"MATERIAL_INPUTS", "osgx_MaterialInputs", MATERIAL_INPUTS},
+		{"GET_MATERIAL", "osgx_GetMaterial", GET_MATERIAL},
+		{"GET_EMISSIVE", "osgx_GetEmissive", GET_EMISSIVE},
+		{"GET_ALPHA", "osgx_GetAlpha", GET_ALPHA},
+		{"GET_SHADING_NORMAL", "osgx_GetShadingNormal", GET_SHADING_NORMAL},
 		{"F_MULTISCATTER", "osgx_F_MultiScatter", F_MULTISCATTER},
 		{"IBL_SPECULAR", "osgx_IBLSpecular", IBL_SPECULAR},
 		{"AMBIENT_LIGHTING_DECL", "osgx_AmbientLighting", AMBIENT_LIGHTING_DECL},

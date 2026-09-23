@@ -39,7 +39,6 @@
 #include "osgx/PBR.hpp"
 #include "osgx/Shapes.hpp"
 #include "osgx/gltf/PBRIBL.hpp"
-#include "osgx/gltf/Shader.hpp"
 
 OSGX_DISABLE_WARNINGS
 
@@ -69,13 +68,6 @@ void attachFlatMaterial(osg::Geometry* geometry) {
 	material->setRoughness(0.42f);
 	material->setMetallic(0.0f);
 	geometry->getOrCreateStateSet()->setAttributeAndModes(material);
-
-	auto* ss = geometry->getOrCreateStateSet();
-
-	ss->addUniform(new osg::Uniform(
-		osgx::gltf::shader::ALPHA_MODE_UNIFORM, osgx::gltf::shader::ALPHA_MODE_OPAQUE
-	));
-	ss->addUniform(new osg::Uniform(osgx::gltf::shader::ALPHA_CUTOFF_UNIFORM, 0.5f));
 }
 
 // PBRIBLLightingScene owns the view-space G-buffer contract even when our DeferredLighting hook

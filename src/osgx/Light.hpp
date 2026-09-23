@@ -66,9 +66,16 @@ inline constexpr unsigned int LIGHT_BINDING = 3;
 // Per-light Cook-Torrance specular contribution (direct lighting), already multiplied by NdotL --
 // caller multiplies by the light's own radiance (color * intensity/distance^2 or similar) and
 // accumulates. Requires D_GGX/G_SCHLICK/G_SMITH/F_SCHLICK (osgx::pbr) already in scope.
+//
+// Roughness is floored at 0.045 (Filament's MIN_PERCEPTUAL_ROUGHNESS) before evaluating D: for an
+// ideal point light, osgx_D_GGX() at the highlight's exact center is 1/(PI*roughness^4), which is
+// 0/0 = NaN at roughness 0 and ~3e7 at 0.01. Roughness read back from a low-precision G-buffer can
+// quantize to exactly 0. IBL is unaffected: it samples a prefiltered map, not an analytic lobe.
 inline constexpr const char* DIRECT_SPECULAR = R"GLSL(
 vec3 osgx_DirectSpecular(vec3 N, vec3 V, vec3 L, float NdotV, float roughness, vec3 F0) {
 	float NdotL = max(dot(N, L), 0.0);
+
+	roughness = max(roughness, 0.045);
 
 	if(NdotL <= 0.0) return vec3(0.0);
 
@@ -177,7 +184,7 @@ struct osgx_Light {
 };
 
 // binding = 3 here must match LIGHT_BINDING in C++ - same hardcode-and-cross-reference
-// pattern osgx::gltf::shader::MATERIAL_INPUTS uses for its own `binding = 0`.
+// pattern osgx::MATERIAL_INPUTS (PBR.hpp) uses for its own `binding = 0`.
 layout(std430, binding = 3) readonly buffer osgx_LightBuffer {
 	osgx_Light osgx_lights[OSGX_MAX_LIGHTS];
 };
@@ -229,6 +236,55 @@ vec3 osgx_SpotLightRadiance(
 	float atten = smoothstep(coneAngles.y, coneAngles.x, cone);
 
 	return radiance * atten;
+}
+)GLSL";
+
+// Material-free evaluation of one osgx_Light at a shading point: the per-type dispatch (directional/
+// spot/point) that picks the right *_RADIANCE function, returning everything a shading model needs
+// about the incoming light and nothing about how a surface responds to it. This is the seam between
+// "light" and "material": osgx_DirectLighting() (DIRECT_LIGHTING_HOOK_DEFAULT below) consumes it for
+// PBR, and a Lambert/toon/NPR shader consumes it directly with no osgx_Material in scope at all.
+//
+// `toLight` is the UNNORMALIZED light center minus `worldPos` (zero for a directional light), and
+// `sourceRadius` is zeroed for a directional light - together they're what a sphere-aware specular
+// term (DIRECT_LIGHT_SPHERE) needs; a diffuse-only consumer can ignore both. Requires
+// LIGHT_UNIFORMS, POINT_LIGHT_RADIANCE, DIRECTIONAL_LIGHT_RADIANCE, and SPOT_LIGHT_RADIANCE already
+// in scope. Does not check `light.enabled` - the caller's loop does, so a caller can still evaluate
+// a disabled light on purpose (e.g. a gizmo/debug view).
+inline constexpr const char* LIGHT_SAMPLE = R"GLSL(
+struct osgx_LightSample {
+	vec3 L;
+	vec3 radiance;
+	vec3 toLight;
+	float sourceRadius;
+};
+
+osgx_LightSample osgx_SampleLight(osgx_Light light, vec3 worldPos) {
+	osgx_LightSample s;
+
+	s.toLight = vec3(0.0);
+	s.sourceRadius = 0.0;
+
+	if(light.type == OSGX_LIGHT_TYPE_DIRECTIONAL) {
+		s.radiance = osgx_DirectionalLightRadiance(light.dir, light.color, light.posIntensity.w, s.L);
+
+		return s;
+	}
+
+	if(light.type == OSGX_LIGHT_TYPE_SPOT) {
+		s.radiance = osgx_SpotLightRadiance(
+			light.posIntensity, light.color, light.dir, light.spotAngles, worldPos, s.L
+		);
+	}
+
+	else {
+		s.radiance = osgx_PointLightRadiance(light.posIntensity, light.color, worldPos, s.L);
+	}
+
+	s.toLight = light.posIntensity.xyz - worldPos;
+	s.sourceRadius = light.sourceRadius;
+
+	return s;
 }
 )GLSL";
 
@@ -338,7 +394,7 @@ inline constexpr const char* DIRECT_LIGHTING_HOOK_DEFAULT = R"GLSL(
 const float PI = 3.14159265359;
 
 #pragma osgx::pbr MATERIAL_STRUCT, D_GGX, G_SCHLICK, G_SMITH, F_SCHLICK
-#pragma osgx::light DIRECT_SPECULAR, DIRECT_DIFFUSE, POINT_LIGHT_RADIANCE, LIGHT_UNIFORMS, DIRECT_LIGHT, DIRECTIONAL_LIGHT_RADIANCE, SPOT_LIGHT_RADIANCE, SPHERE_LIGHT_SPECULAR, DIRECT_LIGHT_SPHERE
+#pragma osgx::light DIRECT_SPECULAR, DIRECT_DIFFUSE, POINT_LIGHT_RADIANCE, LIGHT_UNIFORMS, DIRECT_LIGHT, DIRECTIONAL_LIGHT_RADIANCE, SPOT_LIGHT_RADIANCE, LIGHT_SAMPLE, SPHERE_LIGHT_SPECULAR, DIRECT_LIGHT_SPHERE
 
 vec3 osgx_DirectLighting(vec3 N, vec3 V, vec3 worldPos, osgx_Material mat) {
 	vec3 color = vec3(0.0);
@@ -358,31 +414,15 @@ vec3 osgx_DirectLighting(vec3 N, vec3 V, vec3 worldPos, osgx_Material mat) {
 
 		if(light.enabled == 0) continue;
 
-		vec3 L;
-		vec3 radiance;
+		// LIGHT_SAMPLE zeroes sourceRadius for directional lights, so no separate type check here.
+		osgx_LightSample s = osgx_SampleLight(light, worldPos);
 
-		if(light.type == OSGX_LIGHT_TYPE_DIRECTIONAL) {
-			radiance = osgx_DirectionalLightRadiance(light.dir, light.color, light.posIntensity.w, L);
-		}
-
-		else if(light.type == OSGX_LIGHT_TYPE_SPOT) {
-			radiance = osgx_SpotLightRadiance(
-				light.posIntensity, light.color, light.dir, light.spotAngles, worldPos, L
-			);
+		if(s.sourceRadius > 0.0) {
+			color += osgx_DirectLightSphere(N, V, s.L, s.toLight, s.radiance, mat, s.sourceRadius);
 		}
 
 		else {
-			radiance = osgx_PointLightRadiance(light.posIntensity, light.color, worldPos, L);
-		}
-
-		if(light.sourceRadius > 0.0 && light.type != OSGX_LIGHT_TYPE_DIRECTIONAL) {
-			color += osgx_DirectLightSphere(
-				N, V, L, light.posIntensity.xyz - worldPos, radiance, mat, light.sourceRadius
-			);
-		}
-
-		else {
-			color += osgx_DirectLight(N, V, L, radiance, mat);
+			color += osgx_DirectLight(N, V, s.L, s.radiance, mat);
 		}
 	}
 

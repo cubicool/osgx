@@ -47,7 +47,6 @@
 #include "osgx/Core.hpp"
 #include "osgx/GBuffer.hpp"
 #include "osgx/gltf/PBRIBL.hpp"
-#include "osgx/gltf/Shader.hpp"
 #include "osgx/ImGui.hpp"
 #include "osgx/PBR.hpp"
 #include "osgx/Shapes.hpp"
@@ -89,20 +88,11 @@ std::filesystem::path findModelFile(std::string_view filename) {
 	);
 }
 
-// Feeds a hand-authored, non-glTF-sourced geometry (a bare osgx::Polyhedron below) into
-// PBRIBLGBuffer::create()'s geometry pass - a first concrete step toward TODO.md's "Generic vs.
-// glTF-specific layering" goal: the shader-side contract (osgx_gltf_Material/GET_MATERIAL) was
-// already glTF-INDEPENDENT (every field is a plain factor, gated behind has*Map flags this call
-// leaves false), it just had no non-glTF C++-side producer yet. osgx::Material (PBR.hpp/PBR.cpp)
-// is that producer now - the exact same StateAttribute the glTF loader's own Material.cpp builds
-// for a factor-only material (e.g. Fox's roughnessFactor=0.58 with no textures at all) - so
-// PBRIBLGBuffer::create()'s Program (which always declares MATERIAL_INPUTS/GET_MATERIAL) has
-// something valid to read regardless of what built the geometry. No textures are bound at any
-// unit: every texture read in GET_MATERIAL/AlphaCoverage is already conditioned on its own
-// has*Map flag being false here (osgx::Material derives them from its unset texture ref_ptrs), and
-// osgx_gltf_Emissive() (the one unconditional sample) safely reads GL's well-defined (0,0,0,1)
-// incomplete-texture fallback for an unbound sampler - exactly the same as any real glTF material
-// with no emissive texture.
+// Gives a hand-authored, non-glTF geometry (a bare osgx::Polyhedron below) the osgx::Material that
+// PBRIBLGBuffer::create()'s geometry pass reads via MATERIAL_INPUTS/GET_MATERIAL (PBR.hpp). It is
+// the same StateAttribute the glTF loader builds for a factor-only material. No textures are bound:
+// every texture read in GET_MATERIAL/GET_ALPHA/GET_EMISSIVE is gated on a has*Map flag that is
+// false here, and alpha mode/cutoff and emissive factor keep their Opaque/0.5/black defaults.
 void attachFlatMaterial(
 	osg::Geometry* geometry, const osg::Vec4& baseColor, float roughness, float metallic
 ) {
@@ -113,13 +103,6 @@ void attachFlatMaterial(
 	material->setMetallic(metallic);
 
 	geometry->getOrCreateStateSet()->setAttributeAndModes(material);
-
-	auto* ss = geometry->getOrCreateStateSet();
-
-	ss->addUniform(new osg::Uniform(
-		osgx::gltf::shader::ALPHA_MODE_UNIFORM, osgx::gltf::shader::ALPHA_MODE_OPAQUE
-	));
-	ss->addUniform(new osg::Uniform(osgx::gltf::shader::ALPHA_CUTOFF_UNIFORM, 0.5f));
 }
 
 // `nullptr` on an unrecognized name - caller prints usage and exits, same contract
