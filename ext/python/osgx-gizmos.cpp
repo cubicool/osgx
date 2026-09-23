@@ -1,6 +1,5 @@
 #include "osgx-python.hpp"
 #include "osgx/Gizmos.hpp"
-#include "osgx/PBR.hpp"
 
 namespace osgx_python {
 

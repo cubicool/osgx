@@ -45,8 +45,7 @@ std::string resolveShaderLibs(std::string src);
 // Shader object, and a PerContextShader's compile is gated by `if(!_needsCompile) return`, so N
 // Programs sharing the SAME osg::Shader* only ever trigger one real glCompileShader, while N
 // Programs each holding their OWN Shader instance - even with byte-identical source - recompile
-// independently every time. Confirmed empirically (not just by reading OSG's source) via a
-// miscosg scratchpad proof; see slughorn/osgSlug's project_shader_object_caching memory.
+// independently every time. Confirmed empirically, not just by reading OSG's source.
 // cachedShader() makes sharing the outcome by default for source that's likely to repeat.
 // ================================================================================================
 

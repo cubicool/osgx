@@ -42,8 +42,7 @@
 // G-buffer + Hook::DeferredLighting pipeline doesn't actually require glTF-sourced geometry, only
 // the shader-side material CONTRACT (which was already glTF-independent, just never had a non-glTF
 // C++ producer before now). Deliberately the plainest possible non-glTF consumer - no decals, no
-// per-face materials, no dice-specific anything (see [[project_gltf_generic_layering_audit]] in
-// the agent's memory for the larger dice/osgSlug motivation this is a first step toward).
+// per-face materials, no dice-specific anything.
 
 #include "osgx/Core.hpp"
 #include "osgx/GBuffer.hpp"

@@ -110,12 +110,13 @@ by concern:
   `Icosahedron`, `Dodecahedron`, `PentagonalTrapezohedron`) with explicit core-profile vertex
   attributes.
 - `osgx/Shader.hpp` — generic, line-oriented GLSL library expansion.
-- `osgx/PBR.hpp` — PBR BRDF snippets, typed direct lights (`LightSet`: directional/point/sphere/
-  spot), and `OrbitLightRig`.
+- `osgx/PBR.hpp` — PBR BRDF snippets and the `Material` `StateAttribute`.
+- `osgx/Light.hpp` — typed direct lights (`LightSet`: directional/point/sphere/spot) and
+  `OrbitLightRig`.
 - `osgx/Gizmos.hpp` — `LightMarkers`/`LightGizmos` scene-space visualizations for `LightSet`
   lights (depth-tested markers for point/sphere/spot, plus a directional-only overlay camera).
 - `osgx/Shadow.hpp` — single-light directional shadow mapping (`ShadowMap::create()`), a drop-in
-  `DIRECT_LIGHTING_HOOK_SHADOWED` swap for `PBR.hpp`'s default direct-lighting hook.
+  `DIRECT_LIGHTING_HOOK_SHADOWED` swap for `Light.hpp`'s default direct-lighting hook.
 - `osgx/IBL.hpp` — environment-map loading, BRDF-LUT baking (including the process-wide
   `SharedBRDFLUT::create()` cache), SH9/Lambertian diffuse irradiance, and cubemap readback helpers
   (`readCubeMapFaces()`, `BRDFLUTReadback`).

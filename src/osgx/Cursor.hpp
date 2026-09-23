@@ -108,8 +108,8 @@ private:
 // to an event) is necessary at all. Deliberately NOT a hard call into
 // osgx::platform::isCursorInWindow(): this file is core (always compiled), while
 // isCursorInWindow() lives in the optional, X11-only osgx::platform module (Linux.hpp) - a core
-// module must not reach into an optional one (ai/todo-picking.md tracks the same coupling
-// PickCameraSync still has today). A caller built with OSGX_PLATFORM supplies its own
+// module must not reach into an optional one (PickCameraSync still has the same coupling
+// today). A caller built with OSGX_PLATFORM supplies its own
 // `[cam]{ return osgx::platform::isCursorInWindow(cam); }`; a caller without it, or one that
 // doesn't care about the in-window edge case, just omits the argument, and inWindow() stays at
 // its fail-safe default forever.

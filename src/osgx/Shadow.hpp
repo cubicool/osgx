@@ -28,8 +28,7 @@ namespace osgx {
 // and meaningfully different frustum math, and are a separate, later feature. This is the real
 // osgx home for the shadow_cam/shadowFactor() pattern OpenSceneGraph.py/examples/pyosg-lighting/
 // 08-shadows.py and 09-ibl.py both independently hand-rolled (and, in 08-shadows.py's case,
-// duplicated a second time between the model and floor fragment shaders) - see
-// ai/project_lighting_series_pip_simplification.md for the origin.
+// duplicated a second time between the model and floor fragment shaders).
 //
 // World-space, not eye-space: osgx::gltf::pbribl's direct-lighting call site (PBRIBL.cpp's
 // FULL_PBR_FRAGMENT_SHADER_SRC) already reconstructs a genuine world-space `worldPos` for
@@ -185,13 +184,13 @@ float osgx_ShadowFactor(vec3 worldPos) {
 }
 )GLSL";
 
-// Shadowed counterpart to osgx::DIRECT_LIGHTING_HOOK_DEFAULT (PBR.hpp) - identical per-light
+// Shadowed counterpart to osgx::DIRECT_LIGHTING_HOOK_DEFAULT (Light.hpp) - identical per-light
 // dispatch loop, except the light at index `osgx_shadowCasterIndex` (default 0, the "index 0 is
 // the key light" convention every existing pyosg-lighting example already follows) has its
 // contribution multiplied by osgx_ShadowFactor(worldPos), computed once per fragment (not once per
 // light - it only depends on position, not which light is being evaluated). A caller with a
 // ShadowMap adds THIS shader object instead of DIRECT_LIGHTING_HOOK_DEFAULT - same hook-swap
-// mechanism (see PBR.hpp's DIRECT_LIGHTING_DECL/DIRECT_LIGHTING_HOOK_DEFAULT contract comment),
+// mechanism (see Light.hpp's DIRECT_LIGHTING_DECL/DIRECT_LIGHTING_HOOK_DEFAULT contract comment),
 // no other shader changes needed: both define osgx_DirectLighting() with the identical (N, V,
 // worldPos, mat) signature DIRECT_LIGHTING_DECL forward-declares. Self-contained (own #version/PI/
 // #pragma lines), so not spliced by name via #pragma osgx::shadow - deliberately NOT in
@@ -201,14 +200,15 @@ inline constexpr const char* DIRECT_LIGHTING_HOOK_SHADOWED = R"GLSL(
 
 const float PI = 3.14159265359;
 
-#pragma osgx::pbr MATERIAL_STRUCT, D_GGX, G_SCHLICK, G_SMITH, F_SCHLICK, DIRECT_SPECULAR, DIRECT_DIFFUSE, POINT_LIGHT_RADIANCE, LIGHT_UNIFORMS, DIRECT_LIGHT, DIRECTIONAL_LIGHT_RADIANCE, SPOT_LIGHT_RADIANCE, SPHERE_LIGHT_SPECULAR, DIRECT_LIGHT_SPHERE
+#pragma osgx::pbr MATERIAL_STRUCT, D_GGX, G_SCHLICK, G_SMITH, F_SCHLICK
+#pragma osgx::light DIRECT_SPECULAR, DIRECT_DIFFUSE, POINT_LIGHT_RADIANCE, LIGHT_UNIFORMS, DIRECT_LIGHT, DIRECTIONAL_LIGHT_RADIANCE, SPOT_LIGHT_RADIANCE, SPHERE_LIGHT_SPECULAR, DIRECT_LIGHT_SPHERE
 #pragma osgx::shadow SHADOW_UNIFORMS, SHADOW_FACTOR
 
 vec3 osgx_DirectLighting(vec3 N, vec3 V, vec3 worldPos, osgx_Material mat) {
 	vec3 color = vec3(0.0);
 	float shadow = osgx_ShadowFactor(worldPos);
 
-	// See PBR.hpp's DIRECT_LIGHTING_HOOK_DEFAULT for why this loops the compile-time
+	// See Light.hpp's DIRECT_LIGHTING_HOOK_DEFAULT for why this loops the compile-time
 	// OSGX_MAX_LIGHTS bound gated by `enabled`, not the formerly-pushed osgx_lightCount uniform.
 	for(int i = 0; i < OSGX_MAX_LIGHTS; i++) {
 		osgx_Light light = osgx_lights[i];

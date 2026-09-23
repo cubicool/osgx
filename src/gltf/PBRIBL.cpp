@@ -13,6 +13,7 @@ OSGX_ENABLE_WARNINGS
 
 #include "osgx/GGXPrefilter.hpp"
 #include "osgx/IBL.hpp"
+#include "osgx/Light.hpp"
 #include "osgx/PBR.hpp"
 #include "osgx/Shadow.hpp"
 
@@ -263,6 +264,7 @@ void registerShaderLibs() {
 
 std::string resolveShaderLibs(std::string_view source) {
 	osgx::registerPBRShaderLibs();
+	osgx::registerLightShaderLibs();
 	osgx::registerIBLShaderLibs();
 	osgx::registerShadowShaderLibs();
 
@@ -290,7 +292,7 @@ namespace osgx::gltf::pbribl {
 // low-cost representation; it is deliberately not part of this reference-quality convenience path.
 //
 // IBL plus an optional handful of direct/punctual lights, via the osgx_DirectLighting() CONTRACT
-// (DIRECT_LIGHTING_DECL/DIRECT_LIGHTING_HOOK_DEFAULT in PBR.hpp) - one call
+// (DIRECT_LIGHTING_DECL/DIRECT_LIGHTING_HOOK_DEFAULT in Light.hpp) - one call
 // (`osgx_DirectLighting(N, V, worldPos, mat)`) against osgx::LightSet's buffer-backed light array
 // (up to osgx::MAX_LIGHTS), instead of this shader hand-copying the per-light dispatch loop
 // itself (a prior revision did exactly that, and drifted out of sync with OpenSceneGraph.py's
@@ -340,7 +342,7 @@ out vec2 vEmissiveUV;
 // compiled VERTEX shader object (shader::SKINNING_HOOK_IDENTITY by default, or a caller-supplied
 // `{{osgx::Hook::Skinning, ...}}` hooks entry, e.g. shader::SKINNING_HOOK_LINEAR_BLEND) attached
 // alongside this one via applyHooks() (Shader.hpp) - same "forward-declare + call site here,
-// definition elsewhere" hook pattern PBR.hpp's DIRECT_LIGHTING_DECL uses.
+// definition elsewhere" hook pattern Light.hpp's DIRECT_LIGHTING_DECL uses.
 struct osgx_gltf_SkinnedVertex {
 	vec4 position;
 	vec3 normal;
@@ -370,7 +372,8 @@ constexpr const char FULL_PBR_FRAGMENT_SHADER_SRC[] = R"GLSL(
 
 const float PI = 3.14159265359;
 
-#pragma osgx::pbr MATERIAL_STRUCT, F_MULTISCATTER, SPECULAR_AA, TONEMAP_DECL, DIRECT_LIGHTING_DECL
+#pragma osgx::pbr MATERIAL_STRUCT, F_MULTISCATTER, SPECULAR_AA, TONEMAP_DECL
+#pragma osgx::light DIRECT_LIGHTING_DECL
 #pragma osgx::ibl IBL_LIGHTING_INPUTS, EVALUATE_IBL
 #pragma osgx::gltf MATERIAL_INPUTS, GET_MATERIAL, SHADING_NORMAL, EMISSIVE, ALPHA_COVERAGE
 
@@ -581,7 +584,8 @@ constexpr const char LIGHTING_FRAGMENT_SHADER_SRC[] = R"GLSL(
 
 const float PI = 3.14159265359;
 
-#pragma osgx::pbr MATERIAL_STRUCT, F_MULTISCATTER, SPECULAR_AA, TONEMAP_DECL, DIRECT_LIGHTING_DECL
+#pragma osgx::pbr MATERIAL_STRUCT, F_MULTISCATTER, SPECULAR_AA, TONEMAP_DECL
+#pragma osgx::light DIRECT_LIGHTING_DECL
 #pragma osgx::ibl IBL_LIGHTING_INPUTS, EVALUATE_IBL
 // DEFERRED_LIGHTING_INPUTS/GET_GBUFFER: the same osgx_GBuffer/osgx_GetGBuffer() an
 // osgx::Hook::DeferredLighting override uses - this built-in default is deliberately not a
@@ -968,7 +972,7 @@ PBRIBLScene PBRIBLScene::create(
 	// osgx_DirectLighting() CONTRACT's definition - a second, separately compiled FRAGMENT shader
 	// object with no main() of its own; GLSL cross-shader-object linking resolves the
 	// FULL_PBR_FRAGMENT_SHADER_SRC's forward-declared osgx_DirectLighting() call against this at
-	// Program-link time. See PBR.hpp's DIRECT_LIGHTING_DECL/DIRECT_LIGHTING_HOOK_DEFAULT comment.
+	// Program-link time. See Light.hpp's DIRECT_LIGHTING_DECL/DIRECT_LIGHTING_HOOK_DEFAULT comment.
 	// `shadowMap` swaps in the shadowed variant (Shadow.hpp's DIRECT_LIGHTING_HOOK_SHADOWED) --
 	// same contract/call signature, so nothing else in this shader changes either way. Not routed
 	// through applyHooks() (unlike Skinning/Tonemap just below) - `shadowMap` picks between two

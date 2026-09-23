@@ -82,10 +82,11 @@ const float PI = 3.14159265359;
 // This shader no longer touches lightCount/lightType/DIRECT_LIGHT/etc. directly - it only needs
 // the osgx_DirectLighting() CONTRACT declaration (DIRECT_LIGHTING_DECL) plus a call site. The actual
 // per-light dispatch loop lives in a SEPARATE compiled shader object (see makeProgram() below,
-// DIRECT_LIGHTING_HOOK_DEFAULT), linked in at Program-link time - see PBR.hpp's own comment on
+// DIRECT_LIGHTING_HOOK_DEFAULT), linked in at Program-link time - see Light.hpp's own comment on
 // DIRECT_LIGHTING_DECL/DIRECT_LIGHTING_HOOK_DEFAULT for the full rationale (mirrors osgSlug's hook
 // pattern). This is the validation vehicle for that new contract, live-tested 2026-08-16.
-#pragma osgx::pbr MATERIAL_STRUCT, DIRECT_LIGHTING_DECL
+#pragma osgx::pbr MATERIAL_STRUCT
+#pragma osgx::light DIRECT_LIGHTING_DECL
 
 in vec3 vNormal;
 in vec3 vPosition;
@@ -127,6 +128,7 @@ void main() {
 
 osg::ref_ptr<osg::Program> makeProgram() {
 	osgx::registerPBRShaderLibs();
+	osgx::registerLightShaderLibs();
 
 	auto program = osgx::make_nref<osg::Program>("osgx_lights_demo");
 	// Only the fragment shader carries `#pragma osgx::pbr ...` directives - matches
@@ -139,7 +141,7 @@ osg::ref_ptr<osg::Program> makeProgram() {
 	// against this at Program-link time. Self-contained (carries its own #pragma), so it needs no
 	// further resolveShaderLibs() dependency wiring beyond this one call. Swap this shader object
 	// out for a different one (defining osgx_DirectLighting() differently) to override direct-light
-	// shading without touching fragmentSrc at all - see PBR.hpp's DIRECT_LIGHTING_DECL comment.
+	// shading without touching fragmentSrc at all - see Light.hpp's DIRECT_LIGHTING_DECL comment.
 	auto hookSrc = osgx::resolveShaderLibs(std::string(osgx::DIRECT_LIGHTING_HOOK_DEFAULT));
 
 	program->addShader(new osg::Shader(osg::Shader::VERTEX, std::string(VERTEX_SHADER)));

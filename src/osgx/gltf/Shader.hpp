@@ -80,7 +80,7 @@ uniform int osgx_gltf_hasEmissiveMap;
 // Vertex-side hook: FULL_PBR_VERTEX_SHADER (PBRIBL.cpp) forward-declares osgx_gltf_ApplySkin() and
 // calls it on the raw glTF-authored vertex/normal/tangent before applying any camera transform --
 // the same "forward-declare + call site in the main shader, DEFINITION in a separate, separately
-// compiled hook shader object" pattern PBR.hpp's DIRECT_LIGHTING_DECL/DIRECT_LIGHTING_HOOK_DEFAULT
+// compiled hook shader object" pattern Light.hpp's DIRECT_LIGHTING_DECL/DIRECT_LIGHTING_HOOK_DEFAULT
 // already uses (see that comment for the full mechanism: GLSL permits exactly one body per
 // function, so a hook SUBSTITUTES the built-in, never adds alongside it).
 //

@@ -2,7 +2,7 @@
 
 #include "Array.hpp"
 #include "Core.hpp"
-#include "PBR.hpp"
+#include "Light.hpp"
 
 OSGX_DISABLE_WARNINGS
 

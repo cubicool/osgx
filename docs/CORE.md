@@ -127,14 +127,14 @@ first came from), but collapsed into plain `osgx::` since none of it actually ne
   class: builds a `CursorCallback` whose `fn` pushes `state`'s live position + in-window flag into
   the caller-owned `uniform` (must be `FLOAT_VEC3`: x, y, `inWindow ? 1.0 : 0.0`) every update
   traversal. Deliberately a plain `Uniform` + update callback, not a `StateAttribute` pushing the
-  uniform directly — see `osgx::LightSet::apply()`'s own history in [`osgx/PBR.hpp`](#osgxpbrhpp)
+  uniform directly — see `osgx::LightSet::apply()`'s own history in [`osgx/Light.hpp`](#osgxlighthpp)
   for why that specific shortcut is unreliable under a sibling `Program`'s `StateAttribute::OVERRIDE`.
 - `CursorCapture` — a `GUIEventHandler` implementing the standard hide+warp+accumulate trick for
   turntable/FPS-style relative-motion look controls: while `setCaptured(true)`, hides the cursor
   and re-centers it on every move, accumulating the delta for `consume()` to poll once per update
   traversal. **Not** true OS-level pointer confinement (nothing stops the cursor visibly darting to
   the screen edge for one frame between warps on some window managers) — that needs real
-  `XGrabPointer` work, tracked in `ai/todo-platform.md`. Deliberately not wired into
+  `XGrabPointer` work. Deliberately not wired into
   `OrbitAxisManipulator` directly — compose the two at the application level instead (add both as
   event handlers, feed `consume()`'d deltas into `orbitByDelta()`); see `examples/osgx-manipulator.cpp`.
 
@@ -282,13 +282,34 @@ substitutes the built-in rather than competing with it).
 
 ## `osgx/PBR.hpp`
 
-Reusable BRDF GLSL snippets and typed direct lights, living flat in `osgx::` (not its own
-namespace — `registerPBRShaderLibs()`'s `"osgx::pbr"` catalog tag is a conventional shader-lib key
-only, unrelated to the C++ namespace; see [Namespaces](#namespaces) below).
+Reusable BRDF GLSL snippets and the `Material` `StateAttribute`, living flat in `osgx::` (not its
+own namespace — `registerPBRShaderLibs()`'s `"osgx::pbr"` catalog tag is a conventional shader-lib
+key only, unrelated to the C++ namespace; see [Namespaces](#namespaces) below).
 
 - GLSL snippets — GGX distribution, Schlick Fresnel, Smith geometry — plain function-body
   snippets, concatenated into a consuming fragment shader via `registerPBRShaderLibs()`/
   `resolveShaderLibs()`, not full shaders of their own.
+- `Material` — a `StateAttribute` carrying PBR material factors (base color/roughness/metallic/
+  occlusion) and up to four texture maps, applied via a `std430` shader storage buffer.
+
+Direct lights (`LightSet`/`LightType`/`OrbitLightRig`) split out to `osgx/Light.hpp` 2026-09-23 -
+see that file's own section below. This file has no C++ dependency on it; a consumer wanting both
+includes both, same as always via the `osgx.hpp` umbrella.
+
+## `osgx/Light.hpp`
+
+Typed direct lights (Point/Directional/Spot, plus a Sphere variant via nonzero `sourceRadius` -
+not a fourth type), and the per-light "direct" GLSL math (`DIRECT_LIGHT`/`DIRECT_LIGHTING_*`) that
+consumes them - a separate domain from `PBR.hpp`'s `Material`/BRDF snippets that happened to live
+in the same file by history, not by dependency. Registers under its own `"osgx::light"` catalog
+tag (`registerLightShaderLibs()`), distinct from `"osgx::pbr"` - a consumer using both writes two
+`#pragma` lines, e.g. `#pragma osgx::pbr MATERIAL_STRUCT` + `#pragma osgx::light DIRECT_LIGHTING_DECL`.
+
+Vocabulary note: this codebase calls the group "direct" lights, not glTF's "punctual" - glTF's
+`KHR_lights_punctual` is explicitly size-zero, and the Sphere variant (nonzero `sourceRadius`) is
+not, so "punctual" would misdescribe it. "Direct" instead answers the question that actually
+matters here: computed explicitly per-light, as opposed to baked/prefiltered ambient/IBL.
+
 - `LightSet` — a `StateAttribute` owning a `std430`-SSBO-backed array of typed direct lights (`LightType::Point`/`Directional`/`Spot`; a sphere light is a `Point`/`Spot` with non-zero `sourceRadius`, not a fourth type) and its `osgx_lightCount` uniform. Construct it, then attach it through `StateSet::setAttributeAndModes()` (size `MAX_LIGHTS`, zero-initialized, everything off until `setCount()`+`setPoint()`/`setDirectional()`/`setSpot()`). Its `apply()` binds the SSBO and forwards the owned count uniform through OSG's shader-composition uniform path, so callers cannot desynchronize the two. Each slot also has an `enabled` flag, so `setEnabled()` can toggle a configured light without changing its count or packed data. Typed setters/getters (`getType()`, `getPosIntensity()`, `getColor()`, `getSourceRadius()`, `getDirection()`, `getSpotAngles()`, …) replace the old parallel-`osg::Uniform`-array contract.
 - `OrbitLightRig` — the animated counterpart: an `osg::NodeCallback` that writes orbiting position/intensity into a `LightSet` every update traversal (for the subset of lights that should move; a `LightSet` can be shared between a static rig and an orbiting one).
 
@@ -355,7 +376,7 @@ TODO.md's Shadow section).
     *existing* `ShadowMap` in place (no new camera/FBO/depth-texture allocation), cheap enough to
     call every frame for an interactively-moving light (e.g. an ImGui-dragged direction). `create()`
     remains the right call for a light fixed at scene-build time.
-- `DIRECT_LIGHTING_HOOK_SHADOWED` — a drop-in replacement for `PBR.hpp`'s
+- `DIRECT_LIGHTING_HOOK_SHADOWED` — a drop-in replacement for `Light.hpp`'s
   `DIRECT_LIGHTING_HOOK_DEFAULT`: identical per-light dispatch loop, except the light at
   `osgx_shadowCasterIndex` has its contribution multiplied by `osgx_ShadowFactor()` (world-space PCF
   3×3 shadow test). Both define `osgx_DirectLighting()` with the same signature, so swapping hooks

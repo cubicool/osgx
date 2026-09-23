@@ -76,8 +76,8 @@ bool unprojectToPlane(
 // Single-point unproject at an explicit depth: the CPU-side twin of the shared GLSL
 // `osgx_Unproject(vec2 ndc, float depth)` below, mirroring its signature exactly (unlike
 // unprojectRay(), which only ever exposes the near/far pair together). Motivated by the
-// osgx-aoe example's Mode 2 (decal on an arbitrary model surface via osgx::GBuffer, see
-// ai/todo-aoe.md): approach (a) there reads a single depth-buffer sample back to the CPU at the
+// osgx-aoe example's Mode 2 (decal on an arbitrary model surface via osgx::GBuffer): approach
+// (a) there reads a single depth-buffer sample back to the CPU at the
 // cursor's pixel and needs to turn that (screen x/y, depth) triple into a world-space point,
 // which is exactly this call - no plane, no ray, just the one point.
 osg::Vec3d unprojectPoint(const osg::Camera* camera, double ndcX, double ndcY, double ndcDepth);

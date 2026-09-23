@@ -255,7 +255,7 @@ osg::ref_ptr<osg::Image> createCharsetAtlas(int pixelScale=7) {
 constexpr unsigned int GLYPH_BINDING = 4;
 
 // binding = 4 here must match GLYPH_BINDING above - same hardcode-and-cross-reference pattern
-// osgx::LIGHT_BINDING/PBR.hpp's LIGHT_UNIFORMS uses for its own `binding = 3`.
+// osgx::LIGHT_BINDING/Light.hpp's LIGHT_UNIFORMS uses for its own `binding = 3`.
 //
 // No osg_Vertex/osg_MultiTexCoord0 (and correspondingly, PixelText::_build() binds no
 // osg::Vec3Array/Vec2Array at all): the unit quad's four corners are procedural, indexed by

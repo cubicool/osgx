@@ -94,7 +94,8 @@ constexpr std::string_view FRAGMENT_SHADER = R"GLSL(
 
 const float PI = 3.14159265359;
 
-#pragma osgx::pbr MATERIAL_STRUCT, DIRECT_LIGHTING_DECL
+#pragma osgx::pbr MATERIAL_STRUCT
+#pragma osgx::light DIRECT_LIGHTING_DECL
 
 in vec3 vNormal;
 in vec3 vPosition;
@@ -139,6 +140,7 @@ void main() {
 // shader object.
 osg::ref_ptr<osg::Program> makeProgram(bool shadowed) {
 	osgx::registerPBRShaderLibs();
+	osgx::registerLightShaderLibs();
 	osgx::registerShadowShaderLibs();
 
 	auto program = osgx::make_nref<osg::Program>(

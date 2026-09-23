@@ -24,6 +24,7 @@ PYBIND11_MODULE(osgx, m) {
 	// actually needed anything X11-specific) - see ext/python/osgx-cursor.cpp.
 	osgx_python::bind_cursor(m);
 	osgx_python::bind_pbr(m);
+	osgx_python::bind_light(m);
 	osgx_python::bind_shadow(m);
 	osgx_python::bind_gbuffer(m);
 	osgx_python::bind_ibl(m);

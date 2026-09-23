@@ -12,6 +12,7 @@
 #include "Shapes.hpp"
 #include "Shader.hpp"
 #include "PBR.hpp"
+#include "Light.hpp"
 #include "Shadow.hpp"
 #include "GBuffer.hpp"
 #include "Aura.hpp"

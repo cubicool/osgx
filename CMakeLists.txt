@@ -239,6 +239,7 @@ add_library(osgx ${OSGX_LIBRARY_TYPE}
 	src/Grid.cpp
 	src/IBL.cpp
 	src/LambertianBake.cpp
+	src/Light.cpp
 	src/Manipulators.cpp
 	src/PBR.cpp
 	src/Picking.cpp
@@ -269,6 +270,7 @@ target_sources(osgx PUBLIC
 	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/GBuffer.hpp>"
 	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/GGXPrefilter.hpp>"
 	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/LambertianBake.hpp>"
+	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/Light.hpp>"
 	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/Manipulators.hpp>"
 	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/PBR.hpp>"
 	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/Picking.hpp>"
@@ -582,6 +584,7 @@ if(OSGX_BUILD_PYTHON AND Python3_Development.Module_FOUND)
 		"ext/python/osgx-cursor.cpp"
 		"ext/python/osgx-rtt.cpp"
 		"ext/python/osgx-pbr.cpp"
+		"ext/python/osgx-light.cpp"
 		"ext/python/osgx-shadow.cpp"
 		"ext/python/osgx-gbuffer.cpp"
 		"ext/python/osgx-ibl.cpp"
