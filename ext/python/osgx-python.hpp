@@ -39,6 +39,7 @@ void bind_light(py::module_& m);
 void bind_shadow(py::module_& m);
 void bind_gbuffer(py::module_& m);
 void bind_ibl(py::module_& m);
+void bind_environment(py::module_& m);
 void bind_aura(py::module_& m);
 void bind_debug(py::module_& m_debug);
 void bind_picking(py::module_& m);

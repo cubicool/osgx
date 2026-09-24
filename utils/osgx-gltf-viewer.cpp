@@ -2,7 +2,7 @@
 //
 // osgx::gltf-owned viewer for its optional osgx-powered PBR/IBL renderer.
 //
-// A generated PBRIBLEnvironment root MUST be added to the scene graph or its BRDF-LUT and
+// A generated osgx::Environment's getBakeRoot() MUST be added to the scene graph or its BRDF-LUT and
 // diffuse-irradiance passes never bake; both are ABSOLUTE_RF, so placement within that graph does
 // not matter.
 
@@ -400,7 +400,7 @@ int main(int argc, char** argv) {
 		return 1;
 	}
 
-	osgx::gltf::pbribl::PBRIBLEnvironment environment;
+	osg::ref_ptr<osgx::Environment> environment;
 	std::filesystem::path hdrEnvironment;
 
 	if(haveHdr) {
@@ -420,12 +420,17 @@ int main(int argc, char** argv) {
 
 		const std::filesystem::path directory(officialIBLPath);
 
-		environment.envMap = osgx::loadPrefilterCubemap((directory / "khronos-ggx.ktx2").string());
-		environment.brdfLUT = officialIBL.lut;
-		environment.diffuseEnv = officialIBL.diffuse;
-		// iblAxis already defaults to this same basis; PBRIBLEnvironment's aggregate init
-		// above doesn't run here since envMap/brdfLUT/diffuseEnv are set field-by-field, but
-		// `environment` was default-constructed, so iblAxis already holds it.
+		auto specularMap = osgx::loadPrefilterCubemap((directory / "khronos-ggx.ktx2").string());
+
+		if(specularMap) {
+			// The Khronos viewer's exported GGX cube is six levels (256 down to 8) with the GGX
+			// roughness range over the first five; the sixth is not part of it.
+			environment = osgx::make_ref<osgx::Environment>(
+				specularMap.get(), officialIBL.diffuse.get(), officialIBL.lut.get(), 4.0f
+			);
+
+			environment->setRotation(osgx::gltf::pbribl::KHRONOS_ENVIRONMENT_ROTATION);
+		}
 	}
 
 	else if(haveEnv) {
@@ -437,20 +442,22 @@ int main(int argc, char** argv) {
 			return 1;
 		}
 
-		environment = osgx::gltf::pbribl::PBRIBLEnvironment::load(manifest.string());
+		environment = osgx::gltf::pbribl::loadEnvironment(manifest.string());
 	}
 
-	else {
-		environment = osgx::gltf::pbribl::PBRIBLEnvironment::prepare(hdrEnvironment.string(), 1024);
+	else if(auto hdrImage = osgDB::readRefImageFile(hdrEnvironment.string())) {
+		environment = osgx::make_ref<osgx::Environment>(hdrImage.get());
+
+		environment->setRotation(osgx::gltf::pbribl::KHRONOS_ENVIRONMENT_ROTATION);
 	}
 
-	if(!environment.valid()) {
+	if(!environment) {
 		std::cerr << "Failed to prepare PBR IBL resources" << std::endl;
 
 		return 1;
 	}
 
-	auto pis = osgx::gltf::pbribl::PBRIBLScene::create(model, environment, 1.0f, 1.0f, diagnostics);
+	auto pis = osgx::gltf::pbribl::PBRIBLScene::create(model, environment.get(), diagnostics);
 
 	if(!pis.valid()) return 1;
 
@@ -466,7 +473,7 @@ int main(int argc, char** argv) {
 
 	auto root = osgx::make_ref<osg::Group>();
 
-	if(environment.root) root->addChild(environment.root);
+	if(environment->getBakeRoot()) root->addChild(environment->getBakeRoot());
 	root->addChild(model);
 
 	viewer.setSceneData(root);

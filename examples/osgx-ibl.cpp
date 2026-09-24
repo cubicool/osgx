@@ -621,7 +621,7 @@ int main(int argc, char** argv) {
 			auto lutCamera = osgx::makeBRDFLUTCamera(256, lutTexture);
 
 			// A sibling bake root under the same parent, same as
-			// osgx::gltf::pbribl::PBRIBLEnvironment::prepare(hdrPath, ...) wires its own LUT/diffuse/
+			// osgx::Environment(hdrImage) wires its own LUT/diffuse/
 			// specular bakes together - independent PRE_RENDER passes, not a dependency chain.
 			bakeRoot->addChild(lutCamera);
 		}

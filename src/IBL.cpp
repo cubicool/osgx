@@ -348,8 +348,8 @@ osg::ref_ptr<osg::TextureCubeMap> computeLambertianCubeMap(
 
 				g.normalize();
 
-				// GL-cube-face local direction -> Z-up world direction (matches IBL_SPECULAR's
-				// own R_gl swap, applied in reverse).
+				// GL-cube-face local direction -> Z-up world direction (the inverse of
+				// osgx::ENVIRONMENT_BAKE_BASIS).
 				const osg::Vec3f n(g.x(), -g.z(), g.y());
 				const osg::Vec3f up = std::abs(n.z()) > 0.99f
 					? osg::Vec3f(0.0f, 1.0f, 0.0f)
@@ -396,10 +396,7 @@ osg::ref_ptr<osg::TextureCubeMap> computeLambertianCubeMap(
 void registerIBLShaderLibs() {
 	static constexpr ShaderLib libs[] = {
 		{"SH_IRRADIANCE", "osgx_SHIrradiance", SH_IRRADIANCE},
-		{"LAMBERTIAN_IRRADIANCE", "osgx_LambertianIrradiance", LAMBERTIAN_IRRADIANCE},
-		{"HEMISPHERE_AMBIENT", "osgx_HemisphereAmbient", HEMISPHERE_AMBIENT},
-		{"IBL_LIGHTING_INPUTS", "osgx_ibl_LightingInputs", IBL_LIGHTING_INPUTS},
-		{"EVALUATE_IBL", "osgx_EvaluateIBL", EVALUATE_IBL}
+		{"HEMISPHERE_AMBIENT", "osgx_HemisphereAmbient", HEMISPHERE_AMBIENT}
 	};
 	::osgx::registerShaderLibs("osgx::ibl", libs);
 }

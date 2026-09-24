@@ -190,8 +190,6 @@ void registerPBRShaderLibs() {
 		{"GET_ALPHA", "osgx_GetAlpha", GET_ALPHA},
 		{"GET_SHADING_NORMAL", "osgx_GetShadingNormal", GET_SHADING_NORMAL},
 		{"F_MULTISCATTER", "osgx_F_MultiScatter", F_MULTISCATTER},
-		{"IBL_SPECULAR", "osgx_IBLSpecular", IBL_SPECULAR},
-		{"AMBIENT_LIGHTING_DECL", "osgx_AmbientLighting", AMBIENT_LIGHTING_DECL},
 		{"SPECULAR_AA", "osgx_SpecularAA", SPECULAR_AA},
 		{"TONEMAP_PBR_NEUTRAL", "osgx_TonemapPBRNeutral", TONEMAP_PBR_NEUTRAL},
 		{"TONEMAP_DECL", "osgx_Tonemap", TONEMAP_DECL}

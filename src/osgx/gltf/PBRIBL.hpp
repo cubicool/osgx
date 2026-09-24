@@ -6,7 +6,9 @@ OSGX_DISABLE_WARNINGS
 
 #include <osg/Camera>
 #include <osg/Group>
+#include <osg/Math>
 #include <osg/Node>
+#include <osg/Quat>
 #include <osg/Shader>
 #include <osg/Texture2D>
 #include <osg/TextureCubeMap>
@@ -16,11 +18,11 @@ OSGX_DISABLE_WARNINGS
 
 OSGX_ENABLE_WARNINGS
 
-#include <array>
 #include <string>
 #include <string_view>
 #include <vector>
 
+#include "osgx/Environment.hpp"
 #include "osgx/LambertianBake.hpp"
 #include "osgx/Shadow.hpp"
 #include "osgx/Shader.hpp"
@@ -44,86 +46,11 @@ void registerShaderLibs();
 // assumptions for Python and plugin consumers.
 std::string resolveShaderLibs(std::string_view source);
 
-// Fully defined further below; only used here by const reference, so a forward declaration is
-// enough for the two ::load() overload declarations.
-struct IBLEnvironmentManifest;
-
-// Prepared IBL resources. `root`, when present, contains the PRE_RENDER passes that populate a
-// generated BRDF LUT and/or cubemaps; add it to a rendered scene graph before using them.
-// Fully pre-baked resources have no preparation root and can leave it null.
-struct PBRIBLEnvironment {
-	osg::ref_ptr<osg::Group> root;
-	osg::ref_ptr<osg::Camera> lutCamera;
-	osg::ref_ptr<osg::Group> diffuseBakeRoot;
-	// Present only for the HDR-only path, whose specular cubemap is baked live.
-	osg::ref_ptr<osg::Group> specularBakeRoot;
-	osg::ref_ptr<osg::TextureCubeMap> envMap;
-	osg::ref_ptr<osg::Texture2D> brdfLUT;
-	osg::ref_ptr<osg::TextureCubeMap> diffuseEnv;
-	// KTX/OpenGL cubemap lookup basis, expressed relative to the loader's Z-up world --
-	// always exactly 3 (X/Y/Z row) vectors, one orthonormal basis, in the SAME Z-up space a
-	// caller already reasons about (world-space N/V/R, no glTF/Y-up swizzle applied). Never
-	// uploaded to the shader as-is - see foldZUpToGLTFAxis() below.
-	std::array<osg::Vec3, 3> iblAxis{
-		osg::Vec3(0.0f, 0.0f, 1.0f),
-		osg::Vec3(0.0f, 1.0f, 0.0f),
-		osg::Vec3(-1.0f, 0.0f, 0.0f)
-	};
-
-	bool valid() const;
-
-	// Fully dynamic path: bakes the GGX-prefiltered specular cubemap live, in memory, from
-	// `hdrPath` alone - the same osgx::GGXPrefilterScene::create() workflow osggltf-iblbake-gpu
-	// already wraps to write a KTX2 to disk, called directly instead of round-tripping through a
-	// file. Frame-driven like the existing diffuse/LUT bakes: envMap is a valid, bindable texture
-	// immediately, but its contents only become correct once specularBakeRoot's passes have
-	// actually run a few frames.
-	static PBRIBLEnvironment prepare(const std::string& hdrPath, int lutSize=1024);
-
-	// Same as prepare(), but never bakes a GGX-prefiltered specular cubemap from `hdrPath` at all
-	// - for a caller whose specular reflection ALWAYS comes from somewhere else (a live
-	// procedural rebake, e.g. examples/lighting/10-dynamicprobes.py) and would otherwise pay for a
-	// real HDR-sourced GGX prefilter bake only to discard it before a single frame samples it.
-	// `envMap` still comes back as a small, valid, immediately-bindable placeholder cubemap (same
-	// filter/wrap/format setup GGXPrefilterScene's own prefilterTexture uses) - PBRIBLScene::create()
-	// unconditionally binds environment.envMap to a texture unit, so this keeps that bind
-	// well-defined - but its content is never populated by this call. The caller supplies the
-	// real content itself, by binding a separately-owned osgx::GGXPrefilterScene's own
-	// prefilterTexture onto the same texture unit (5) PBRIBLScene::create() bound this placeholder
-	// to. `root`/diffuseBakeRoot/lutCamera behave exactly as in prepare() (diffuse + LUT still
-	// bake for real); there is no specularBakeRoot.
-	static PBRIBLEnvironment prepareDiffuseOnly(const std::string& hdrPath, int lutSize=1024);
-
-	// Static/pre-baked path: loads specular + diffuse cubemaps as KTX2. A URI BRDF LUT is loaded
-	// as a plain image; a recognized built-in BRDF LUT is shared and baked once per process/size.
-	// The latter supplies a preparation root on its first use. `manifest`'s relative URIs resolve
-	// against `baseDir` (normally the manifest document's own directory).
-	static PBRIBLEnvironment load(const IBLEnvironmentManifest& manifest, const std::string& baseDir);
-
-	// Convenience overload: loads `manifestPath` as a glTF document - a minimal standalone
-	// manifest or a real asset's own embedded osgx_pbribl block both work identically, see
-	// decodeIBLEnvironments() - decodes its first declared environment, and resolves that
-	// environment's resources relative to the manifest file's own directory.
-	static PBRIBLEnvironment load(const std::string& manifestPath);
-};
-
-// Folds the fixed Z-up -> glTF/Y-up cubemap permutation (osgx_ZUpToGLTF() in the shader:
-// vec3(d.x, d.z, -d.y)) into ONE `iblAxis` row, algebraically: composing OrientIBL's dot-product
-// matrix (rows = iblAxis) with ZUpToGltf's fixed permutation matrix once here, on the CPU, instead
-// of applying both transforms to every N/R per fragment on the GPU. Derivation: for row r,
-// (ZUpToGltf then dot-with-r) == dot-with-(r.x, -r.z, r.y) for every input vector - verified
-// against the original two-step formula on both axis-aligned and general test vectors.
-//
-// PBRIBLScene::create() calls this once per row when building the `iblAxis` uniform, so the shader's
-// own osgx_OrientIBL(d) can be called directly on a raw Z-up N_world/R (no separate
-// osgx_ZUpToGLTF() call at that site) and still land in the identical cubemap-lookup space.
-// `environment.iblAxis` itself keeps its original Z-up meaning - a caller overriding it for a
-// custom convention still reasons in that space; only the uploaded uniform is pre-folded.
-// osgx_ZUpToGLTF() remains a standalone shader function for its OTHER call sites (PBRIBLScene::create()'s
-// OSGX_PBRIBL_DIAGNOSTICS debug-normal visualizations), which have no iblAxis involved at all.
-inline osg::Vec3 foldZUpToGLTFAxis(const osg::Vec3& row) {
-	return osg::Vec3(row.x(), -row.z(), row.y());
-}
+// The osgx::Environment rotation that matches the Khronos glTF-Sample-Viewer for glTF content (the
+// loader converts glTF's Y-up to Z-up). osgx::Environment's own default is the equirect's natural
+// orientation; loadEnvironment() applies this, and HDR-built environments for glTF content set it
+// themselves: `environment->setRotation(KHRONOS_ENVIRONMENT_ROTATION)`.
+inline const osg::Quat KHRONOS_ENVIRONMENT_ROTATION(-osg::PI_2, osg::Vec3(0.0f, 0.0f, 1.0f));
 
 // One `environments[]` entry decoded from an `osgx_pbribl` glTF extension block (see
 // ~/dev/osgdebug/TODO.md section 2b for the manifest schema this mirrors). Pure data: no textures,
@@ -136,13 +63,6 @@ struct IBLEnvironmentManifest {
 		bool valid() const { return !uri.empty(); }
 	};
 
-	// Only `specular` carries bake-convention parameters today; see the GGXPrefilterOptions
-	// discussion in osgdebug/TODO.md for why diffuse doesn't need equivalents yet.
-	struct SpecularResource: Resource {
-		int prefilterSize = 0;
-		int lowestMipLevel = 0;
-	};
-
 	// Either a URI to a serialized LUT (for existing portable manifests), or the exact built-in
 	// contract understood by this renderer. The latter uses osgx::SharedBRDFLUT::create(size).
 	struct BRDFLUTResource: Resource {
@@ -152,19 +72,32 @@ struct IBLEnvironmentManifest {
 		bool valid() const { return !uri.empty() || !builtin.empty(); }
 	};
 
-	SpecularResource specular;
+	Resource specular;
 	Resource diffuse;
 	BRDFLUTResource brdfLUT;
 };
 
 // Decodes every `environments[]` entry out of an `osgx_pbribl` extension block. `extensionValue`
 // is whatever `tg3json_object_get(root, "osgx_pbribl")` returns when parsing a standalone
-// manifest document (PBRIBLEnvironment::load(manifestPath)) via tinygltf_json_c.h - the only
+// manifest document (loadEnvironment(manifestPath)) via tinygltf_json_c.h - the only
 // caller today. Note this is a different value type from a real glTF asset's own embedded
 // extensions (tg3_value, from tiny_gltf_v3.h's model parser, see osgx::gltf::detail::tg3_value
 // helpers in tg3_util.hpp) - there's currently no code path that decodes an osgx_pbribl block
 // embedded in a real asset rather than a standalone manifest file.
 std::vector<IBLEnvironmentManifest> decodeIBLEnvironments(const tg3json_value* extensionValue);
+
+// Loads a pre-baked environment: the manifest's specular and diffuse KTX2 cubemaps plus either a
+// serialized BRDF LUT or the shared built-in one, rotated by KHRONOS_ENVIRONMENT_ROTATION.
+// `manifest`'s relative URIs resolve against `baseDir`. Returns null (and logs) on failure.
+// A built-in LUT used for the first time in this process leaves a pass in getBakeRoot().
+osg::ref_ptr<osgx::Environment> loadEnvironment(
+	const IBLEnvironmentManifest& manifest,
+	const std::string& baseDir
+);
+
+// Loads `manifestPath` - a standalone manifest or a real asset's own embedded osgx_pbribl block
+// both work - and its first declared environment, resolving URIs against the manifest's directory.
+osg::ref_ptr<osgx::Environment> loadEnvironment(const std::string& manifestPath);
 
 struct PBRIBLScene {
 	osg::ref_ptr<osg::Node> node;
@@ -172,17 +105,14 @@ struct PBRIBLScene {
 	osg::ref_ptr<osg::Uniform> disableNormalMap;
 	osg::ref_ptr<osg::Uniform> disableRoughnessMap;
 	osg::ref_ptr<osg::Uniform> disableSpecularAA;
-	// Independent diffuse-irradiance/specular-reflection intensity knobs (not one shared
-	// iblIntensity - see osgx_EvaluateIBL's IBL_LIGHTING_INPUTS comment, IBL.hpp, for why they
-	// need to move independently). Exposed as live osg::Uniform refs, same pattern as debugMode
-	// etc. above, so a caller can tune - or dial toward zero, e.g. to make punctual lights read
-	// more clearly - after scene creation instead of only at construction time.
-	osg::ref_ptr<osg::Uniform> iblDiffuseIntensity;
-	osg::ref_ptr<osg::Uniform> iblSpecularIntensity;
+	// The osgx::Environment passed to create() and attached to `node`.
+	osg::ref_ptr<osgx::Environment> environment;
 
 	bool valid() const;
 
-	// Applies the glTF PBR/IBL renderer to a node using reusable prepared resources. `shadowMap`,
+	// Applies the glTF PBR/IBL renderer to a node, lit by `environment` (required; the caller owns
+	// it, may share it between scenes, and adds its getBakeRoot() to the graph if non-null). Its
+	// intensities and rotation stay live-tunable on the Environment itself. `shadowMap`,
 	// when non-null, swaps in osgx::DIRECT_LIGHTING_HOOK_SHADOWED in place of
 	// osgx::DIRECT_LIGHTING_HOOK_DEFAULT and wires its depth texture + shadow uniforms onto
 	// `node`'s StateSet - the caller still owns building the ShadowMap itself (its light
@@ -202,9 +132,7 @@ struct PBRIBLScene {
 	// contract. Whole-Program scope, not per-primitive selection (see TODO.md).
 	static PBRIBLScene create(
 		osg::Node* node,
-		const PBRIBLEnvironment& environment,
-		float iblDiffuseIntensity=1.0f,
-		float iblSpecularIntensity=1.0f,
+		osgx::Environment* environment,
 		bool diagnostics=false,
 		const osgx::ShadowMap* shadowMap=nullptr,
 		const osgx::HookList& hooks={}
@@ -217,7 +145,7 @@ struct PBRIBLScene {
 // G-buffer layout (gAlbedo/gNormal/gMaterial/gEmissive + depth) OpenSceneGraph.py's
 // examples/pyosg-lighting/11-sketchfab.py hand-built and validated pixel-for-pixel against
 // Sketchfab's own renderer for its deferred G-buffer + SSAO/bloom post-fx capstone - the
-// lighting pass runs the SAME osgx_EvaluateIBL()/osgx_DirectLighting() logic
+// lighting pass runs the SAME osgx_EvaluateEnvironment()/osgx_DirectLighting() logic
 // PBRIBLScene::create()'s monolithic shader does, just reading G-buffer textures instead of
 // interpolated varyings. This is an architectural split, not new shader math.
 // ================================================================================================
@@ -333,8 +261,8 @@ struct PBRIBLLightingPassOptions {
 
 struct PBRIBLLightingScene {
 	osg::ref_ptr<osg::Node> node;
-	osg::ref_ptr<osg::Uniform> iblDiffuseIntensity;
-	osg::ref_ptr<osg::Uniform> iblSpecularIntensity;
+	// The osgx::Environment passed to create() and attached to the lighting pass; null if none.
+	osg::ref_ptr<osgx::Environment> environment;
 	// Updated by PBRIBLLightingScene::update() - see PBRIBLLightingScene::create()'s own comment for
 	// why the fullscreen quad's own ABSOLUTE_RF camera can't supply these automatically. No
 	// projection-matrix uniform here (a first version had one, for reconstructing position from
@@ -345,13 +273,11 @@ struct PBRIBLLightingScene {
 
 	bool valid() const;
 
-	// A fullscreen-quad lighting pass reading `gbuffer`. `environment` is OPTIONAL - pass a
-	// default-constructed (invalid) `PBRIBLEnvironment{}` for a caller whose
-	// `options.hooks[osgx::Hook::DeferredLighting]` override doesn't need `osgx_EvaluateIBL()`
-	// (see that Hook's own comment, Shader.hpp - a custom override CAN still pull it in via
-	// `#pragma osgx::ibl EVALUATE_IBL`, it just isn't required to); envMap/brdfLUT/diffuseEnv/
-	// iblAxis simply go unbound in that case rather than forcing an HDR bake or KTX2 load purely
-	// to populate textures nothing samples. `mainCamera` is the real, on-screen viewer camera this
+	// A fullscreen-quad lighting pass reading `gbuffer`. `environment` is OPTIONAL - pass null
+	// for a caller whose `options.hooks[osgx::Hook::DeferredLighting]` override doesn't need
+	// environment lighting (a custom override CAN still pull it in via `#pragma osgx::environment
+	// ...`, it just isn't required to), rather than forcing an HDR bake or KTX2 load purely to
+	// populate textures nothing samples. `mainCamera` is the real, on-screen viewer camera this
 	// pass rotates the G-buffer's view-space normal/position into world space with - the quad
 	// itself is necessarily
 	// ABSOLUTE_RF (an identity view/projection is what
@@ -372,10 +298,8 @@ struct PBRIBLLightingScene {
 	// different way.
 	static PBRIBLLightingScene create(
 		const PBRIBLGBuffer& gbuffer,
-		const PBRIBLEnvironment& environment,
+		osgx::Environment* environment,
 		osg::Camera* mainCamera,
-		float iblDiffuseIntensity=1.0f,
-		float iblSpecularIntensity=1.0f,
 		const PBRIBLLightingPassOptions& options={}
 	);
 

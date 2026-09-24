@@ -20,9 +20,6 @@ void bind_pbr(py::module_& m) {
 	m.attr("F_SCHLICK") = osgx::F_SCHLICK;
 	m.attr("F_SCHLICK_ROUGHNESS") = osgx::F_SCHLICK_ROUGHNESS;
 	m.attr("F_MULTISCATTER") = osgx::F_MULTISCATTER;
-	m.attr("IBL_SPECULAR") = osgx::IBL_SPECULAR;
-	m.attr("AMBIENT_LIGHTING_DECL") = osgx::AMBIENT_LIGHTING_DECL;
-	m.attr("AMBIENT_LIGHTING_HOOK_DEFAULT") = osgx::AMBIENT_LIGHTING_HOOK_DEFAULT;
 	m.attr("TONEMAP_PBR_NEUTRAL") = osgx::TONEMAP_PBR_NEUTRAL;
 	m.attr("TONEMAP_DECL") = osgx::TONEMAP_DECL;
 	m.attr("TONEMAP_HOOK_DEFAULT") = osgx::TONEMAP_HOOK_DEFAULT;
@@ -123,26 +120,6 @@ void bind_pbr(py::module_& m) {
 		"Returns the five core BRDF snippets (D_GGX, G_SCHLICK, G_SMITH, F_SCHLICK, "
 		"F_SCHLICK_ROUGHNESS) concatenated in dependency order - convenience for a caller that "
 		"wants the whole toolkit at once; use the individual constants if only part is needed."
-	);
-
-	// osgx_AmbientLighting() CONTRACT's Python-side convenience - same shape as osgx-light.cpp's
-	// makeDirectLightingHookShader(). See PBR.hpp's AMBIENT_LIGHTING_DECL/
-	// AMBIENT_LIGHTING_HOOK_DEFAULT comment: specular-only default (no SH-9 diffuse yet).
-	m.def(
-		"makeAmbientLightingHookShader",
-		[]() {
-			auto* shader = new osg::Shader(
-				osg::Shader::FRAGMENT,
-				osgx::resolveShaderLibs(std::string(osgx::AMBIENT_LIGHTING_HOOK_DEFAULT))
-			);
-
-			shader->setName("ambientLightingHook");
-
-			return osg::ref_ptr<osg::Shader>(shader);
-		},
-		"Builds the osgx_AmbientLighting() CONTRACT's default-definition FRAGMENT shader object "
-		"(specular-only IBL, via osgx_IBLSpecular) - add it to a Program alongside a consumer "
-		"fragment shader that only declares AMBIENT_LIGHTING_DECL plus a call site."
 	);
 
 	// osgx_Tonemap() CONTRACT's Python-side convenience - same shape as osgx-light.cpp's

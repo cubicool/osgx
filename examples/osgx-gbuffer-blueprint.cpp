@@ -408,10 +408,6 @@ int main(int argc, char** argv) {
 	const osg::Vec3 baseColor(0.15f, 0.65f, 1.0f);
 	const osg::Vec3 edgeColor(0.35f, 0.95f, 1.0f);
 
-	// No HDR/manifest environment loaded here at all - this style never samples IBL, and
-	// PBRIBLLightingScene::create()'s `environment` parameter is optional specifically for
-	// callers like this one (see that function's own comment).
-	osgx::gltf::pbribl::PBRIBLEnvironment environment;
 	auto gbuffer = osgx::gltf::pbribl::PBRIBLGBuffer::create(model, WIDTH, HEIGHT);
 
 	if(!gbuffer.valid()) {
@@ -434,7 +430,8 @@ int main(int argc, char** argv) {
 	}};
 
 	auto lighting = osgx::gltf::pbribl::PBRIBLLightingScene::create(
-		gbuffer, environment, viewer.getCamera(), 1.0f, 1.0f, lightingOptions
+		// No environment: this style never samples IBL (see the file-level comment).
+		gbuffer, nullptr, viewer.getCamera(), lightingOptions
 	);
 
 	if(!lighting.valid()) {

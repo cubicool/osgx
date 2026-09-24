@@ -28,6 +28,7 @@ PYBIND11_MODULE(osgx, m) {
 	osgx_python::bind_shadow(m);
 	osgx_python::bind_gbuffer(m);
 	osgx_python::bind_ibl(m);
+	osgx_python::bind_environment(m);
 	osgx_python::bind_aura(m);
 
 	auto m_debug = m.def_submodule("debug", "osgx::debug - GL_KHR_debug integration + GPU/CPU profiler");

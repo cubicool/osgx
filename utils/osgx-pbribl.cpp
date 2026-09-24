@@ -69,7 +69,6 @@ OutputPaths makeOutputPaths(const std::filesystem::path& basename) {
 bool writeManifest(
 	const std::filesystem::path& path,
 	const OutputPaths& outputs,
-	int prefilterSize,
 	int lutSize
 ) {
 	std::ofstream file(path);
@@ -88,8 +87,7 @@ bool writeManifest(
 		<< "  \"extensions\": {" << std::endl
 		<< "    \"osgx_pbribl\": {" << std::endl
 		<< "      \"environments\": [{" << std::endl
-		<< "        \"specular\": {\"uri\": \"" << outputs.specular.filename().string()
-		<< "\", \"prefilterSize\": " << prefilterSize << ", \"lowestMipLevel\": 0}," << std::endl
+		<< "        \"specular\": {\"uri\": \"" << outputs.specular.filename().string() << "\"}," << std::endl
 		<< "        \"diffuse\": {\"uri\": \"" << outputs.diffuse.filename().string() << "\"}," << std::endl
 		<< "        \"brdfLUT\": {\"builtin\": \"osgx:split-sum-ggx-v1\", \"size\": " << lutSize << "}" << std::endl
 		<< "      }]" << std::endl
@@ -578,7 +576,7 @@ int main(int argc, char* argv[]) {
 			outputs.diffuse
 		)) return 1;
 
-		return writeManifest(outputs.manifest, outputs, specularOptions.prefilterSize, lutSize) ? 0 : 1;
+		return writeManifest(outputs.manifest, outputs, lutSize) ? 0 : 1;
 #else
 		OSG_WARN << "osgx-pbribl: --software requires OSGX_BUILD_KTX2=ON" << std::endl;
 
@@ -644,5 +642,5 @@ int main(int argc, char* argv[]) {
 	OSG_NOTICE << "osgx-pbribl: wrote " << outputs.specular << std::endl;
 	OSG_NOTICE << "osgx-pbribl: wrote " << outputs.diffuse << std::endl;
 
-	return writeManifest(outputs.manifest, outputs, specularOptions.prefilterSize, lutSize) ? 0 : 1;
+	return writeManifest(outputs.manifest, outputs, lutSize) ? 0 : 1;
 }

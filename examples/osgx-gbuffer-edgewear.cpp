@@ -283,7 +283,6 @@ int main() {
 
 	model->addDrawable(shape);
 
-	osgx::gltf::pbribl::PBRIBLEnvironment environment;
 	auto gbuffer = osgx::gltf::pbribl::PBRIBLGBuffer::create(model, WIDTH, HEIGHT);
 
 	if(!gbuffer.valid()) {
@@ -303,7 +302,7 @@ int main() {
 	}};
 
 	auto lighting = osgx::gltf::pbribl::PBRIBLLightingScene::create(
-		gbuffer, environment, viewer.getCamera(), 1.0f, 1.0f, lightingOptions
+		gbuffer, nullptr, viewer.getCamera(), lightingOptions
 	);
 
 	if(!lighting.valid()) {

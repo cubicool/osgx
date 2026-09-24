@@ -21,3 +21,4 @@
 #include "CaptureCubeMap.hpp"
 #include "GGXPrefilter.hpp"
 #include "LambertianBake.hpp"
+#include "Environment.hpp"

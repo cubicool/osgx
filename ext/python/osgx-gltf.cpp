@@ -871,75 +871,16 @@ void bind_gltf(py::module_& m_gltf) {
 		"Hook shader that uses the pbribl-specific catalog in an osg.Shader."
 	);
 
-	py::class_<osgx::gltf::pbribl::PBRIBLEnvironment>(
-		m_gltf_pbribl,
-		"PBRIBLEnvironment",
-		"Prepared IBL resources: a GGX-prefiltered specular cubemap, a Lambertian diffuse "
-		"cubemap, a BRDF LUT, plus the KTX/OpenGL cubemap lookup basis relative to the loader's "
-		"Z-up world. `root`, when present, holds PRE_RENDER bake passes still populating a "
-		"texture - add it to a rendered scene graph before relying on that texture's contents; "
-		"a fully pre-baked environment has no root and leaves it None."
-	)
-		.def(py::init<>(), "Constructs an empty, invalid PBRIBLEnvironment.")
-		.def_readwrite(
-			"root", &osgx::gltf::pbribl::PBRIBLEnvironment::root,
-			"The Group holding this environment's PRE_RENDER bake passes, if any are still "
-			"populating a texture; None for a fully pre-baked environment."
-		)
-		.def_readwrite(
-			"envMap", &osgx::gltf::pbribl::PBRIBLEnvironment::envMap,
-			"The GGX-prefiltered specular cubemap."
-		)
-		.def_readwrite(
-			"brdfLUT", &osgx::gltf::pbribl::PBRIBLEnvironment::brdfLUT,
-			"The split-sum BRDF lookup texture."
-		)
-		.def_readwrite(
-			"diffuseEnv", &osgx::gltf::pbribl::PBRIBLEnvironment::diffuseEnv,
-			"The Lambertian diffuse-irradiance cubemap."
-		)
-		.def_readwrite(
-			"iblAxis", &osgx::gltf::pbribl::PBRIBLEnvironment::iblAxis,
-			"The KTX/OpenGL cubemap lookup basis (3 orthonormal row vectors), expressed relative "
-			"to the loader's Z-up world."
-		)
-		.def(
-			"valid", &osgx::gltf::pbribl::PBRIBLEnvironment::valid,
-			"True once envMap/brdfLUT/diffuseEnv are all set, regardless of whether any bake "
-			"pass under `root` has actually finished populating them yet."
-		)
-		.def_static(
-			"prepare",
-			py::overload_cast<const std::string&, int>(
-				&osgx::gltf::pbribl::PBRIBLEnvironment::prepare
-			),
-			"hdrPath"_a,
-			"lutSize"_a=1024,
-			"Bake diffuse irradiance, the BRDF LUT, and GGX-prefiltered specular all live from hdrPath "
-			"alone - no pre-baked KTX2 required. Add root to the rendered scene graph so its "
-			"PRE_RENDER passes can populate the generated textures."
-		)
-		.def_static(
-			"prepareDiffuseOnly",
-			py::overload_cast<const std::string&, int>(
-				&osgx::gltf::pbribl::PBRIBLEnvironment::prepareDiffuseOnly
-			),
-			"hdrPath"_a,
-			"lutSize"_a=1024,
-			"Same as prepare(), but never GGX-prefilters a specular cubemap from hdrPath - for a "
-			"caller whose specular reflection always comes from somewhere else (e.g. a live "
-			"procedural rebake) and would otherwise pay for a real bake only to discard it before "
-			"it's ever sampled. envMap comes back as a small, valid, unbaked placeholder; supply "
-			"real content yourself by binding your own GGXPrefilterScene's prefilterTexture onto "
-			"the same texture unit (5) PBRIBLScene.create() bound this placeholder to."
-		)
-		.def_static(
-			"load",
-			py::overload_cast<const std::string&>(&osgx::gltf::pbribl::PBRIBLEnvironment::load),
-			"manifestPath"_a,
-			"Load a fully pre-baked osgx_pbribl environment manifest."
-		)
-	;
+	m_gltf_pbribl.attr("KHRONOS_ENVIRONMENT_ROTATION") = osgx::gltf::pbribl::KHRONOS_ENVIRONMENT_ROTATION;
+
+	m_gltf_pbribl.def(
+		"loadEnvironment",
+		py::overload_cast<const std::string&>(&osgx::gltf::pbribl::loadEnvironment),
+		"manifestPath"_a,
+		"Loads a pre-baked osgx_pbribl environment manifest as an osgx.Environment, rotated by "
+		"KHRONOS_ENVIRONMENT_ROTATION. Returns None (and logs) on failure. Add its bakeRoot to the "
+		"scene graph if not None."
+	);
 
 	py::class_<osgx::gltf::pbribl::PBRIBLScene>(
 		m_gltf_pbribl,
@@ -972,18 +913,13 @@ void bind_gltf(py::module_& m_gltf) {
 			"map curvature)."
 		)
 		.def_readwrite(
-			"iblDiffuseIntensity",
-			&osgx::gltf::pbribl::PBRIBLScene::iblDiffuseIntensity,
-			"Live multiplier on the IBL diffuse-irradiance contribution, independent of specular."
-		)
-		.def_readwrite(
-			"iblSpecularIntensity",
-			&osgx::gltf::pbribl::PBRIBLScene::iblSpecularIntensity,
-			"Live multiplier on the IBL specular-reflection contribution, independent of diffuse."
+			"environment",
+			&osgx::gltf::pbribl::PBRIBLScene::environment,
+			"The osgx.Environment passed to create() and attached to `node`."
 		)
 		.def(
 			"valid", &osgx::gltf::pbribl::PBRIBLScene::valid,
-			"True once node and every debug/intensity uniform are set."
+			"True once node is set."
 		)
 		.def_static(
 			"create",
@@ -994,9 +930,7 @@ void bind_gltf(py::module_& m_gltf) {
 			// or a single bare (Hook, Shader) pair, instead of requiring the list form only.
 			[](
 				osg::Node* node,
-				const osgx::gltf::pbribl::PBRIBLEnvironment& environment,
-				float iblDiffuseIntensity,
-				float iblSpecularIntensity,
+				osgx::Environment* environment,
 				bool diagnostics,
 				const osgx::ShadowMap* shadowMap,
 				py::object hooks
@@ -1004,8 +938,6 @@ void bind_gltf(py::module_& m_gltf) {
 				return osgx::gltf::pbribl::PBRIBLScene::create(
 					node,
 					environment,
-					iblDiffuseIntensity,
-					iblSpecularIntensity,
 					diagnostics,
 					shadowMap,
 					pyx::unpack_one_or_many<osgx::HookList::value_type>(hooks)
@@ -1013,12 +945,11 @@ void bind_gltf(py::module_& m_gltf) {
 			},
 			"node"_a,
 			"environment"_a,
-			"iblDiffuseIntensity"_a=1.0f,
-			"iblSpecularIntensity"_a=1.0f,
 			"diagnostics"_a=false,
 			"shadowMap"_a=nullptr,
 			"hooks"_a=py::dict(),
-			"Apply osgx::gltf's optional osgx-powered PBR/IBL renderer using prepared resources. Pass "
+			"Apply osgx::gltf's optional osgx-powered PBR/IBL renderer to `node`, lit by "
+			"`environment` (an osgx.Environment; its intensities/rotation stay live-tunable). Pass "
 			"an osgx.shadow.ShadowMap to shadow the key/directional light (osgx::LightSet index "
 			"shadowMap.casterIndex); omit it for today's unshadowed behavior.\n\n"
 			"hooks: substitutes this Program's built-in shader for a slot - a dict of "
@@ -1144,14 +1075,10 @@ void bind_gltf(py::module_& m_gltf) {
 			"The fullscreen-quad lighting-pass node (an ABSOLUTE_RF camera)."
 		)
 		.def_readwrite(
-			"iblDiffuseIntensity",
-			&osgx::gltf::pbribl::PBRIBLLightingScene::iblDiffuseIntensity,
-			"Live multiplier on the IBL diffuse-irradiance contribution, independent of specular."
-		)
-		.def_readwrite(
-			"iblSpecularIntensity",
-			&osgx::gltf::pbribl::PBRIBLLightingScene::iblSpecularIntensity,
-			"Live multiplier on the IBL specular-reflection contribution, independent of diffuse."
+			"environment",
+			&osgx::gltf::pbribl::PBRIBLLightingScene::environment,
+			"The osgx.Environment passed to create() and attached to the lighting pass; None if "
+			"none was given."
 		)
 		.def_readwrite(
 			"mainViewMatrix",
@@ -1167,7 +1094,7 @@ void bind_gltf(py::module_& m_gltf) {
 		)
 		.def(
 			"valid", &osgx::gltf::pbribl::PBRIBLLightingScene::valid,
-			"True once node and every uniform are set."
+			"True once node is set."
 		)
 		.def_static(
 			"create",
@@ -1175,12 +1102,10 @@ void bind_gltf(py::module_& m_gltf) {
 			"gbuffer"_a,
 			"environment"_a,
 			"mainCamera"_a,
-			"iblDiffuseIntensity"_a=1.0f,
-			"iblSpecularIntensity"_a=1.0f,
 			"options"_a=osgx::gltf::pbribl::PBRIBLLightingPassOptions{},
 			"Deferred-split lighting pass: a fullscreen quad reading `gbuffer` (position included, "
 			"not reconstructed from depth), rotating it into world space via `mainCamera`'s real "
-			"view matrix, running the same osgx_EvaluateIBL()/osgx_DirectLighting() logic "
+			"view matrix, running the same osgx_EvaluateEnvironment()/osgx_DirectLighting() logic "
 			"PBRIBLScene.create() does. options.hooks supports osgx.Hook.DeferredLighting (the "
 			"entire fullscreen lighting shader), osgx.Hook.DirectLighting (the "
 			"osgx_DirectLighting() definition), and osgx.Hook.Tonemap. Each replaces its default "

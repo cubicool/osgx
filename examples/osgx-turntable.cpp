@@ -414,13 +414,13 @@ int main(int argc, char** argv) {
 	}
 
 	auto root = osgx::make_ref<osg::Group>();
-	osgx::gltf::pbribl::PBRIBLEnvironment environment;
+	osg::ref_ptr<osgx::Environment> environment;
 	osg::ref_ptr<osg::TextureCubeMap> skybox;
 
 	if(!environmentPath.empty()) {
-		environment = osgx::gltf::pbribl::PBRIBLEnvironment::load(environmentPath);
+		environment = osgx::gltf::pbribl::loadEnvironment(environmentPath);
 
-		if(!environment.valid()) {
+		if(!environment) {
 			std::cerr << "Unable to load PBR/IBL environment manifest: " << environmentPath << std::endl;
 
 			return 1;
@@ -428,7 +428,7 @@ int main(int argc, char** argv) {
 
 		// A built-in BRDF LUT still needs its one-time render pass. Pre-baked manifests otherwise
 		// have no work here, but adding this root is harmless and keeps the environment complete.
-		if(environment.root) root->addChild(environment.root);
+		if(environment->getBakeRoot()) root->addChild(environment->getBakeRoot());
 	}
 
 	if(!skyboxPath.empty()) {
@@ -461,7 +461,7 @@ int main(int argc, char** argv) {
 			return 1;
 		}
 
-		if(!osgx::gltf::pbribl::PBRIBLScene::create(subject, environment).valid()) return 1;
+		if(!osgx::gltf::pbribl::PBRIBLScene::create(subject, environment.get()).valid()) return 1;
 	}
 
 	else subject = makePlaceholders();
@@ -469,7 +469,7 @@ int main(int argc, char** argv) {
 	subject = normalizeSubject(subject);
 
 	root->addChild(makeHemisphereSky(
-		skybox.valid() ? skybox : environment.envMap,
+		skybox.valid() ? skybox.get() : (environment ? environment->getSpecularMap() : nullptr),
 		skybox.valid()
 	));
 	root->addChild(subject);

@@ -6,7 +6,7 @@
 // hatch described in Shader.hpp's own Hook::DeferredLighting comment and
 // PBRIBLLightingPassOptions' own comment (PBRIBL.hpp).
 //
-// The custom shader below never calls osgx_DirectLighting()/osgx_EvaluateIBL() at all - it reads the
+// The custom shader below never calls osgx_DirectLighting()/osgx_EvaluateEnvironment() at all - it reads the
 // G-buffer via osgx_GetGBuffer() (#pragma osgx::gltf DEFERRED_LIGHTING_INPUTS, GET_GBUFFER --
 // the same structured decode PBRIBLLightingScene::create()'s own built-in default uses internally)
 // and renders: quantized diffuse bands with a warm-lit/cool-shadow color-graded tint; procedural
@@ -23,7 +23,7 @@
 //
 // No environment/IBL, no LightSet, no ShadowMap - PBRIBLLightingScene::create()'s `environment`
 // parameter is OPTIONAL specifically so a Hook::DeferredLighting override like this one, which
-// never samples envMap/brdfLUT/diffuseEnv, doesn't have to pay for an HDR bake or KTX2 load that
+// never samples an osgx::Environment, doesn't have to pay for an HDR bake or KTX2 load that
 // would go entirely unused (see that function's own comment, PBRIBL.hpp/.cpp). The light itself is
 // a single plain `sunDirection` uniform, live-draggable via ImGui - not a real osgx::LightSet.
 //
@@ -421,7 +421,7 @@ void main() {
 	vec3 N = invView * N_view_n;
 	vec3 V = normalize(invView * normalize(-gb.position));
 
-	// Quantized "toon" diffuse band - no osgx_DirectLighting(), no osgx_EvaluateIBL(), no
+	// Quantized "toon" diffuse band - no osgx_DirectLighting(), no osgx_EvaluateEnvironment(), no
 	// osgx_Tonemap() anywhere in this file. Proves the override really does replace the whole
 	// pass rather than layering onto the built-in.
 	float NdotL = max(dot(N, sunDirection), 0.0);
@@ -650,12 +650,6 @@ int main(int argc, char** argv) {
 	// value, normalize(vec3(1, 1, 2)).
 	osg::Vec3 sunDirection(0.4082483f, 0.4082483f, 0.8164966f);
 
-	// No HDR/manifest environment loaded here at all - this style never samples IBL, and
-	// PBRIBLLightingScene::create()'s `environment` parameter is optional specifically for
-	// callers like this one (see that function's own comment). Passing a default-constructed
-	// (invalid) PBRIBLEnvironment skips the envMap/brdfLUT/diffuseEnv binding entirely rather
-	// than forcing an HDR bake or KTX2 load purely to populate textures nothing samples.
-	osgx::gltf::pbribl::PBRIBLEnvironment environment;
 	auto gbuffer = osgx::gltf::pbribl::PBRIBLGBuffer::create(model, WIDTH, HEIGHT);
 
 	if(!gbuffer.valid()) {
@@ -710,7 +704,8 @@ int main(int argc, char** argv) {
 	}};
 
 	auto lighting = osgx::gltf::pbribl::PBRIBLLightingScene::create(
-		gbuffer, environment, viewer.getCamera(), 1.0f, 1.0f, lightingOptions
+		// No environment: this style never samples IBL (see the file-level comment).
+		gbuffer, nullptr, viewer.getCamera(), lightingOptions
 	);
 
 	if(!lighting.valid()) {

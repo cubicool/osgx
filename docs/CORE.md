@@ -11,8 +11,8 @@ subsystems (each with its own C++ namespace), see [DEBUG.md](DEBUG.md), [IMGUI.m
 > real OSG objects — a camera, its FBO attachments, a depth-only `Program`, an SSBO and its
 > uniforms — and hands back the finished bundle as one struct, work no single constructor could do.
 > Every osgx-owned factory converges on this one call shape (`create()`, or a distinctly-named verb
-> like `::load()`/`::prepare()` only when the operation genuinely isn't "build one" — see
-> `PBRIBLEnvironment` in [GLTF.md](GLTF.md)) rather than a taxonomy of `create*`/`make*` free
+> like `::load()`/`::prepare()` only when the operation genuinely isn't "build one") rather than a
+> taxonomy of `create*`/`make*` free
 > functions — one predictable shape to remember beats memorizing which verb applies where. A
 > function returning a type osgx doesn't own (`osg::Camera`, `osg::TextureCubeMap`, ...) stays a
 > free function, since there's no class to hang a static method on.
@@ -351,6 +351,36 @@ baking, SH9/Lambertian diffuse irradiance, and cubemap readback helpers.
 
 glTF-specific material and rendering integration lives with the loader in [`osgx::gltf`](GLTF.md) —
 generic `osgx` does not depend on or duplicate its public shader interface.
+
+## `osgx/Environment.hpp`
+
+`Environment` — distant image-based lighting as one `StateAttribute`, the third lighting attribute
+beside `Material` (surface) and `LightSet` (direct lights). It owns a prefiltered specular cubemap,
+a diffuse irradiance cubemap, and the shared split-sum BRDF LUT, plus orientation, the
+roughness-to-mip mapping, and diffuse/specular intensities in one `std430` SSBO (binding 6).
+`setAttributeAndModes()` binds all of it (textures at units 5/6/7) and enables
+`GL_TEXTURE_CUBE_MAP_SEAMLESS`.
+
+```cpp
+auto env = osgx::make_ref<osgx::Environment>(hdrImage);          // GPU bakes (GGX + Lambertian)
+auto env = osgx::make_ref<osgx::Environment>(specCube, diffCube); // wrap existing cubemaps
+
+if(env->getBakeRoot()) root->addChild(env->getBakeRoot());       // non-null while bakes are pending
+stateSet->setAttributeAndModes(env);
+```
+
+- File loading is not part of the class: load first (`osgDB::readImageFile()`,
+  `loadPrefilterCubemap()`), then construct.
+- `setRotation(osg::Quat)` — world-space rotation; identity is the equirect's own orientation,
+  `osg::Quat(-PI/2, Z)` matches the Khronos glTF-Sample-Viewer.
+- `setMaxSpecularMip()` — the specular mip holding roughness 1.0. The bake constructor sets the
+  bake's last level; the wrap constructor defaults to the texture's last level (Khronos-style KTX2
+  prefilters need `levels - 2`).
+- GLSL (`#pragma osgx::environment`): `ENVIRONMENT_INPUTS`; `ENVIRONMENT_SAMPLE` — Material-free
+  `osgx_EnvironmentSpecular(R, roughness)`, `osgx_EnvironmentIrradiance(N)`,
+  `osgx_EnvironmentBRDF(NdotV, roughness)`, `osgx_EnvironmentDirection(dir)`;
+  `ENVIRONMENT_LIGHTING` — `osgx_EvaluateEnvironment(osgx_Material, N, V)` (needs
+  `MATERIAL_STRUCT`/`F_MULTISCATTER` from `osgx::pbr`). All directions are world-space, Z-up.
 
 ## `osgx/Shadow.hpp`
 

@@ -233,6 +233,7 @@ add_library(osgx ${OSGX_LIBRARY_TYPE}
 	src/CaptureCubeMap.cpp
 	src/Cursor.cpp
 	src/Debug.cpp
+	src/Environment.cpp
 	src/GBuffer.cpp
 	src/GGXPrefilter.cpp
 	src/Gizmos.cpp
@@ -267,6 +268,7 @@ target_sources(osgx PUBLIC
 	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/IBL.hpp>"
 	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/CaptureCubeMap.hpp>"
 	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/Cursor.hpp>"
+	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/Environment.hpp>"
 	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/GBuffer.hpp>"
 	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/GGXPrefilter.hpp>"
 	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/LambertianBake.hpp>"
@@ -588,6 +590,7 @@ if(OSGX_BUILD_PYTHON AND Python3_Development.Module_FOUND)
 		"ext/python/osgx-shadow.cpp"
 		"ext/python/osgx-gbuffer.cpp"
 		"ext/python/osgx-ibl.cpp"
+		"ext/python/osgx-environment.cpp"
 		"ext/python/osgx-debug.cpp"
 		"ext/python/osgx-picking.cpp"
 		"ext/python/osgx-shapes.cpp"

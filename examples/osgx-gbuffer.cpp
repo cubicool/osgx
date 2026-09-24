@@ -426,7 +426,7 @@ int main(int argc, char** argv) {
 		return 1;
 	}
 
-	osgx::gltf::pbribl::PBRIBLEnvironment environment;
+	osg::ref_ptr<osgx::Environment> environment;
 
 	if(haveEnv) {
 		const auto manifest = findEnvironmentManifest(envPath);
@@ -437,7 +437,7 @@ int main(int argc, char** argv) {
 			return 1;
 		}
 
-		environment = osgx::gltf::pbribl::PBRIBLEnvironment::load(manifest.string());
+		environment = osgx::gltf::pbribl::loadEnvironment(manifest.string());
 	}
 
 	else {
@@ -449,10 +449,14 @@ int main(int argc, char** argv) {
 			return 1;
 		}
 
-		environment = osgx::gltf::pbribl::PBRIBLEnvironment::prepare(hdrEnvironment.string(), 1024);
+		if(auto hdrImage = osgDB::readRefImageFile(hdrEnvironment.string())) {
+			environment = osgx::make_ref<osgx::Environment>(hdrImage.get());
+
+			environment->setRotation(osgx::gltf::pbribl::KHRONOS_ENVIRONMENT_ROTATION);
+		}
 	}
 
-	if(!environment.valid()) {
+	if(!environment) {
 		std::cerr << "Failed to prepare PBR IBL resources" << std::endl;
 
 		return 1;
@@ -545,7 +549,7 @@ int main(int argc, char** argv) {
 	// the IBL/direct-light balance theory entirely - the shadow is invisible for some other
 	// reason.
 	auto lighting = osgx::gltf::pbribl::PBRIBLLightingScene::create(
-		gbuffer, environment, viewer.getCamera(), 1.0f, 1.0f, lightingOptions
+		gbuffer, environment.get(), viewer.getCamera(), lightingOptions
 	);
 
 	if(!lighting.valid()) {
@@ -579,7 +583,7 @@ int main(int argc, char** argv) {
 
 	auto root = osgx::make_ref<osg::Group>();
 
-	if(environment.root) root->addChild(environment.root);
+	if(environment->getBakeRoot()) root->addChild(environment->getBakeRoot());
 
 	// Installed on shadowMap.camera specifically - see UpdateLightingPassCallback's own comment
 	// for why it has to be the first PRE_RENDER camera in the scene graph, not a post-frame()

@@ -132,21 +132,29 @@ applications opt into this renderer explicitly via `osgx::gltf_pbribl` (see CMak
 ```cpp
 #include <osgx/gltf/PBRIBL.hpp>
 
-auto environment = osgx::gltf::pbribl::PBRIBLEnvironment::load("papermill.gltf");
-auto scene = osgx::gltf::pbribl::PBRIBLScene::create(model, environment);
+auto environment = osgx::gltf::pbribl::loadEnvironment("papermill.gltf");
+auto scene = osgx::gltf::pbribl::PBRIBLScene::create(model, environment.get());
 
-if(environment.valid() && scene.valid()) {
-	if(environment.root) root->addChild(environment.root);
+if(environment && scene.valid()) {
+	if(environment->getBakeRoot()) root->addChild(environment->getBakeRoot());
 	root->addChild(scene.node);
 }
 ```
 
-`PBRIBLEnvironment` has two loading paths, kept as distinct verbs on purpose (disk load vs. dynamic
-HDR bake are genuinely different operations): `PBRIBLEnvironment::load(manifest, baseDir)` /
-`::load(manifestPath)` for pre-baked KTX2 resources (zero HDR decode or cubemap bake at runtime),
-and `PBRIBLEnvironment::prepare(hdrPath, lutSize=1024)` for a fully dynamic bake — `envMap` is a
-valid, bindable texture immediately, but its contents only become correct once
-`specularBakeRoot`'s passes have actually run a few frames.
+The scenes are lit by a caller-owned `osgx::Environment` ([CORE.md](CORE.md)), which may be shared
+between scenes; its intensities and rotation stay live-tunable. Two ways to get one:
+
+- `osgx::gltf::pbribl::loadEnvironment(manifestPath)` (or `(manifest, baseDir)`) — the pre-baked
+  path: an `osgx_pbribl` manifest's specular/diffuse KTX2 resources plus a serialized or built-in
+  BRDF LUT, zero HDR decode or cubemap bake at runtime. Returns null on failure. The only
+  glTF-specific piece is the manifest decoding.
+- `osgx::make_ref<osgx::Environment>(hdrImage)` — a fully dynamic GPU bake from an equirectangular
+  HDR; textures are bindable immediately but only correct once `getBakeRoot()`'s passes have run a
+  few frames.
+
+`KHRONOS_ENVIRONMENT_ROTATION` is the `osgx::Environment` rotation matching the Khronos
+glTF-Sample-Viewer for glTF content. `loadEnvironment()` applies it; an HDR-built environment
+lighting glTF content sets it with `environment->setRotation(KHRONOS_ENVIRONMENT_ROTATION)`.
 
 `PBRIBLScene::create()` also takes an optional `const osgx::ShadowMap*` — when non-null, it swaps
 in `osgx::DIRECT_LIGHTING_HOOK_SHADOWED` in place of the default unshadowed hook and wires the
@@ -159,7 +167,7 @@ of the two slots it supports: `osgx::Hook::Skinning` enables standard glTF joint
 `osgx::Hook::Tonemap` substitutes a custom tone curve —
 
 ```cpp
-auto scene = osgx::gltf::pbribl::PBRIBLScene::create(model, environment, 1.0f, 1.0f, false, nullptr, {
+auto scene = osgx::gltf::pbribl::PBRIBLScene::create(model, environment.get(), false, nullptr, {
 	{osgx::Hook::Skinning, new osg::Shader(osg::Shader::VERTEX,
 		osgx::resolveShaderLibs(osgx::gltf::shader::SKINNING_HOOK_LINEAR_BLEND))}
 });
@@ -178,7 +186,7 @@ contract (`DEFERRED_LIGHTING_INPUTS`, `GET_GBUFFER`). Python exposes the same AP
 mainCamera, ...)` are a two-camera counterpart to `PBRIBLScene::create()`'s one-shader-does-
 everything shape: a geometry pass writing material-only G-buffer textures (built on
 [`osgx::GBuffer`](CORE.md#osgxgbufferhpp)), then a fullscreen-quad lighting pass running the same
-`osgx_EvaluateIBL()`/`osgx_DirectLighting()` logic against those textures instead of interpolated
+`osgx_EvaluateEnvironment()`/`osgx_DirectLighting()` logic against those textures instead of interpolated
 varyings. `PBRIBLLightingPassOptions` carries the lighting pass's independent, optional inputs —
 `shadowMap` (same contract as `PBRIBLScene::create()`'s own parameter), `aoTexture` (an externally-
 baked occlusion result, multiplied into the ambient term — this pass does not bake it itself;

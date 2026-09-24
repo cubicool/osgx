@@ -109,7 +109,7 @@ vec3 osgx_F_Schlick_roughness(float cosTheta, vec3 F0, float roughness) {
 
 // Plain PBR material bundle - source-agnostic (osgGLTF's optional renderer populates one from
 // its loader-defined material interface, but nothing here assumes glTF): everything DIRECT_SPECULAR,
-// F_MULTISCATTER/IBL_SPECULAR, and a hemisphere/SH ambient term need to shade a fragment.
+// ENVIRONMENT_LIGHTING (Environment.hpp), and a hemisphere/SH ambient term need to shade a fragment.
 inline constexpr const char* MATERIAL_STRUCT = R"GLSL(
 struct osgx_Material {
 	vec3 albedo;
@@ -448,8 +448,7 @@ std::string snippets();
 // fresnel(), which was itself written to match that viewer's IBL.glsl exactly - confirmed
 // pixel-parity against github.khronos.org/glTF-Sample-Viewer-Release/ on 2026-07-22).
 //
-// The classic single-scatter split-sum approximation (Karis 2013 - what IBL_SPECULAR below
-// used before this was added) loses energy at higher roughness because it only accounts for
+// The classic single-scatter split-sum approximation (Karis 2013) loses energy at higher roughness because it only accounts for
 // light bouncing off the microfacet surface once; this adds back an estimate of what multiple
 // internal bounces would have contributed, using the same split-sum LUT (ab.x/ab.y) the
 // single-scatter term already samples - no extra texture reads, just more math on the same
@@ -473,80 +472,6 @@ vec3 osgx_F_MultiScatter(vec3 N, vec3 V, float roughness, vec3 F0, sampler2D brd
 }
 )GLSL";
 
-// Split-sum IBL specular: samples the prefiltered cubemap along the reflection vector and
-// combines with the baked BRDF LUT via the multi-scatter energy-compensated Fresnel above (not
-// the plain Karis 2013 single-scatter combine this used to be). Handles the OSG (Z-up) ->
-// baked-cubemap (Y-up) face remap internally. Requires F_MULTISCATTER already in scope.
-inline constexpr const char* IBL_SPECULAR = R"GLSL(
-vec3 osgx_IBLSpecular(
-	vec3 N,
-	vec3 V,
-	vec3 F0,
-	float roughness,
-	samplerCube envMap,
-	sampler2D brdfLUT,
-	float envMaxMip
-) {
-	vec3 R = reflect(-V, N);
-
-	// OSG world space is Z-up; the baked cubemap's faces are Y-up - without this remap we'd
-	// sample a direction that doesn't correspond to R at all.
-	vec3 R_gl = vec3(R.x, R.z, -R.y);
-
-	vec3 prefilt = textureLod(envMap, R_gl, roughness * envMaxMip).rgb;
-	vec3 F = osgx_F_MultiScatter(N, V, roughness, F0, brdfLUT);
-
-	return prefilt * F;
-}
-)GLSL";
-
-// osgx_AmbientLighting() CONTRACT - same "hook" pattern as osgx_DirectLighting() above (see its
-// own contract comment for the full rationale): a consumer's fragment shader only needs
-// AMBIENT_LIGHTING_DECL spliced in (list MATERIAL_STRUCT earlier in the SAME pragma line) plus a
-// call site (`color += osgx_AmbientLighting(N, V, mat, envMap, brdfLUT, envMaxMip, iblIntensity);`);
-// it never touches osgx_IBLSpecular/osgx_F_MultiScatter directly. The DEFINITION lives in
-// AMBIENT_LIGHTING_HOOK_DEFAULT below - specular-only (no SH-9 diffuse irradiance yet, see
-// osgx::ibl TODO.md) - a consumer wanting real diffuse IBL (osgx_EvaluateIBL(), IBL.hpp's own
-// EVALUATE_IBL - osgx::gltf::pbribl's PBRIBL.cpp is its own real consumer, bakes a Lambertian
-// irradiance cubemap and blends diffuse/specular against two independent intensities) supplies
-// its own shader object defining osgx_AmbientLighting() instead of adding
-// AMBIENT_LIGHTING_HOOK_DEFAULT - same override mechanism, and why PBRIBL.cpp does not (yet) route
-// through this hook itself.
-inline constexpr const char* AMBIENT_LIGHTING_DECL = R"GLSL(
-vec3 osgx_AmbientLighting(
-	vec3 N,
-	vec3 V,
-	osgx_Material mat,
-	samplerCube envMap,
-	sampler2D brdfLUT,
-	float envMaxMip,
-	float intensity
-);
-)GLSL";
-
-// Self-contained - carries its own #version/#pragma line so it compiles as a standalone
-// osg::Shader object regardless of what the consumer's own fragment shader happens to have in
-// scope. Add alongside DIRECT_LIGHTING_HOOK_DEFAULT (if also used) as another EXTRA shader object
-// on the same Program - not spliced by name via #pragma osgx::pbr, so it is deliberately NOT in
-// registerPBRShaderLibs()'s catalog.
-inline constexpr const char* AMBIENT_LIGHTING_HOOK_DEFAULT = R"GLSL(
-#version 460 core
-
-#pragma osgx::pbr MATERIAL_STRUCT, F_MULTISCATTER, IBL_SPECULAR
-
-vec3 osgx_AmbientLighting(
-	vec3 N,
-	vec3 V,
-	osgx_Material mat,
-	samplerCube envMap,
-	sampler2D brdfLUT,
-	float envMaxMip,
-	float intensity
-) {
-	return osgx_IBLSpecular(N, V, mat.F0, mat.roughness, envMap, brdfLUT, envMaxMip) * intensity;
-}
-)GLSL";
-
 // Geometric specular anti-aliasing (Tokuyoshi & Kaplanyan 2019 / Filament's normal filtering):
 // widens roughness where the shading normal changes rapidly across a pixel's screen-space
 // footprint, so a low-roughness, high-curvature surface (a beveled metal trim is the case that
@@ -554,7 +479,7 @@ vec3 osgx_AmbientLighting(
 // sparkle/aliasing as its mirror-like reflection vector jitters between neighboring fragments.
 // Works in alpha space (roughness^2, the actual GGX parameter) since the added variance term is
 // only meaningful there, then converts back to the perceptual roughness this codebase otherwise
-// passes around (IBL_SPECULAR/F_MULTISCATTER's LOD selection and BRDF LUT lookups both expect
+// passes around (osgx_EnvironmentSpecular()'s LOD selection and BRDF LUT lookups both expect
 // perceptual roughness, not alpha). `N` should be the final shading normal (post normal-map),
 // evaluated in any space - dFdx/dFdy operate on screen-space fragment neighbors regardless.
 inline constexpr const char* SPECULAR_AA = R"GLSL(
@@ -592,8 +517,7 @@ vec3 osgx_TonemapPBRNeutral(vec3 color) {
 }
 )GLSL";
 
-// osgx_Tonemap() CONTRACT - same "hook" pattern as osgx_DirectLighting()/osgx_AmbientLighting()
-// above: a consumer's fragment shader only needs TONEMAP_DECL spliced in plus a call site
+// osgx_Tonemap() CONTRACT - same "hook" pattern as osgx_DirectLighting() (Light.hpp): a consumer's fragment shader only needs TONEMAP_DECL spliced in plus a call site
 // (`color = osgx_Tonemap(color);`) on its final linear color, before gamma. The DEFINITION lives
 // in TONEMAP_HOOK_DEFAULT below (osgx_TonemapPBRNeutral, unchanged) - a consumer wanting a
 // different tone curve (ACES, a flat clamp, a look-specific LUT) supplies its own shader object
@@ -602,8 +526,7 @@ inline constexpr const char* TONEMAP_DECL = R"GLSL(
 vec3 osgx_Tonemap(vec3 color);
 )GLSL";
 
-// Self-contained, same shape as DIRECT_LIGHTING_HOOK_DEFAULT/AMBIENT_LIGHTING_HOOK_DEFAULT above --
-// not spliced by name via #pragma osgx::pbr, so deliberately NOT in registerPBRShaderLibs()'s catalog.
+// Self-contained, same shape as DIRECT_LIGHTING_HOOK_DEFAULT (Light.hpp) - not spliced by name via #pragma osgx::pbr, so deliberately NOT in registerPBRShaderLibs()'s catalog.
 inline constexpr const char* TONEMAP_HOOK_DEFAULT = R"GLSL(
 #version 460 core
 

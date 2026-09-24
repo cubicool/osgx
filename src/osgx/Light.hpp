@@ -43,7 +43,7 @@ namespace osgx {
 // glTF's "punctual". glTF's KHR_lights_punctual is explicitly size-ZERO; our Sphere light has a
 // nonzero sourceRadius, so calling it punctual would be wrong, not just informal. "Direct" answers
 // the right question instead: is this light's contribution computed explicitly per-light (this
-// file), as opposed to baked/prefiltered ambient/IBL (PBR.hpp's AMBIENT_LIGHTING_DECL/IBL_SPECULAR)?
+// file), as opposed to baked/prefiltered image-based lighting (osgx::Environment, Environment.hpp)?
 // ================================================================================================
 
 // Compile-time bound for LIGHT_UNIFORMS' GLSL buffer array declaration below - kept as a real C++

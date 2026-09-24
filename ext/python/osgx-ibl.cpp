@@ -11,7 +11,6 @@ void bind_ibl(py::module_& m) {
 	m.attr("FULLSCREEN_VERT") = osgx::FULLSCREEN_VERT;
 	m.attr("BRDF_LUT_FRAG") = osgx::BRDF_LUT_FRAG;
 	m.attr("SH_IRRADIANCE") = osgx::SH_IRRADIANCE;
-	m.attr("LAMBERTIAN_IRRADIANCE") = osgx::LAMBERTIAN_IRRADIANCE;
 
 	py::class_<
 		osgx::RunOnceCallback,
@@ -87,7 +86,7 @@ void bind_ibl(py::module_& m) {
 		py::call_guard<py::gil_scoped_release>(),
 		"Bakes a cosine-weighted Monte Carlo diffuse irradiance cubemap from an equirectangular "
 		"HDR/LDR osg.Image - more accurate than SH9 (see computeSH), at the cost of a real bake "
-		"instead of 9 coefficients. Sample with LAMBERTIAN_IRRADIANCE's osgx_LambertianIrradiance()."
+		"instead of 9 coefficients. Usable directly as osgx.Environment's diffuseMap."
 	);
 
 	py::class_<osgx::GGXPrefilterOptions>(
@@ -127,6 +126,63 @@ void bind_ibl(py::module_& m) {
 			"If True, the readback calls glFinish() before reading back (deterministic, stalls "
 			"the pipeline); if False, it trusts that readbackFrame frames have already elapsed."
 		)
+	;
+
+	py::class_<osgx::LambertianBakeOptions>(
+		m,
+		"LambertianBakeOptions",
+		"Quality knobs for the GPU cosine-convolution (diffuse irradiance) bake."
+	)
+		.def(py::init<>(), "Constructs default options (cubeSize=256, sampleCount=2048, fireflyClamp=8.0).")
+		.def_readwrite(
+			"cubeSize", &osgx::LambertianBakeOptions::cubeSize,
+			"Cubemap face resolution (in texels) of the baked irradiance cube."
+		)
+		.def_readwrite(
+			"sampleCount", &osgx::LambertianBakeOptions::sampleCount,
+			"Number of cosine-weighted samples accumulated per texel."
+		)
+		.def_readwrite(
+			"fireflyClamp", &osgx::LambertianBakeOptions::fireflyClamp,
+			"Caps per-sample luminance before accumulation (same tradeoff as "
+			"GGXPrefilterOptions.fireflyClamp)."
+		)
+	;
+
+	py::class_<osgx::LambertianBakeScene>(
+		m,
+		"LambertianBakeScene",
+		"A frame-driven GPU cosine-convolution (diffuse irradiance) bake of an equirectangular HDR. "
+		"Add `root` to a rendered scene graph and advance frames until ready()."
+	)
+		.def_readonly("root", &osgx::LambertianBakeScene::root, "The offscreen bake passes; add to a rendered scene graph.")
+		.def_readonly("sourceTexture", &osgx::LambertianBakeScene::sourceTexture, "The equirectangular source texture.")
+		.def_readonly("diffuseTexture", &osgx::LambertianBakeScene::diffuseTexture, "The diffuse irradiance cubemap being baked into.")
+		.def("ready", &osgx::LambertianBakeScene::ready, "True once the bake's final pass has rendered.")
+		.def_static(
+			"create",
+			&osgx::LambertianBakeScene::create,
+			"equirectangularHDR"_a,
+			"options"_a = osgx::LambertianBakeOptions(),
+			"Builds the bake scene for `equirectangularHDR`. Renders nothing itself."
+		)
+		.def(
+			"rebake", &osgx::LambertianBakeScene::rebake, "equirectangularHDR"_a,
+			"Re-arms the existing passes for a new HDR image without recreating cameras or the "
+			"output texture."
+		)
+	;
+
+	py::class_<osgx::SharedBRDFLUT>(
+		m,
+		"SharedBRDFLUT",
+		"The process-wide split-sum BRDF LUT for one size: `texture` is always the shared LUT; "
+		"`camera` is non-None only the first time a size is requested, and must then be added to a "
+		"rendered scene graph so the one-time bake runs."
+	)
+		.def_readonly("texture", &osgx::SharedBRDFLUT::texture, "The shared BRDF LUT texture.")
+		.def_readonly("camera", &osgx::SharedBRDFLUT::camera, "The one-time bake camera, or None.")
+		.def_static("create", &osgx::SharedBRDFLUT::create, "lutSize"_a, "Returns the shared LUT for `lutSize`.")
 	;
 
 	py::class_<
