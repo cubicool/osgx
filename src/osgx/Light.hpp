@@ -22,7 +22,7 @@ OSGX_ENABLE_WARNINGS
 #include <vector>
 
 namespace osg {
-	class ShaderStorageBufferBinding;
+	class UniformBufferBinding;
 }
 
 namespace osgx {
@@ -54,9 +54,9 @@ namespace osgx {
 // over-provisioning the per-fragment loop.
 inline constexpr int MAX_LIGHTS = 6;
 
-// Size, in 4-byte floats, of one packed `osgx_Light` struct in LIGHT_UNIFORMS' std430 buffer below
-// (16 floats = 64 bytes) - the C++-side stride LightSet's setters/getters index into `lights`
-// with. Must match the GLSL struct exactly; see LIGHT_UNIFORMS' own layout comment.
+// Size, in 4-byte floats, of one packed `osgx_Light` struct in LIGHT_UNIFORMS' std140 uniform
+// block below (16 floats = 64 bytes) - the C++-side stride LightSet's setters/getters index into
+// `lights` with. Must match the GLSL struct exactly; see LIGHT_UNIFORMS' own layout comment.
 inline constexpr std::size_t LIGHT_STRUCT_FLOATS = 16;
 
 // Per-light Cook-Torrance specular contribution (direct lighting), already multiplied by NdotL --
@@ -132,18 +132,14 @@ vec3 osgx_PointLightRadiance(vec4 posIntensity, vec3 color, vec3 worldPos, out v
 // one - osgx_lightCount (set at runtime, <= OSGX_MAX_LIGHTS) is what actually gates the loop a
 // caller (or DIRECT_LIGHTING_HOOK_DEFAULT's osgx_DirectLighting) writes over osgx_lights.
 //
-// A single std430 buffer struct array replaces what used to be seven parallel flat uniform arrays
-// (lightPosIntensity/lightColor/lightType/lightDir/lightSpotAngles/lightSourceRadius plus
-// lightCount) - modeled on gltf::detail::Skin's paletteMatrices buffer (a small, runtime-variable-
-// count array of structs), not Material.cpp's fixed-size, one-per-draw
-// read-only data - the right shape for a single material, not an array of lights). std430 (not
-// std140, which only applies to `uniform` blocks) is what actually buys the tighter packing here
-// - no forced 16-byte rounding on scalar/vec2 array elements. Every uniform/block name below
-// carries the `osgx_` prefix (2026-08-16 rename) to avoid collision with an unrelated consumer
-// shader's own similarly-named uniforms, matching the rest of this catalog (osgx_Material,
-// osgx_DirectLight, etc.).
+// The lights live in one std140 uniform block holding a fixed-size (OSGX_MAX_LIGHTS) struct array:
+// small, fixed-layout and read-only, which is what uniform blocks are for (see docs/CORE.md's
+// "Buffer blocks and samplers"). osgx_Light is built from 16-byte rows, so std140's array-stride
+// rounding adds no padding. Every uniform/block name below carries the `osgx_` prefix to avoid collision with an
+// unrelated consumer shader's own similarly-named uniforms, matching the rest of this catalog
+// (osgx_Material, osgx_DirectLight, etc.).
 //
-// Packed layout of one osgx_Light (std430; 16 floats / 64 bytes - must match
+// Packed layout of one osgx_Light (std140; 16 floats / 64 bytes - must match
 // LIGHT_STRUCT_FLOATS and the float offsets LightSet's setters/getters use in Light.cpp):
 //   vec4  posIntensity   offset  0  (xyz = world-space position, w = intensity)
 //   vec3  color          offset 16
@@ -179,7 +175,7 @@ struct osgx_Light {
 	float _pad0;
 };
 
-layout(std430, binding = @osgx::light@) readonly buffer osgx_LightBuffer {
+layout(std140, binding = @osgx::light@) uniform osgx_LightBuffer {
 	osgx_Light osgx_lights[OSGX_MAX_LIGHTS];
 };
 
@@ -394,13 +390,13 @@ vec3 osgx_DirectLighting(vec3 N, vec3 V, vec3 worldPos, osgx_Material mat) {
 	vec3 color = vec3(0.0);
 
 	// Loop OSGX_MAX_LIGHTS (a compile-time constant), gated solely by each light's own `enabled`
-	// flag - NOT osgx_lightCount (an SSBO-adjacent uniform LightSet::apply() used to push via
+	// flag - NOT osgx_lightCount (a plain uniform LightSet::apply() used to push via
 	// osg::State::applyShaderCompositionUniform()/direct getLastAppliedProgramObject() push,
 	// see LightSet::apply()'s own history comment). Both were confirmed unreliable whenever a
 	// DIFFERENT Program elsewhere in the same frame (a sibling subgraph, even) uses
 	// StateAttribute::OVERRIDE - e.g. osgx::gltf::pbribl::PBRIBLScene::create()'s own Program
 	// attachment - silently zeroing direct lighting for every OTHER Program sharing this
-	// LightSet. `enabled` travels on the SAME SSBO binding the light data itself does
+	// LightSet. `enabled` travels on the SAME buffer binding the light data itself does
 	// (state.applyAttribute(), never State's separate/unreliable uniform-push machinery), so it
 	// has none of that fragility.
 	for(int i = 0; i < OSGX_MAX_LIGHTS; i++) {
@@ -436,8 +432,8 @@ enum class LightType: int {
 };
 
 // The static-position counterpart to OrbitLightRig below: one StateAttribute that owns the
-// LIGHT_UNIFORMS SSBO AND its osgx_lightCount uniform, instead of asking every caller to keep a
-// buffer binding and a separate StateSet uniform in sync. apply() binds the SSBO and sends the
+// LIGHT_UNIFORMS uniform block AND its osgx_lightCount uniform, instead of asking every caller to keep a
+// buffer binding and a separate StateSet uniform in sync. apply() binds the block's buffer and sends the
 // count through osg::State::applyShaderCompositionUniform(), OSG's own StateAttribute-to-uniform
 // bridge (used by osg::ShaderAttribute, osg::TexEnv, and osg::TexGen). A caller wiring a fixed rig
 // (wall torches, sconces, a sun, a flashlight) uses this directly; OrbitLightRig can still animate
@@ -532,10 +528,10 @@ struct LightSet: public osg::StateAttribute {
 
 	private:
 	// Backing store for every light's packed osgx_Light struct (MAX_LIGHTS * LIGHT_STRUCT_FLOATS
-	// floats, std430 layout - see LIGHT_UNIFORMS' struct comment), bound through _binding at the
+	// floats, std140 layout - see LIGHT_UNIFORMS' struct comment), bound through _binding at the
 	// "osgx::light" slot. It stays private so it cannot be replaced independently of that binding.
 		osg::ref_ptr<osgx::FloatArray> _lights;
-		osg::ref_ptr<osg::ShaderStorageBufferBinding> _binding;
+		osg::ref_ptr<osg::UniformBufferBinding> _binding;
 		mutable std::once_flag _bindingResolved;
 		osg::ref_ptr<osg::Uniform> _lightCount;
 

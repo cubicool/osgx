@@ -51,7 +51,7 @@ struct osgx_GridSettings {
 	vec4 colorLineStrong;
 };
 
-layout(std430, binding = @osgx::grid@) readonly buffer osgx_GridSettingsBuffer {
+layout(std140, binding = @osgx::grid@) uniform osgx_GridSettingsBuffer {
 	osgx_GridSettings u_grid;
 };
 )GLSL";
@@ -71,7 +71,7 @@ struct osgx_GridSettings {
 	vec4 colorLineStrong;
 };
 
-layout(std430, binding = @osgx::grid@) readonly buffer osgx_GridSettingsBuffer {
+layout(std140, binding = @osgx::grid@) uniform osgx_GridSettingsBuffer {
 	osgx_GridSettings u_grid;
 };
 
@@ -259,7 +259,7 @@ _buffer(static_cast<osgx::FloatArray*>(copyop(settings._buffer.get()))) {
 	if(!_buffer) throw std::logic_error("GridSettings copy has no backing buffer");
 
 	// Index 0 until apply() resolves the "osgx::grid" slot.
-	_binding = new osg::ShaderStorageBufferBinding(
+	_binding = new osg::UniformBufferBinding(
 		0, _buffer, 0, static_cast<GLsizeiptr>(_buffer->getTotalDataSize())
 	);
 }
@@ -269,9 +269,9 @@ GridSettings::~GridSettings() {}
 void GridSettings::_initBuffer() {
 	_buffer = new osgx::FloatArray(static_cast<std::size_t>(GRID_SETTINGS_FLOATS));
 	std::fill(_buffer->begin(), _buffer->end(), 0.0f);
-	_buffer->setBufferObject(new osg::ShaderStorageBufferObject());
+	_buffer->setBufferObject(new osg::UniformBufferObject());
 	// Index 0 until apply() resolves the "osgx::grid" slot.
-	_binding = new osg::ShaderStorageBufferBinding(
+	_binding = new osg::UniformBufferBinding(
 		0, _buffer, 0, static_cast<GLsizeiptr>(_buffer->getTotalDataSize())
 	);
 

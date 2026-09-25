@@ -47,23 +47,52 @@ osgViewer::Viewer viewer(arguments);
 - Libraries built on osgx subclass it (`class Library: public osgx::Library`), which initializes
   osgx first and releases the subclass's state first. `Library::instance<T>()` returns the live
   Library as `T`.
-- Binding slots (`osgx::Bindings`, types `SSBO` and `TextureUnit`): each library declares slot
+- Binding slots (`osgx::Bindings`, types `UBO`, `SSBO` and `TextureUnit`, each its own index space): each library declares slot
   names, optionally with a preferred index (osgx's texture-unit slots prefer the units they used as
   fixed constants: Material 0-3, Environment 5-7, SDF 10); a slot gets its index on first use, so
   only features a program uses consume indices. GLSL writes `@<name>@` (e.g.
-  `layout(std430, binding = @osgx::environment@)`), which `resolveShaderLibs()` substitutes.
+  `layout(std140, binding = @osgx::environment@)`), which `resolveShaderLibs()` substitutes.
   `LibraryOptions::bindings` pins a slot's index by name; `LibraryOptions::reserve` keeps indices
   free for the application's own buffers. Two pins sharing an index, or a pin naming an undeclared
   slot, throw.
-- UBO or SSBO: a small block with a fixed layout (a material's factors, an environment's
-  parameters, a bounded light array) is a uniform buffer (std140): GL guarantees at least 36
-  binding points and 12 blocks per shader stage (GLES too). An array whose length varies at
-  runtime (joint palettes, per-glyph or per-layer data) is a shader storage buffer (std430): GL
-  guarantees only 8 binding points, and GLES 3.1 only 4 blocks in a fragment shader (0 in a vertex
-  shader).
 - Python: `lib = osgx.initialize()`, kept referenced until the viewer is done. The Python module's
   subclass also owns `osgx.gltf`'s async-reader texture cache and registers the `osgx::gltf`
   catalog.
+
+### Buffer blocks and samplers
+
+A GLSL block goes in a uniform buffer (UBO, `std140`, `Bindings::Type::UBO`) when all three hold:
+
+1. Its size is fixed at shader compile time (no unsized `[]` array).
+2. It fits in 16 KB, the minimum `GL_MAX_UNIFORM_BLOCK_SIZE`.
+3. The shader only reads it.
+
+Otherwise it goes in a shader storage buffer (SSBO, `std430`, `Bindings::Type::SSBO`).
+
+When a block qualifies for both:
+
+- UBO: every invocation reads the same data (a material, an environment, a light set). GPUs read
+  uniform buffers through a constant cache that is fastest when all invocations read the same
+  address.
+- SSBO: each invocation indexes different elements (per-glyph, per-layer, per-joint data).
+
+Binding points are the other reason to prefer UBOs. OpenGL 4 guarantees at least 36 uniform-buffer
+binding points and 12 uniform blocks per shader stage, but only 8 shader-storage-buffer binding
+points.
+
+A block built from 16-byte rows (`vec4`s, or a `vec3` followed by a scalar) has the same byte
+layout under `std140` and `std430`; `std140` differs by rounding scalar and `vec2` array strides,
+and struct alignment, up to 16 bytes.
+
+In osgx: `Material`, `Environment`, `LightSet`, `GridSettings` and `SDF` are UBOs; the glTF joint
+palette (`osgx::gltf::joints`) and `PixelText`'s glyph indices (`osgx::pixelText`) are SSBOs.
+
+Samplers: a sampler declared in more than one shader object of a Program takes its unit from a
+uniform, not `layout(binding)`. NVIDIA's linker rejects identical `layout(binding)` sampler
+redeclarations when the objects declare other bound samplers in a different order (valid GLSL;
+glslangValidator links it), and ignores a sampler binding declared only in an object that does not
+use the sampler. Uniform and storage blocks redeclared across objects link correctly, provided
+every declaration carries the same `binding`.
 
 ## `osgx/Visitors.hpp`
 
@@ -327,7 +356,7 @@ key only, unrelated to the C++ namespace; see [Namespaces](#namespaces) below).
   `resolveShaderLibs()`, not full shaders of their own.
 - `Material` — a `StateAttribute` carrying PBR material factors (base color/roughness/metallic/
   occlusion/emissive factor/alpha mode + cutoff) and up to four texture maps, applied via ONE
-  `std430` shader storage buffer - no per-material uniforms, and no sampler uniforms to set.
+  `std140` uniform block - no per-material uniforms, and no sampler uniforms to set.
 - Material read side — `MATERIAL_INPUTS` (the `osgx_materialInputs` buffer plus four samplers
   that declare their own units via `layout(binding)`), `GET_MATERIAL` (`osgx_GetMaterial(bcUV,
   ormUV)` → `osgx_Material`), `GET_SHADING_NORMAL` (normal map + derivative-TBN fallback,
@@ -352,7 +381,7 @@ Vocabulary note: this codebase calls the group "direct" lights, not glTF's "punc
 not, so "punctual" would misdescribe it. "Direct" instead answers the question that actually
 matters here: computed explicitly per-light, as opposed to baked/prefiltered ambient/IBL.
 
-- `LightSet` — a `StateAttribute` owning a `std430`-SSBO-backed array of typed direct lights (`LightType::Point`/`Directional`/`Spot`; a sphere light is a `Point`/`Spot` with non-zero `sourceRadius`, not a fourth type) Construct it, then attach it through `StateSet::setAttributeAndModes()` (size `MAX_LIGHTS`, zero-initialized, everything off until `setPoint()`/`setDirectional()`/`setSpot()`, each of which enables its slot). Its `apply()` binds the SSBO only. Shaders loop the compile-time `OSGX_MAX_LIGHTS` bound and skip slots whose `enabled` flag is 0; `setEnabled()` toggles a configured light without changing its packed data. The GLSL-side `osgx_lightCount` uniform is never pushed (see `DIRECT_LIGHTING_HOOK_DEFAULT`'s history comment); `setCount()`/`getCount()` are CPU-side only - `setCount(n)` disables slots `>= n`, and `LightGizmos` only draws slots below the count. Typed setters/getters (`getType()`, `getPosIntensity()`, `getColor()`, `getSourceRadius()`, `getDirection()`, `getSpotAngles()`, …) replace the old parallel-`osg::Uniform`-array contract.
+- `LightSet` — a `StateAttribute` owning a `std140`-uniform-block-backed array of typed direct lights (`LightType::Point`/`Directional`/`Spot`; a sphere light is a `Point`/`Spot` with non-zero `sourceRadius`, not a fourth type) Construct it, then attach it through `StateSet::setAttributeAndModes()` (size `MAX_LIGHTS`, zero-initialized, everything off until `setPoint()`/`setDirectional()`/`setSpot()`, each of which enables its slot). Its `apply()` binds the block's buffer only. Shaders loop the compile-time `OSGX_MAX_LIGHTS` bound and skip slots whose `enabled` flag is 0; `setEnabled()` toggles a configured light without changing its packed data. The GLSL-side `osgx_lightCount` uniform is never pushed (see `DIRECT_LIGHTING_HOOK_DEFAULT`'s history comment); `setCount()`/`getCount()` are CPU-side only - `setCount(n)` disables slots `>= n`, and `LightGizmos` only draws slots below the count. Typed setters/getters (`getType()`, `getPosIntensity()`, `getColor()`, `getSourceRadius()`, `getDirection()`, `getSpotAngles()`, …) replace the old parallel-`osg::Uniform`-array contract.
 - `LIGHT_SAMPLE` (`osgx_SampleLight(osgx_Light, worldPos)` → `osgx_LightSample{L, radiance, toLight, sourceRadius}`) — the Material-free per-light evaluation: picks the right `*_LIGHT_RADIANCE` function for the light's type and returns the incoming light, nothing about surface response. The seam between lights and materials: `DIRECT_LIGHTING_HOOK_DEFAULT` (and `Shadow.hpp`'s shadowed variant) consume it for PBR, and a Lambert/toon/NPR shader can consume it directly with no `osgx_Material` in scope - list `LIGHT_UNIFORMS, POINT_LIGHT_RADIANCE, DIRECTIONAL_LIGHT_RADIANCE, SPOT_LIGHT_RADIANCE, LIGHT_SAMPLE` on one `#pragma osgx::light` line.
 - `OrbitLightRig` — the animated counterpart: an `osg::NodeCallback` that writes orbiting position/intensity into a `LightSet` every update traversal (for the subset of lights that should move; a `LightSet` can be shared between a static rig and an orbiting one).
 
@@ -393,7 +422,7 @@ generic `osgx` does not depend on or duplicate its public shader interface.
 `Environment` — distant image-based lighting as one `StateAttribute`, the third lighting attribute
 beside `Material` (surface) and `LightSet` (direct lights). It owns a prefiltered specular cubemap,
 a diffuse irradiance cubemap, and the shared split-sum BRDF LUT, plus orientation, the
-roughness-to-mip mapping, and diffuse/specular intensities in one `std430` SSBO (`osgx::environment`
+roughness-to-mip mapping, and diffuse/specular intensities in one `std140` uniform block (`osgx::environment`
 slot). `setAttributeAndModes()` binds all of it (textures at the `osgx::environment.*` slots) and enables
 `GL_TEXTURE_CUBE_MAP_SEAMLESS`.
 

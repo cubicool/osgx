@@ -129,10 +129,10 @@ void Environment::_initBuffer() {
 	setDataVariance(osg::Object::DYNAMIC);
 
 	_inputs = osgx::make_ref<osgx::FloatArray>(ENVIRONMENT_FLOATS);
-	_inputs->setBufferObject(new osg::ShaderStorageBufferObject());
+	_inputs->setBufferObject(new osg::UniformBufferObject());
 
 	// Index 0 until apply() resolves the "osgx::environment" slot.
-	_binding = new osg::ShaderStorageBufferBinding(
+	_binding = new osg::UniformBufferBinding(
 		0, _inputs, 0, static_cast<GLsizeiptr>(_inputs->getTotalDataSize())
 	);
 
@@ -153,7 +153,7 @@ void Environment::_initLUT(int lutSize) {
 	_bakeRoot->addChild(lut.camera);
 }
 
-// Field order must match ENVIRONMENT_INPUTS' `osgx_EnvironmentInputs` std430 block exactly. Each
+// Field order must match ENVIRONMENT_INPUTS' `osgx_EnvironmentInputs` std140 block exactly. Each
 // axis row is the bake basis row rotated by _rotation: dot(R * b, W) == dot(b, R^-1 * W), i.e. the
 // environment rotated by _rotation in world space.
 void Environment::_writeInputs() {

@@ -66,10 +66,10 @@ LightSet::LightSet() {
 	_lights = new osgx::FloatArray(static_cast<std::size_t>(MAX_LIGHTS * LIGHT_STRUCT_FLOATS));
 
 	std::fill(_lights->begin(), _lights->end(), 0.0f);
-	_lights->setBufferObject(new osg::ShaderStorageBufferObject());
+	_lights->setBufferObject(new osg::UniformBufferObject());
 
 	// Index 0 until apply() resolves the "osgx::light" slot.
-	_binding = new osg::ShaderStorageBufferBinding(
+	_binding = new osg::UniformBufferBinding(
 		0, _lights, 0, static_cast<GLsizeiptr>(_lights->getTotalDataSize())
 	);
 	_lightCount = new osg::Uniform("osgx_lightCount", 0);
@@ -81,7 +81,7 @@ osg::StateAttribute(lights, copyop),
 _lights(static_cast<osgx::FloatArray*>(copyop(lights._lights.get()))),
 _lightCount(static_cast<osg::Uniform*>(copyop(lights._lightCount.get()))) {
 	// Index 0 until apply() resolves the "osgx::light" slot.
-	_binding = new osg::ShaderStorageBufferBinding(
+	_binding = new osg::UniformBufferBinding(
 		0, _lights, 0, static_cast<GLsizeiptr>(_lights->getTotalDataSize())
 	);
 	setDataVariance(osg::Object::DYNAMIC);
@@ -107,7 +107,7 @@ void LightSet::apply(osg::State& state) const {
 	// push) both turned out unreliable - the second broke the moment ANY Program elsewhere in the
 	// same frame used StateAttribute::OVERRIDE (osgx::gltf::pbribl::PBRIBLScene::create() included),
 	// confirmed via a live repro 2026-09-03. The shader loop now reads a compile-time OSGX_MAX_LIGHTS
-	// bound instead, gated per-light by `enabled` - data that already lives in the SSBO this single
+	// bound instead, gated per-light by `enabled` - data that already lives in the uniform block this single
 	// applyAttribute() call binds, so it needs no separate, Program-targeted push at all.
 	state.applyAttribute(_binding.get());
 }

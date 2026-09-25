@@ -162,13 +162,13 @@ float osgx_SDF_ScreenPixelRange(vec2 uv, vec2 texSize, float pixelRange);
 float osgx_SDF_CoverageFromDistance(float d, float screenPixelRange);
 )GLSL";
 
-// Must match SDF::_write()'s layout: 8 floats, std430 (vec4 + 4 scalars, no implicit padding).
+// Must match SDF::_write()'s layout: 8 floats, std140 (vec4 + 4 scalars, no implicit padding).
 // `sdfType` is a float (0 = SDF, 1 = MSDF) purely to keep the backing store a single FloatArray, the
 // same trick Material's has*Map flags use.
 constexpr const char* SDF_TEXTURE_SRC = R"GLSL(
 layout(binding = @osgx::sdf.texture@) uniform sampler2D osgx_sdfTexture;
 
-layout(std430, binding = @osgx::sdf@) readonly buffer osgx_SDFBuffer {
+layout(std140, binding = @osgx::sdf@) uniform osgx_SDFBuffer {
 	vec4 uvRect;
 	float pixelRange;
 	float sdfType;
@@ -216,13 +216,13 @@ _uvRect(sdf._uvRect) {
 SDF::~SDF() {}
 
 // Built once (not per-write) so every setter can mutate it in place via dirty() instead of
-// standing up a new osg::ShaderStorageBufferObject/GL buffer each call - same as Material.
+// standing up a new osg::UniformBufferObject/GL buffer each call - same as Material.
 void SDF::_initBuffer() {
 	_buffer = osgx::make_ref<osgx::FloatArray>(static_cast<std::size_t>(8));
-	_buffer->setBufferObject(new osg::ShaderStorageBufferObject());
+	_buffer->setBufferObject(new osg::UniformBufferObject());
 
 	// Index 0 until apply() resolves the "osgx::sdf" slot.
-	_binding = new osg::ShaderStorageBufferBinding(
+	_binding = new osg::UniformBufferBinding(
 		0, _buffer, 0, static_cast<GLsizeiptr>(_buffer->getTotalDataSize())
 	);
 

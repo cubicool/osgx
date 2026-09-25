@@ -18,7 +18,7 @@ OSGX_DISABLE_WARNINGS
 OSGX_ENABLE_WARNINGS
 
 namespace osg {
-	class ShaderStorageBufferBinding;
+	class UniformBufferBinding;
 }
 
 namespace osgx {
@@ -32,7 +32,7 @@ class GridSettings: public osg::StateAttribute {
 public:
 	static constexpr Type GRID_SETTINGS_TYPE = CAPABILITY;
 	static constexpr unsigned int GRID_SETTINGS_MEMBER = 2;
-	// The FloatArray backing store has the exact std430 layout declared by the shader-library
+	// The FloatArray backing store has the exact std140 layout declared by the shader-library
 	// blocks in Grid.cpp; its binding is the "osgx::grid" slot (osgx::Bindings).
 
 	enum EdgeMode {
@@ -84,7 +84,7 @@ private:
 	float* _data() const;
 
 	osg::ref_ptr<osgx::FloatArray> _buffer;
-	osg::ref_ptr<osg::ShaderStorageBufferBinding> _binding;
+	osg::ref_ptr<osg::UniformBufferBinding> _binding;
 	mutable std::once_flag _bindingResolved;
 };
 

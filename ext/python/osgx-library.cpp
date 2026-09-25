@@ -25,6 +25,7 @@ void bind_library(py::module_& m) {
 	);
 
 	py::enum_<osgx::Bindings::Type>(bindingsClass, "Type", "The kind of GL binding point a slot names.")
+		.value("UBO", osgx::Bindings::Type::UBO)
 		.value("SSBO", osgx::Bindings::Type::SSBO)
 		.value("TextureUnit", osgx::Bindings::Type::TextureUnit)
 	;

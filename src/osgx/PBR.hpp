@@ -19,7 +19,7 @@ OSGX_ENABLE_WARNINGS
 #include <string>
 
 namespace osg {
-	class ShaderStorageBufferBinding;
+	class UniformBufferBinding;
 	class Texture2D;
 }
 
@@ -132,7 +132,7 @@ inline constexpr unsigned int ORM_UV_CHANNEL = 2;
 inline constexpr unsigned int EMISSIVE_UV_CHANNEL = 3;
 
 // GLSL read side of osgx::Material (below): the factor buffer it builds plus its four texture maps.
-// Every material value lives in ONE std430 SSBO - no loose per-material uniforms - and the four
+// Every material value lives in ONE std140 uniform block - no loose per-material uniforms - and the four
 // samplers carry their own `layout(binding = N)` texture unit, so nothing on the C++ side has to set
 // sampler uniforms either (GLSL forbids layout(binding) on struct members, which is why these are
 // four plain samplers rather than a struct). The buffer and the four samplers bind at the
@@ -140,7 +140,7 @@ inline constexpr unsigned int EMISSIVE_UV_CHANNEL = 3;
 // osgx::Material too, so this is the one material interface for both hand-built and glTF-loaded
 // geometry.
 //
-// Packed layout (std430; 16 floats / 64 bytes - must match Material::_writeFactors() in PBR.cpp):
+// Packed layout (std140; 16 floats / 64 bytes - must match Material::_writeFactors() in PBR.cpp):
 //   vec4  baseColorFactor           floats  0-3
 //   vec3  emissiveFactor                    4-6
 //   float roughnessFactor                   7
@@ -157,7 +157,7 @@ inline constexpr const char* MATERIAL_INPUTS = R"GLSL(
 #define OSGX_ALPHA_MODE_MASK 1.0
 #define OSGX_ALPHA_MODE_BLEND 2.0
 
-layout(std430, binding = @osgx::material@) readonly buffer osgx_MaterialInputs {
+layout(std140, binding = @osgx::material@) uniform osgx_MaterialInputs {
 	vec4 baseColorFactor;
 	vec3 emissiveFactor;
 	float roughnessFactor;
@@ -428,7 +428,7 @@ class Material: public osg::StateAttribute {
 		osg::ref_ptr<osg::Texture2D> _emissiveMap;
 
 		osg::ref_ptr<osgx::FloatArray> _buffer;
-		osg::ref_ptr<osg::ShaderStorageBufferBinding> _binding;
+		osg::ref_ptr<osg::UniformBufferBinding> _binding;
 		mutable std::once_flag _bindingResolved;
 
 		// The four "osgx::material.*" texture units (base color, normal, ORM, emissive).

@@ -38,15 +38,15 @@ _emissiveMap(static_cast<osg::Texture2D*>(copyop(material._emissiveMap.get()))) 
 	_initBuffer();
 }
 
-// Field order must match MATERIAL_INPUTS' `osgx_MaterialInputs` std430 block (PBR.hpp) exactly.
+// Field order must match MATERIAL_INPUTS' `osgx_MaterialInputs` std140 block (PBR.hpp) exactly.
 // Built once here (not per-write) so every setter can mutate it in place via dirty()
-// instead of standing up a new osg::ShaderStorageBufferObject/GL buffer on every call.
+// instead of standing up a new osg::UniformBufferObject/GL buffer on every call.
 void Material::_initBuffer() {
 	_buffer = osgx::make_ref<osgx::FloatArray>(static_cast<std::size_t>(16));
-	_buffer->setBufferObject(new osg::ShaderStorageBufferObject());
+	_buffer->setBufferObject(new osg::UniformBufferObject());
 
 	// Index 0 until apply() resolves the "osgx::material" slot.
-	_binding = new osg::ShaderStorageBufferBinding(
+	_binding = new osg::UniformBufferBinding(
 		0, _buffer, 0, static_cast<GLsizeiptr>(_buffer->getTotalDataSize())
 	);
 
@@ -55,7 +55,7 @@ void Material::_initBuffer() {
 
 void Material::_writeFactors() {
 	// 16 floats, no padding: vec3 emissiveFactor packs into the 16-byte slot after baseColorFactor
-	// with roughnessFactor filling its fourth component (std430 vec3 alignment).
+	// with roughnessFactor filling its fourth component (std140 vec3 alignment).
 	_buffer->set({
 		_baseColor.r(), _baseColor.g(), _baseColor.b(), _baseColor.a(),
 		_emissiveFactor.x(), _emissiveFactor.y(), _emissiveFactor.z(),

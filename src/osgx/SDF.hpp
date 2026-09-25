@@ -15,7 +15,7 @@ OSGX_DISABLE_WARNINGS
 OSGX_ENABLE_WARNINGS
 
 namespace osg {
-	class ShaderStorageBufferBinding;
+	class UniformBufferBinding;
 }
 
 // osgx::SDF - two things sharing one namespace of GLSL: (1) a small catalog of pure, closed-form
@@ -88,7 +88,7 @@ namespace osgx {
 //              object pulls in SAMPLING (or TEXTURE's dependency on it) and any other object in the
 //              same Program that merely CALLS these lists SAMPLING_DECL instead - the same pattern
 //              as PBR's *_DECL entries.
-//   TEXTURE  - declares the SDF StateAttribute's own inputs (sampler + std430 block, see the class
+//   TEXTURE  - declares the SDF StateAttribute's own inputs (sampler + std140 block, see the class
 //              below) and float osgx_SDF_Coverage(vec2 uv), the whole "sample + reconstruct +
 //              antialias" pipeline in one call; `uv` is tile-local [0, 1] (mapped through
 //              uvRect internally). REQUIRES `SAMPLING` listed BEFORE it:
@@ -108,7 +108,7 @@ void registerSDFShaderLibs();
 // `osgx_SDF_Coverage(uv)` from your own fragment shader (see registerSDFShaderLibs()).
 //
 // Follows Material/GridSettings exactly: claims the reserved CAPABILITY Type with its own member
-// number, keeps its parameters in a small std430 buffer rewritten in place by every setter, and
+// number, keeps its parameters in a small std140 uniform block rewritten in place by every setter, and
 // apply() is read-only. The texture binds at the "osgx::sdf.texture" slot (osgx::Bindings),
 // referenced by the shader through `layout(binding=...)` so no osg::Uniform is needed.
 //
@@ -175,7 +175,7 @@ private:
 	osg::Vec4 _uvRect{0.0f, 0.0f, 1.0f, 1.0f};
 
 	osg::ref_ptr<osgx::FloatArray> _buffer;
-	osg::ref_ptr<osg::ShaderStorageBufferBinding> _binding;
+	osg::ref_ptr<osg::UniformBufferBinding> _binding;
 	mutable std::once_flag _bindingResolved;
 
 	mutable unsigned int _unit = 0;

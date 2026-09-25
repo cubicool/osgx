@@ -43,7 +43,7 @@ namespace detail {
 // gives it; else its preferred index if that is not reserved (LibraryOptions::reserve), assigned,
 // or claimed by an override; else the lowest index of its type that is none of those and not
 // another slot's preferred index. GLSL refers to a slot as `@<name>@`
-// (e.g. `layout(std430, binding = @osgx::environment@)`), which resolveShaderLibs() replaces with
+// (e.g. `layout(std140, binding = @osgx::environment@)`), which resolveShaderLibs() replaces with
 // its index; C++ looks it up with get().
 //
 // Declarations close on the first get(); declaring after that throws. So do an override naming a
@@ -52,7 +52,11 @@ namespace detail {
 // ================================================================================================
 class Bindings {
 	public:
+		// Each type is its own GL index space. UBO and SSBO name buffer binding points
+		// (GL_UNIFORM_BUFFER / GL_SHADER_STORAGE_BUFFER); docs/CORE.md's "Buffer blocks and
+		// samplers" says which one a block should use.
 		enum class Type {
+			UBO,
 			SSBO,
 			TextureUnit
 		};

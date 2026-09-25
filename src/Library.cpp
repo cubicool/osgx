@@ -26,6 +26,7 @@ Library* liveLibrary = nullptr;
 
 const char* typeName(Bindings::Type type) {
 	switch(type) {
+		case Bindings::Type::UBO: return "UBO";
 		case Bindings::Type::SSBO: return "SSBO";
 		case Bindings::Type::TextureUnit: return "texture unit";
 	}
@@ -153,13 +154,14 @@ Library::Library(osg::ArgumentParser* arguments, const LibraryOptions& options) 
 	try {
 		auto& slots = _state->bindings;
 
-		slots.declare(Bindings::Type::SSBO, "osgx::environment");
+		slots.declare(Bindings::Type::UBO, "osgx::environment");
+		slots.declare(Bindings::Type::UBO, "osgx::grid");
+		slots.declare(Bindings::Type::UBO, "osgx::light");
+		slots.declare(Bindings::Type::UBO, "osgx::material");
+		slots.declare(Bindings::Type::UBO, "osgx::sdf");
+
 		slots.declare(Bindings::Type::SSBO, "osgx::gltf::joints");
-		slots.declare(Bindings::Type::SSBO, "osgx::grid");
-		slots.declare(Bindings::Type::SSBO, "osgx::light");
-		slots.declare(Bindings::Type::SSBO, "osgx::material");
 		slots.declare(Bindings::Type::SSBO, "osgx::pixelText");
-		slots.declare(Bindings::Type::SSBO, "osgx::sdf");
 
 		// Preferred indices are the units these textures used before they were slots, which
 		// application code written against those fixed numbers still avoids.

@@ -21,7 +21,7 @@ OSGX_ENABLE_WARNINGS
 #include <array>
 
 namespace osg {
-	class ShaderStorageBufferBinding;
+	class UniformBufferBinding;
 }
 
 namespace osgx {
@@ -52,20 +52,18 @@ inline const std::array<osg::Vec3, 3> ENVIRONMENT_BAKE_BASIS{
 // Size, in 4-byte floats, of the osgx_EnvironmentInputs block below.
 inline constexpr std::size_t ENVIRONMENT_FLOATS = 16;
 
-// Every hardcoded binding here must match its C++ constant above.
-//
 // `axis` maps a world-space (Z-up) direction to the cubemap lookup direction:
 // lookup = (dot(d, axis[0]), dot(d, axis[1]), dot(d, axis[2])). Environment computes the rows from
 // the bake convention and its own rotation; shaders never build them.
 //
-// Packed layout (std430; 16 floats / 64 bytes - must match Environment::_writeInputs()):
+// Packed layout (std140; 16 floats / 64 bytes - must match Environment::_writeInputs()):
 //   vec4  axis[3]              floats  0-11  (xyz used, w = 0)
 //   float maxSpecularMip              12    (mip level holding roughness 1.0)
 //   float diffuseIntensity            13
 //   float specularIntensity           14
 //   float _pad0                       15
 inline constexpr const char* ENVIRONMENT_INPUTS = R"GLSL(
-layout(std430, binding = @osgx::environment@) readonly buffer osgx_EnvironmentInputs {
+layout(std140, binding = @osgx::environment@) uniform osgx_EnvironmentInputs {
 	vec4 axis[3];
 	float maxSpecularMip;
 	float diffuseIntensity;
@@ -265,7 +263,7 @@ class Environment: public osg::StateAttribute {
 		float _specularIntensity = 1.0f;
 
 		osg::ref_ptr<osgx::FloatArray> _inputs;
-		osg::ref_ptr<osg::ShaderStorageBufferBinding> _binding;
+		osg::ref_ptr<osg::UniformBufferBinding> _binding;
 		mutable std::once_flag _bindingResolved;
 
 		// The three "osgx::environment.*" texture units (specular, BRDF LUT, diffuse).
