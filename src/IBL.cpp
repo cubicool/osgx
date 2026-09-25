@@ -1,4 +1,5 @@
 #include "LibraryState.hpp"
+#include "ShaderLibs.hpp"
 
 #include "osgx/IBL.hpp"
 #include "osgx/RTT.hpp"

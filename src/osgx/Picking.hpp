@@ -101,14 +101,12 @@ inline uint32_t decodePickID(const uint8_t* px) {
 	return uint32_t(px[0]) | (uint32_t(px[1]) << 8) | (uint32_t(px[2]) << 16) | (uint32_t(px[3]) << 24);
 }
 
-// A GLSL `vec4 osgx_encodePickID(uint id)` matching decodePickID()'s bit layout above, registered
-// under the "osgx::picking" pragma namespace (`#pragma osgx::picking encode`) via
-// osgx::registerShaderLibs - see Shader.hpp. Exists so a shader that CAN'T reuse
-// makePickCamera()'s own PICK_FRAG_CORE/PICK_FRAG_HOOK_UNIFORM wholesale (e.g. one that has to run
-// its own coverage/discard test before it knows the final ID) still packs the ID exactly the way
-// this file's own decodePickID() expects it, from one shared implementation instead of a
-// hand-copied one drifting in another repo.
-void registerPickShaderLibs();
+// A GLSL `vec4 osgx_encodePickID(uint id)` matching decodePickID()'s bit layout above, in the
+// "osgx::picking" catalog (`#pragma osgx::picking encode`) that osgx::Library registers. Exists so
+// a shader that CAN'T reuse makePickCamera()'s own PICK_FRAG_CORE/PICK_FRAG_HOOK_UNIFORM wholesale
+// (e.g. one that has to run its own coverage/discard test before it knows the final ID) still packs
+// the ID exactly the way this file's own decodePickID() expects it, from one shared implementation
+// instead of a hand-copied one drifting in another repo.
 
 // Hands out contiguous pick-ID ranges instead of a single ID - for a drawable whose fragment
 // shader distinguishes more than one pickable "part" per draw call (e.g. a multi-layer composite

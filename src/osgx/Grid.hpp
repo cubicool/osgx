@@ -23,10 +23,9 @@ namespace osg {
 
 namespace osgx {
 
-// Registers the `#pragma osgx::grid INPUTS` and `#pragma osgx::grid GRID` shader-library blocks.
-// INPUTS declares GridSettings' shader-storage data for a vertex stage; GRID declares the same
-// inputs and exposes `osgx_GridColor(vec2 gridPos)` for a fragment stage.
-void registerGridShaderLibs();
+// The `#pragma osgx::grid` catalog (registered by osgx::Library) has two entries. INPUTS declares
+// GridSettings' uniform block for a vertex stage; GRID declares the same inputs and exposes
+// `osgx_GridColor(vec2 gridPos)` for a fragment stage.
 
 class GridSettings: public osg::StateAttribute {
 public:

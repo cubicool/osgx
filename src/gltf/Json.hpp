@@ -1,14 +1,12 @@
 #pragma once
 
 // Private (never installed) helpers over tinygltf's raw JSON tree (tinygltf_json_c.h), shared by
-// every extension decoder in this directory - originally private to PBRIBL.cpp, hoisted here
-// verbatim (decodeString/decodeInt/JsonDocument/readWholeFile) once osgx_sdf became the second
-// consumer, plus the few extra readers its schema needs (decodeReal, asNumber).
+// the manifest decoders in this directory (osgx_environment, osgx_sdf).
 //
 // Every lookup guards for a null/wrong-typed value first - a missing/malformed field decodes to a
 // default, it never crashes. This is a different value type from a real glTF asset's own embedded
 // extensions (tg3_value, see tg3_util.hpp), so nothing here decodes an extension block embedded in
-// a real asset yet - only a standalone manifest document, like pbribl.
+// a real asset yet - only a standalone manifest document.
 
 #include "osgx/Warnings.hpp"
 

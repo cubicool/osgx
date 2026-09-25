@@ -148,8 +148,6 @@ osg::ref_ptr<osg::Node> makeInfiniteFloor() {
 	floor->setVertexArray(vertices);
 	floor->addPrimitiveSet(new osg::DrawArrays(osg::PrimitiveSet::TRIANGLES, 0, 3));
 
-	osgx::registerProjectionShaderLibs();
-
 	auto program = osgx::make_ref<osg::Program>();
 	program->addShader(new osg::Shader(
 		osg::Shader::VERTEX, osgx::resolveShaderLibs(INFINITE_FLOOR_VERTEX_SHADER)

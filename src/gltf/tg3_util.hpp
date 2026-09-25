@@ -92,10 +92,9 @@ inline int tg3_texcoord_suffix(tg3_str attrName) {
 
 // v3 ships no Value::Has/Get-style accessor - tg3_value/tg3_extension/tg3_kv_pair
 // (Section 9 of tiny_gltf_v3.h) are raw structs only. These are the handful of tree-walk
-// operations osgx actually needs (KHR_materials_pbrSpecularGlossiness in Material.cpp and
-// the osgx_pbribl manifest decode in PBRIBL.cpp - though PBRIBL.cpp's manifest was never
-// real glTF data and uses tinygltf_json_c.h's tg3json_value directly instead, a different
-// type from tg3_value; do not conflate the two).
+// operations osgx actually needs (KHR_materials_pbrSpecularGlossiness in Material.cpp). The
+// manifest decoders (Environment.cpp, SDF.cpp) read tinygltf_json_c.h's tg3json_value instead, a
+// different type from tg3_value; do not conflate the two.
 inline const tg3_extension* tg3_find_extension(const tg3_extras_ext& ext, const char* name) {
 	for(std::uint32_t i = 0; i < ext.extensions_count; i++) {
 		if(tg3_str_equals_cstr(ext.extensions[i].name, name)) return &ext.extensions[i];

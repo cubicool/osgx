@@ -179,18 +179,14 @@ def test_unproject_to_plane_returns_none_on_miss():
 
 	assert osgx.unprojectToPlane(cam, vp, 400, 300, True, plane) is None
 
-def test_register_projection_shader_libs_expands_unproject_pragma():
-	osgx.registerProjectionShaderLibs()
-
+def test_projection_catalog_expands_unproject_pragma():
 	resolved = osgx.resolveShaderLibs("#pragma osgx::projection UNPROJECT\n")
 
 	assert "osgx_Unproject" in resolved
 	assert "osg_ProjectionMatrix" in resolved
 	assert "osg_ViewMatrixInverse" in resolved
 
-def test_register_projection_shader_libs_expands_depth_pragma():
-	osgx.registerProjectionShaderLibs()
-
+def test_projection_catalog_expands_depth_pragma():
 	resolved = osgx.resolveShaderLibs("#pragma osgx::projection DEPTH\n")
 
 	# projectionMatrix is a required function PARAMETER, not an ambient osg_ProjectionMatrix
@@ -199,9 +195,3 @@ def test_register_projection_shader_libs_expands_depth_pragma():
 	assert "osgx_LinearizeDepth" in resolved
 	assert "mat4 projectionMatrix" in resolved
 	assert "uniform mat4 osg_ProjectionMatrix" not in resolved
-
-def test_register_projection_shader_libs_is_idempotent():
-	# registerShaderLibs() only throws on a genuine content conflict -- re-registering the same
-	# catalog (e.g. called from more than one module/example) must be a safe no-op.
-	osgx.registerProjectionShaderLibs()
-	osgx.registerProjectionShaderLibs()

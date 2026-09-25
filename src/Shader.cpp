@@ -97,7 +97,7 @@ osg::Shader* cachedShader(osg::Shader::Type type, std::string src) {
 namespace {
 
 // "<programName>.<hookName>Hook" is applyHooks()'s own half of the "<programName>.<role>" shader-
-// naming convention every osgx Program-builder follows (see PBRIBL.cpp/IBL.cpp's plain
+// naming convention every osgx Program-builder follows (see PBRScene.cpp/IBL.cpp's plain
 // setName() calls for the other half, on shaders that aren't hook slots) - so a shader shows up
 // meaningfully in introspection/debug UIs (e.g. pyside6-glsl.py's tree/tab view) instead of a
 // bare "VERTEX"/"FRAGMENT". Kept here, next to the enum, so a new Hook value can't be added

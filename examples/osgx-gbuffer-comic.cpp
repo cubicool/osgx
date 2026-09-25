@@ -1,14 +1,14 @@
 // vimrun! ./examples/osgx-gbuffer-comic model.gltf
 //
 // A "comic book" cel-shaded rendering style built entirely on osgx::Hook::DeferredLighting: a
-// caller-supplied fragment shader REPLACING PBRIBLLightingScene::create()'s entire lighting-pass
+// caller-supplied fragment shader REPLACING PBRLightingPass::create()'s entire lighting-pass
 // main(), not one leaf function - the "I know what I'm doing, rewrite the whole pipeline" escape
 // hatch described in Shader.hpp's own Hook::DeferredLighting comment and
-// PBRIBLLightingPassOptions' own comment (PBRIBL.hpp).
+// PBRLightingPassOptions' own comment (PBRDeferred.hpp).
 //
 // The custom shader below never calls osgx_DirectLighting()/osgx_EvaluateEnvironment() at all - it reads the
-// G-buffer via osgx_GetGBuffer() (#pragma osgx::gltf DEFERRED_LIGHTING_INPUTS, GET_GBUFFER --
-// the same structured decode PBRIBLLightingScene::create()'s own built-in default uses internally)
+// G-buffer via osgx_GetGBuffer() (#pragma osgx::gbuffer DEFERRED_LIGHTING_INPUTS, GET_GBUFFER --
+// the same structured decode PBRLightingPass::create()'s own built-in default uses internally)
 // and renders: quantized diffuse bands with a warm-lit/cool-shadow color-graded tint; procedural
 // cross-hatching (scale-calibrated from the loaded model's own bounding radius, no texture asset
 // needed); a metal-aware specular highlight, anti-aliased via osgx_SpecularAA()
@@ -19,12 +19,12 @@
 // geometry pass needed); and a soft-clamped emissive glow. It DOES still gamma-encode its final
 // output (a display-referred correctness requirement, not a style choice - osgx_Tonemap() itself
 // stays unused, see
-// PBRIBLLightingPassOptions' own tonemap/hooks comment for why those are two separate decisions).
+// PBRLightingPassOptions' own tonemap/hooks comment for why those are two separate decisions).
 //
-// No environment/IBL, no LightSet, no ShadowMap - PBRIBLLightingScene::create()'s `environment`
+// No environment/IBL, no LightSet, no ShadowMap - PBRLightingPass::create()'s `environment`
 // parameter is OPTIONAL specifically so a Hook::DeferredLighting override like this one, which
 // never samples an osgx::Environment, doesn't have to pay for an HDR bake or KTX2 load that
-// would go entirely unused (see that function's own comment, PBRIBL.hpp/.cpp). The light itself is
+// would go entirely unused (see that function's own comment, PBRDeferred.hpp/.cpp). The light itself is
 // a single plain `sunDirection` uniform, live-draggable via ImGui - not a real osgx::LightSet.
 //
 // Deliberately skips osgx-gbuffer.cpp's shadow camera, floor, and G-buffer channel viewer. DOES
@@ -62,13 +62,13 @@
 //
 // NOTE on "AO Mask": now combines TWO genuinely different occlusion signals, multiplicatively --
 // same convention the built-in lighting shader's own `mat.ao *= texture(aoTex, vUV).r;` uses
-// (PBRIBL.cpp). `gb.ao` is the glTF material's BAKED occlusion texture value
+// (PBRDeferred.cpp). `gb.ao` is the glTF material's BAKED occlusion texture value
 // (osgx_GetMaterial()'s mat.ao, PBR.hpp), defaulting to a flat 1.0 (fully unoccluded) when
 // the loaded model has no dedicated occlusion texture - CONFIRMED 2026-08-21 as why the slider
 // once looked dead on Batman (a non-Khronos custom asset with no occlusion texture at all), not a
 // pipeline bug: it works correctly on models that actually carry one, e.g. the Khronos
 // `CompareAmbientOcclusion` sample (purpose-built for exactly this A/B) or `DamagedHelmet`. `aoTex`
-// (gated behind `OSGX_PBRIBL_AO`, set automatically when `PBRIBLLightingPassOptions::aoTexture` is
+// (gated behind `OSGX_PBR_AO`, set automatically when `PBRLightingPassOptions::aoTexture` is
 // non-null) is real-time screen-space AO from `osgx::SSAO::create()` (GBuffer.hpp) - catches
 // self/contact occlusion the static bake can't (this model resting against itself, or against
 // nothing else in this shadowless/lightless scratchpad, but the mechanism is general). Combining
@@ -112,7 +112,8 @@
 
 #include "osgx/Core.hpp"
 #include "osgx/GBuffer.hpp"
-#include "osgx/gltf/PBRIBL.hpp"
+#include "osgx/gltf/Environment.hpp"
+#include "osgx/PBRDeferred.hpp"
 #include "osgx/ImGui.hpp"
 #include "osgx/Library.hpp"
 
@@ -160,7 +161,7 @@ std::filesystem::path findModelFile(std::string_view filename) {
 class UpdateLightingPassCallback: public osg::Camera::DrawCallback {
 public:
 	UpdateLightingPassCallback(
-		osgx::gltf::pbribl::PBRIBLLightingScene* scene,
+		osgx::PBRLightingPass* scene,
 		osg::Camera* mainCamera,
 		osg::Uniform* ssaoProjection=nullptr
 	):
@@ -175,7 +176,7 @@ public:
 	}
 
 private:
-	osgx::gltf::pbribl::PBRIBLLightingScene* _scene;
+	osgx::PBRLightingPass* _scene;
 	osg::observer_ptr<osg::Camera> _mainCamera;
 	osg::observer_ptr<osg::Uniform> _ssaoProjection;
 };
@@ -184,7 +185,7 @@ private:
 // no LightSet, no ShadowMap, no IBL environment - see the file-level comment above.
 constexpr const char CUSTOM_DEFERRED_LIGHTING_FRAGMENT_SHADER[] = R"GLSL(
 #version 460 core
-#pragma osgx::gltf DEFERRED_LIGHTING_INPUTS, GET_GBUFFER
+#pragma osgx::gbuffer DEFERRED_LIGHTING_INPUTS, GET_GBUFFER
 // osgx_SpecularAA() - see its call site in main() below for why the specular highlight needs it.
 #pragma osgx::pbr SPECULAR_AA
 
@@ -274,18 +275,18 @@ uniform float h2Angle, h2SpacingScale, h2ThicknessScale, h2Seed, h2OnsetLow, h2O
 uniform float h3Angle, h3SpacingScale, h3ThicknessScale, h3Seed, h3OnsetLow, h3OnsetHigh;
 
 // Real-time SSAO - see the file header's "NOTE on AO Mask" for how this combines with gb.ao.
-// Gated the same way the built-in lighting shader gates it (OSGX_PBRIBL_AO, set automatically by
-// PBRIBLLightingPassOptions::aoTexture when non-null) - so this shader still compiles/runs
+// Gated the same way the built-in lighting shader gates it (OSGX_PBR_AO, set automatically by
+// PBRLightingPassOptions::aoTexture when non-null) - so this shader still compiles/runs
 // unchanged if no SSAO pass is ever wired in. `#pragma import_defines` IS required here (confirmed
 // against OSG's own osg::Shader::_shaderDefines/getDefineString(): a StateSet define is only
 // written into a given Shader's compiled source if that Shader itself declares the define name via
-// import_defines - otherwise `#ifdef OSGX_PBRIBL_AO` is always false regardless of what the
+// import_defines - otherwise `#ifdef OSGX_PBR_AO` is always false regardless of what the
 // StateSet has set). Same reasoning LIGHTING_FRAGMENT_SHADER_SRC's own
-// `#pragma import_defines ( OSGX_PBRIBL_DIAGNOSTICS, OSGX_PBRIBL_NO_TONEMAP, OSGX_PBRIBL_AO )` line
-// exists (PBRIBL.cpp) - every shader that reads a StateSet-driven define needs its own copy of
+// `#pragma import_defines ( OSGX_PBR_DIAGNOSTICS, OSGX_PBR_NO_TONEMAP, OSGX_PBR_AO )` line
+// exists (PBRDeferred.cpp) - every shader that reads a StateSet-driven define needs its own copy of
 // this pragma, not just one shader in the Program.
-#pragma import_defines ( OSGX_PBRIBL_AO )
-#ifdef OSGX_PBRIBL_AO
+#pragma import_defines ( OSGX_PBR_AO )
+#ifdef OSGX_PBR_AO
 uniform sampler2D aoTex;
 #endif
 
@@ -489,7 +490,7 @@ void main() {
 	// multiplicative convention the built-in lighting shader uses for the identical combination.
 	float ao = gb.ao;
 
-#ifdef OSGX_PBRIBL_AO
+#ifdef OSGX_PBR_AO
 	ao *= texture(aoTex, vUV).r;
 #endif
 
@@ -518,7 +519,7 @@ void main() {
 	// (high specPower), pow(NdotH, specPower) is extremely sensitive to the tiny per-pixel normal
 	// variation a normal map introduces, and the narrow smoothstep thresholds below then amplify
 	// that into scattered "boxy" aliased blotches instead of one smooth highlight, worst on
-	// heavily normal-mapped metallic surfaces. The built-in PBR path (PBR.hpp/PBRIBL.cpp) already
+	// heavily normal-mapped metallic surfaces. The built-in PBR path (PBR.hpp/PBRScene.cpp) already
 	// calls this for exactly this reason; this shader just wasn't calling it until now.
 	float aaRoughness = osgx_SpecularAA(N_view_n, gb.roughness);
 	float specPower = mix(128.0, 4.0, aaRoughness);
@@ -537,14 +538,14 @@ void main() {
 	// Soft-clamped emissive (see EMISSIVE_EXPOSURE's own comment), combined BEFORE the gamma
 	// encode below - both the shaded surface and the glow need the same linear-to-display
 	// conversion, same as the built-in default's own color = surface + direct + emissive;
-	// color = osgx_Tonemap(color); ordering (PBRIBL.cpp), just without the tonemap curve itself.
+	// color = osgx_Tonemap(color); ordering (PBRDeferred.cpp), just without the tonemap curve itself.
 	vec3 color = shaded + (vec3(1.0) - exp(-gb.emissive * EMISSIVE_EXPOSURE));
 
 	// This shader deliberately never calls osgx_Tonemap() (no tone CURVE - see the file header),
 	// but still needs the gamma ENCODE step every display-referred fragment needs before writing
 	// to the backbuffer - omitting it (as this shader did until now) makes midtones read
 	// noticeably darker/muddier than intended. Two separate decisions, same as
-	// PBRIBLLightingPassOptions::tonemap's own comment explains for the built-in path.
+	// PBRLightingPassOptions::tonemap's own comment explains for the built-in path.
 	color = pow(max(color, vec3(0.0)), vec3(1.0 / 2.2));
 
 	fragColor = vec4(color, gb.alphaCoverage);
@@ -652,7 +653,7 @@ int main(int argc, char** argv) {
 	// value, normalize(vec3(1, 1, 2)).
 	osg::Vec3 sunDirection(0.4082483f, 0.4082483f, 0.8164966f);
 
-	auto gbuffer = osgx::gltf::pbribl::PBRIBLGBuffer::create(model, WIDTH, HEIGHT);
+	auto gbuffer = osgx::PBRGBuffer::create(model, WIDTH, HEIGHT);
 
 	if(!gbuffer.valid()) {
 		std::cerr << "Failed to build the G-buffer geometry pass" << std::endl;
@@ -660,10 +661,10 @@ int main(int argc, char** argv) {
 		return 1;
 	}
 
-	// SSAO: built before lightingOptions/PBRIBLLightingScene::create() specifically so its
+	// SSAO: built before lightingOptions/PBRLightingPass::create() specifically so its
 	// aoTexture can be set on lightingOptions normally, rather than the "wire it in by hand
 	// afterward" workaround an SSAO-after-the-lighting-pass ordering would need (see
-	// PBRIBLLightingPassOptions::aoTexture's own comment, PBRIBL.hpp, for how that seam expects to
+	// PBRLightingPassOptions::aoTexture's own comment, PBRDeferred.hpp, for how that seam expects to
 	// be used). Reads gbuffer's normal/position directly - both already exist once the geometry
 	// pass above is built. Radius scaled off the model's own bound, same "derive from the model's
 	// own bounds" precedent hatchFrequencyFor() above already uses - a fixed radius tuned for one
@@ -683,11 +684,11 @@ int main(int argc, char** argv) {
 		return 1;
 	}
 
-	osgx::gltf::pbribl::PBRIBLLightingPassOptions lightingOptions;
+	osgx::PBRLightingPassOptions lightingOptions;
 
-	// The seam CUSTOM_DEFERRED_LIGHTING_FRAGMENT_SHADER's own `#ifdef OSGX_PBRIBL_AO` block reads
-	// - setting this here (same as any other PBRIBLLightingPassOptions consumer) is what makes
-	// PBRIBLLightingScene::create() bind aoTex/unit 8/OSGX_PBRIBL_AO on the StateSet at all; the
+	// The seam CUSTOM_DEFERRED_LIGHTING_FRAGMENT_SHADER's own `#ifdef OSGX_PBR_AO` block reads
+	// - setting this here (same as any other PBRLightingPassOptions consumer) is what makes
+	// PBRLightingPass::create() bind aoTex/unit 8/OSGX_PBR_AO on the StateSet at all; the
 	// custom shader still has to declare and sample `aoTex` itself, since Hook::DeferredLighting
 	// REPLACES main() rather than inheriting the built-in's own declarations.
 	lightingOptions.aoTexture = ssao.aoTexture.get();
@@ -696,19 +697,17 @@ int main(int argc, char** argv) {
 		osgx::Hook::DeferredLighting,
 		new osg::Shader(
 			osg::Shader::FRAGMENT,
-			// resolveShaderLibs() is what expands `#pragma osgx::gltf DEFERRED_LIGHTING_INPUTS,
+			// resolveShaderLibs() is what expands `#pragma osgx::gbuffer DEFERRED_LIGHTING_INPUTS,
 			// GET_GBUFFER` above into real GLSL - passing raw, un-expanded source straight to
 			// osg::Shader() leaves the literal `#pragma` line in place, which the driver then
 			// chokes on (and every symbol the pragma was supposed to declare - gb,
 			// osgx_mainViewMatrix, fragColor - comes back "undefined").
-			osgx::gltf::pbribl::resolveShaderLibs(CUSTOM_DEFERRED_LIGHTING_FRAGMENT_SHADER)
+			osgx::resolveShaderLibs(CUSTOM_DEFERRED_LIGHTING_FRAGMENT_SHADER)
 		)
 	}};
 
-	auto lighting = osgx::gltf::pbribl::PBRIBLLightingScene::create(
-		// No environment: this style never samples IBL (see the file-level comment).
-		gbuffer, nullptr, viewer.getCamera(), lightingOptions
-	);
+	// No environment: this style never samples IBL (see the file-level comment).
+	auto lighting = osgx::PBRLightingPass::create(gbuffer, viewer.getCamera(), lightingOptions);
 
 	if(!lighting.valid()) {
 		std::cerr << "Failed to build the lighting pass" << std::endl;
@@ -718,7 +717,7 @@ int main(int argc, char** argv) {
 
 	// hatchFrequency/hatchThickness/hatchDarken/aoMask/sunDirection all live on the lighting pass's
 	// own StateSet - that's where CUSTOM_DEFERRED_LIGHTING_FRAGMENT_SHADER's `uniform`
-	// declarations expect to find them, same as any other uniform PBRIBLLightingScene::create()
+	// declarations expect to find them, same as any other uniform PBRLightingPass::create()
 	// itself wires up (osgx_mainViewMatrix, etc.). Kept as named pointers (not fire-and-forget) so
 	// the ImGui section below can push live edits into the SAME osg::Uniform objects.
 	auto* lightingSS = dynamic_cast<osg::Camera*>(lighting.node.get())->getOrCreateStateSet();
@@ -767,7 +766,7 @@ int main(int argc, char** argv) {
 
 	// gbuffer.gbuffer.camera is the FIRST PRE_RENDER camera in this scene graph (added before
 	// lighting.node below) - see UpdateLightingPassCallback's own comment (and
-	// PBRIBLLightingScene::create()'s) for why the update() call has to land here, not on
+	// PBRLightingPass::create()'s) for why the update() call has to land here, not on
 	// lighting.node's own preDrawCallback or as a post-frame() application call.
 	gbuffer.gbuffer.camera->setPreDrawCallback(
 		new UpdateLightingPassCallback(&lighting, viewer.getCamera(), ssaoProjection.get())

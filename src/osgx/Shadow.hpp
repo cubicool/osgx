@@ -22,15 +22,15 @@ namespace osgx {
 // specific). Lives directly under `osgx::`, not its own namespace - it's not a separate opt-in
 // subsystem (its own #include outside the umbrella, its own CMake link target) the way
 // osgx::debug/imgui/platform/gltf/ktx2 are; see TODO.md's namespace-boundary decision. The
-// `"osgx::shadow"` string passed to registerShadowShaderLibs() below is just the shader-lib
-// registry's conventional catalog tag, unrelated to the (now-flat) C++ namespace. Only ONE light
+// `"osgx::shadow"` catalog name is the shader-lib registry's conventional tag, unrelated to the
+// C++ namespace. Only ONE light
 // - the key/directional light - is ever shadowed here; point/spot-light shadows need a cubemap
 // and meaningfully different frustum math, and are a separate, later feature. This is the real
 // osgx home for the shadow_cam/shadowFactor() pattern OpenSceneGraph.py/examples/pyosg-lighting/
 // 08-shadows.py and 09-ibl.py both independently hand-rolled (and, in 08-shadows.py's case,
 // duplicated a second time between the model and floor fragment shaders).
 //
-// World-space, not eye-space: osgx::gltf::pbribl's direct-lighting call site (PBRIBL.cpp's
+// World-space, not eye-space: osgx::PBRScene's direct-lighting call site (PBRScene.cpp's
 // FULL_PBR_FRAGMENT_SHADER_SRC) already reconstructs a genuine world-space `worldPos` for
 // osgx_DirectLighting() (via osg_ViewMatrixInverse), unlike the old hand-rolled examples, which
 // shaded in eye space and had to compose `inverse(camView)` into their shadow matrix every frame
@@ -195,7 +195,7 @@ float osgx_ShadowFactor(vec3 worldPos) {
 // no other shader changes needed: both define osgx_DirectLighting() with the identical (N, V,
 // worldPos, mat) signature DIRECT_LIGHTING_DECL forward-declares. Self-contained (own #version/PI/
 // #pragma lines), so not spliced by name via #pragma osgx::shadow - deliberately NOT in
-// registerShadowShaderLibs()'s catalog, same reasoning as DIRECT_LIGHTING_HOOK_DEFAULT itself.
+// the "osgx::shadow" catalog, same reasoning as DIRECT_LIGHTING_HOOK_DEFAULT itself.
 inline constexpr const char* DIRECT_LIGHTING_HOOK_SHADOWED = R"GLSL(
 #version 460 core
 
@@ -233,7 +233,5 @@ vec3 osgx_DirectLighting(vec3 N, vec3 V, vec3 worldPos, osgx_Material mat) {
 	return color;
 }
 )GLSL";
-
-void registerShadowShaderLibs();
 
 }

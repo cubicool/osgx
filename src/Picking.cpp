@@ -1,3 +1,5 @@
+#include "ShaderLibs.hpp"
+
 #include "osgx/Picking.hpp"
 #include "osgx/RTT.hpp"
 #include "osgx/Shader.hpp"
@@ -76,7 +78,7 @@ uniform uint pickID;
 uint getPickID() { return pickID; }
 )GLSL";
 
-// See registerPickShaderLibs()/Picking.hpp's own comment: a `vec4 osgx_encodePickID(uint id)`
+// See Picking.hpp's osgx_encodePickID comment: a `vec4 osgx_encodePickID(uint id)`
 // matching decodePickID()'s bit layout, published under the "osgx::picking" pragma namespace for
 // a shader elsewhere (e.g. osgSlug's coverage-aware pick fragment) that can't reuse
 // PICK_FRAG_CORE/PICK_FRAG_HOOK_UNIFORM above wholesale. Not used by makePickCamera() itself --

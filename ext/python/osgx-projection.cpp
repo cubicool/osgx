@@ -102,17 +102,6 @@ void bind_projection(py::module_& m) {
 		"depth-buffer sample read back at the cursor's pixel."
 	);
 
-	m.def(
-		"registerProjectionShaderLibs",
-		&osgx::registerProjectionShaderLibs,
-		"Registers the `vec3 osgx_Unproject(vec2 ndc, float depth)` GLSL snippet under the "
-		"'#pragma osgx::projection UNPROJECT' shader-library key (matching unprojectRay()'s own "
-		"math exactly), and `float osgx_LinearizeDepth(float depth, mat4 projectionMatrix)` "
-		"under 'DEPTH' (depth-buffer sample -> distance from the camera; projectionMatrix is a "
-		"required parameter - the source camera's real projection, NOT necessarily the currently "
-		"drawing camera's own ambient one - see Projection.hpp's own comment for why that "
-		"distinction matters for a G-buffer/composite-pass split)."
-	);
 }
 
 }

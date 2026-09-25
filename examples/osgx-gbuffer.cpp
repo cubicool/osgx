@@ -1,12 +1,12 @@
 // vimrun! ./examples/osgx-gbuffer model.gltf --env env/papermill.gltf
 //
-// Proves osgx::gltf::pbribl's deferred split (PBRIBLGBuffer::create() + PBRIBLLightingScene::create())
-// renders identically to PBRIBLScene::create()'s monolithic forward shader - same model, same
+// Proves the deferred split (osgx::PBRGBuffer::create() + PBRLightingPass::create()) renders
+// identically to osgx::PBRScene::create()'s forward shader - same model, same
 // --hdr/--env environment loading osgx-gltf-viewer.cpp/osgx-turntable.cpp already use, plus a
 // THIRD camera proving osgx::shadow fits into the split too: shadow-casting only needs depth,
 // not material data, so it sits alongside the geometry pass rather than inside it, and plugs
-// into the lighting pass via the exact same PBRIBLLightingPassOptions::shadowMap seam
-// PBRIBLScene::create()'s own shadowMap parameter uses.
+// into the lighting pass via the exact same PBRLightingPassOptions::shadowMap seam
+// PBRSceneOptions::shadowMap uses.
 //
 // Press 0-6 to inspect the raw G-buffer channels (0=lit composite, 1=albedo, 2=normal,
 // 3=material(roughness/metallic), 4=emissive, 5=depth, 6=SSAO) - the same diagnostic shape
@@ -15,7 +15,7 @@
 //
 // Also the first live consumer of osgx::SSAO (GBuffer.hpp) - the generic hemisphere-kernel
 // screen-space AO pass ported from OpenSceneGraph.py/examples/pyosg-lighting/11-sketchfab.py's
-// hand-rolled one. Feeds PBRIBLLightingPassOptions::aoTexture, the same seam a caller's own
+// hand-rolled one. Feeds PBRLightingPassOptions::aoTexture, the same seam a caller's own
 // hand-built SSAO (or a baked lightmap, or nothing) would use instead.
 //
 // Also proves osgx::shadow's 3 correctness fixes (same as osgx-shadow.cpp - see that file's own
@@ -35,7 +35,8 @@
 #include "osgx/Library.hpp"
 #include "osgx/PBR.hpp"
 #include "osgx/Shadow.hpp"
-#include "osgx/gltf/PBRIBL.hpp"
+#include "osgx/gltf/Environment.hpp"
+#include "osgx/PBRDeferred.hpp"
 
 OSGX_DISABLE_WARNINGS
 
@@ -95,7 +96,7 @@ std::filesystem::path findEnvironmentManifest(std::string_view filename) {
 // same as the geometry pass, but added to `root` before it). Every PRE_RENDER camera finishes
 // drawing before the main viewer camera's own preDrawCallback fires (confirmed against OSG
 // 3.6.5's RenderStage::draw()), so this is the earliest point in the frame that still sees the
-// CURRENT frame's fresh camera matrices - calling PBRIBLLightingScene::update() from application
+// CURRENT frame's fresh camera matrices - calling PBRLightingPass::update() from application
 // code after viewer.frame() returns (the previous, buggy version of this example) hands the
 // lighting pass a one-frame-stale matrix instead, which showed up live as a shadow/position
 // artifact that visibly worsened while the camera was actively orbiting/zooming.
@@ -106,7 +107,7 @@ std::filesystem::path findEnvironmentManifest(std::string_view filename) {
 class UpdateLightingPassCallback: public osg::Camera::DrawCallback {
 public:
 	UpdateLightingPassCallback(
-		osgx::gltf::pbribl::PBRIBLLightingScene* scene,
+		osgx::PBRLightingPass* scene,
 		osg::Camera* mainCamera,
 		osg::Uniform* ssaoProjection=nullptr
 	):
@@ -121,14 +122,14 @@ public:
 	}
 
 private:
-	osgx::gltf::pbribl::PBRIBLLightingScene* _scene;
+	osgx::PBRLightingPass* _scene;
 	osg::observer_ptr<osg::Camera> _mainCamera;
 	osg::observer_ptr<osg::Uniform> _ssaoProjection;
 };
 
 // Debug blit: samples any one texture into a fullscreen quad, with a small per-channel remap
 // (raw color passthrough / signed-normal-to-[0,1] / single-channel depth grayscale) - NOT part
-// of osgx::gbuffer or osgx::gltf::pbribl itself, this is purely an example-level diagnostic aid,
+// of osgx::PBRGBuffer/PBRLightingPass itself, this is purely an example-level diagnostic aid,
 // same role pyosg-mrt.py's own visualizeMode branches played.
 constexpr const char DEBUG_BLIT_FRAGMENT_SHADER[] = R"GLSL(
 #version 460 core
@@ -165,7 +166,7 @@ public:
 		osg::Camera* lightingCamera,
 		osg::Camera* debugCamera,
 		osg::Uniform* channelModeUniform,
-		const osgx::gltf::pbribl::PBRIBLGBuffer& gbuffer,
+		const osgx::PBRGBuffer& gbuffer,
 		osg::Texture2D* aoTexture=nullptr
 	):
 		_lightingCamera(lightingCamera),
@@ -221,12 +222,12 @@ private:
 	osg::observer_ptr<osg::Camera> _lightingCamera;
 	osg::observer_ptr<osg::Camera> _debugCamera;
 	osg::observer_ptr<osg::Uniform> _channelModeUniform;
-	osgx::gltf::pbribl::PBRIBLGBuffer _gbuffer;
+	osgx::PBRGBuffer _gbuffer;
 	osg::observer_ptr<osg::Texture2D> _aoTexture;
 };
 
 // Floor: a plain procedural quad, deliberately NOT sharing the model's G-buffer Program
-// (PBRIBLGBuffer::create()'s shader reads a structured osgx_gltf_Material buffer only the
+// (PBRGBuffer::create()'s shader reads a structured osgx_gltf_Material buffer only the
 // glTF loader ever populates - a quad built by hand has none of that data, so reading it
 // unbound would be garbage, not a harmless default). Writes flat albedo/normal/roughness-
 // metallic/zero-emissive/position straight into all 5 G-buffer attachments with its own trivial
@@ -378,7 +379,7 @@ int main(int argc, char** argv) {
 	);
 	args.getApplicationUsage()->addCommandLineOption(
 		"--env <manifest.gltf>",
-		"Pre-baked osgx_pbribl environment manifest - no HDR decode/bake at runtime."
+		"Pre-baked osgx_environment manifest - no HDR decode/bake at runtime."
 	);
 	args.getApplicationUsage()->addCommandLineOption(
 		"--samples <count>", "Request this many default-framebuffer MSAA samples (default: 4)"
@@ -439,7 +440,7 @@ int main(int argc, char** argv) {
 			return 1;
 		}
 
-		environment = osgx::gltf::pbribl::loadEnvironment(manifest.string());
+		environment = osgx::gltf::loadEnvironment(manifest.string());
 	}
 
 	else {
@@ -454,7 +455,7 @@ int main(int argc, char** argv) {
 		if(auto hdrImage = osgDB::readRefImageFile(hdrEnvironment.string())) {
 			environment = osgx::make_ref<osgx::Environment>(hdrImage.get());
 
-			environment->setRotation(osgx::gltf::pbribl::KHRONOS_ENVIRONMENT_ROTATION);
+			environment->setRotation(osgx::gltf::KHRONOS_ENVIRONMENT_ROTATION);
 		}
 	}
 
@@ -464,7 +465,7 @@ int main(int argc, char** argv) {
 		return 1;
 	}
 
-	auto gbuffer = osgx::gltf::pbribl::PBRIBLGBuffer::create(model, WIDTH, HEIGHT);
+	auto gbuffer = osgx::PBRGBuffer::create(model, WIDTH, HEIGHT);
 
 	if(!gbuffer.valid()) {
 		std::cerr << "Failed to build the G-buffer geometry pass" << std::endl;
@@ -540,7 +541,7 @@ int main(int argc, char** argv) {
 		return 1;
 	}
 
-	osgx::gltf::pbribl::PBRIBLLightingPassOptions lightingOptions;
+	osgx::PBRLightingPassOptions lightingOptions;
 
 	lightingOptions.shadowMap = &shadowMap;
 	lightingOptions.aoTexture = ssao.aoTexture.get();
@@ -550,9 +551,9 @@ int main(int argc, char** argv) {
 	// override it by hand"), and reverting to 0.1 made no visible difference anyway, ruling out
 	// the IBL/direct-light balance theory entirely - the shadow is invisible for some other
 	// reason.
-	auto lighting = osgx::gltf::pbribl::PBRIBLLightingScene::create(
-		gbuffer, environment.get(), viewer.getCamera(), lightingOptions
-	);
+	lightingOptions.environment = environment.get();
+
+	auto lighting = osgx::PBRLightingPass::create(gbuffer, viewer.getCamera(), lightingOptions);
 
 	if(!lighting.valid()) {
 		std::cerr << "Failed to build the lighting pass" << std::endl;
@@ -598,7 +599,7 @@ int main(int argc, char** argv) {
 	// so OSG breaks the tie by scene-graph add order, not anything declared on the cameras
 	// themselves. ssao.rawCamera/blurCamera MUST come after gbuffer.gbuffer.camera (they read its
 	// normal/position output) and before lighting.node (which reads ssao.aoTexture back via
-	// PBRIBLLightingPassOptions::aoTexture).
+	// PBRLightingPassOptions::aoTexture).
 	root->addChild(shadowMap.camera);
 	root->addChild(gbuffer.gbuffer.camera);
 	root->addChild(ssao.rawCamera);
@@ -641,7 +642,7 @@ int main(int argc, char** argv) {
 	));
 
 	std::cout
-		<< "osgx-gbuffer: deferred PBRIBLGBuffer::create() + PBRIBLLightingScene::create()" << std::endl
+		<< "osgx-gbuffer: deferred PBRGBuffer::create() + PBRLightingPass::create()" << std::endl
 		<< " 0=lit composite (default) 1=albedo 2=normal 3=material 4=emissive 5=depth 6=SSAO" << std::endl
 		<< " w=dump the shadow camera's own depth texture to osgx-gbuffer-shadow-depth.png" << std::endl
 	;

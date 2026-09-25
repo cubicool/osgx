@@ -36,8 +36,7 @@ namespace osgx {
 // `osgx::` - neither is a separate opt-in subsystem (its own #include outside the umbrella, its
 // own CMake link target) the way osgx::debug/imgui/platform/gltf/ktx2 are, so neither earns its
 // own namespace; see TODO.md's namespace-boundary decision. The `"osgx::pbr"`/`"osgx::ibl"`
-// strings passed to registerPBRShaderLibs()/registerIBLShaderLibs() below are just the shader-lib
-// registry's conventional catalog tags, unrelated to the (now-flat) C++ namespace.
+// catalog names are the shader-lib registry's conventional tags, unrelated to the C++ namespace.
 //
 // Ported from the STATIC path of OpenSceneGraph.py/examples/pyosg-lighting/09-ibl.py: a
 // pre-baked .ktx2 prefiltered cubemap loaded once, plus a one-shot BRDF LUT bake. Deliberately
@@ -60,9 +59,9 @@ namespace osgx {
 //
 // Kept as `inline constexpr` header definitions (not moved to PBR.cpp): most are bound directly
 // by name in ext/osgx-python.cpp (needs real external linkage), AND all eleven are referenced
-// inside registerPBRShaderLibs()'s `static constexpr ShaderLib` array below, which needs a genuine
-// constant expression - `inline constexpr` in a header is the one form satisfying both, same
-// reasoning as osgx::ibl's shader-string constants.
+// inside the "osgx::pbr" catalog's `static constexpr ShaderLib` array (PBR.cpp), which needs a
+// genuine constant expression - `inline constexpr` in a header is the one form satisfying both,
+// same reasoning as osgx::ibl's shader-string constants.
 
 // GGX/Trowbridge-Reitz normal distribution term (D). NdotH and roughness in [0,1];
 // `roughness * roughness` is the standard Disney/Karis alpha remap.
@@ -123,13 +122,59 @@ struct osgx_Material {
 )GLSL";
 
 // Texture-coordinate array index (osg_MultiTexCoordN) each of osgx::Material's four maps reads its
-// UVs from: the glTF loader writes each map's UV set there, and the glTF vertex shader reads it
-// from there. A vertex-layout convention, independent of the texture unit each map binds at (the
+// UVs from: the glTF loader writes each map's UV set there, and PBR_VERTEX_SHADER reads it from
+// there. A vertex-layout convention, independent of the texture unit each map binds at (the
 // "osgx::material.*" slots, osgx::Bindings).
 inline constexpr unsigned int BASE_COLOR_UV_CHANNEL = 0;
 inline constexpr unsigned int NORMAL_UV_CHANNEL = 1;
 inline constexpr unsigned int ORM_UV_CHANNEL = 2;
 inline constexpr unsigned int EMISSIVE_UV_CHANNEL = 3;
+
+// A complete vertex shader for osgx::Material geometry: skins the vertex through osgx_ApplySkin()
+// (Skinning.hpp; link a Hook::Skinning shader object, SKINNING_HOOK_IDENTITY for unskinned
+// geometry), and passes view-space position, normal and tangent (vPosition, vNGeom, vTangent) plus
+// each map's UVs from its *_UV_CHANNEL array (vBaseColorUV, vNormalUV, vOrmUV, vEmissiveUV) - the
+// inputs osgx_GetMaterial()/osgx_GetShadingNormal()/osgx_GetEmissive()/osgx_GetAlpha() take. Bind
+// osg_Tangent with bindMeshAttributes() and pass the source through resolveShaderLibs().
+inline constexpr const char* PBR_VERTEX_SHADER = R"GLSL(
+#version 460 core
+
+in vec4 osg_Vertex;
+in vec3 osg_Normal;
+in vec4 osg_Tangent;
+in vec2 osg_MultiTexCoord0;
+in vec2 osg_MultiTexCoord1;
+in vec2 osg_MultiTexCoord2;
+in vec2 osg_MultiTexCoord3;
+
+uniform mat4 osg_ModelViewProjectionMatrix;
+uniform mat4 osg_ModelViewMatrix;
+uniform mat3 osg_NormalMatrix;
+
+out vec3 vNGeom;
+out vec3 vPosition;
+out vec4 vTangent;
+out vec2 vBaseColorUV;
+out vec2 vNormalUV;
+out vec2 vOrmUV;
+out vec2 vEmissiveUV;
+
+#pragma osgx::skinning SKINNING_DECL
+
+void main() {
+	osgx_SkinnedVertex skinned = osgx_ApplySkin(osg_Vertex, osg_Normal, osg_Tangent.xyz);
+	vec4 eyePos = osg_ModelViewMatrix * skinned.position;
+	vPosition = eyePos.xyz;
+	vBaseColorUV = osg_MultiTexCoord0;
+	vNormalUV = osg_MultiTexCoord1;
+	vOrmUV = osg_MultiTexCoord2;
+	vEmissiveUV = osg_MultiTexCoord3;
+	vNGeom = normalize(osg_NormalMatrix * skinned.normal);
+	vTangent = vec4(osg_NormalMatrix * skinned.tangent, osg_Tangent.w);
+
+	gl_Position = osg_ModelViewProjectionMatrix * skinned.position;
+}
+)GLSL";
 
 // GLSL read side of osgx::Material (below): the factor buffer it builds plus its four texture maps.
 // Every material value lives in ONE std140 uniform block - no loose per-material uniforms - and the four
@@ -525,7 +570,7 @@ inline constexpr const char* TONEMAP_DECL = R"GLSL(
 vec3 osgx_Tonemap(vec3 color);
 )GLSL";
 
-// Self-contained, same shape as DIRECT_LIGHTING_HOOK_DEFAULT (Light.hpp) - not spliced by name via #pragma osgx::pbr, so deliberately NOT in registerPBRShaderLibs()'s catalog.
+// Self-contained, same shape as DIRECT_LIGHTING_HOOK_DEFAULT (Light.hpp) - not spliced by name via #pragma osgx::pbr, so deliberately NOT in the "osgx::pbr" catalog.
 inline constexpr const char* TONEMAP_HOOK_DEFAULT = R"GLSL(
 #version 460 core
 
@@ -556,7 +601,5 @@ vec3 osgx_Tonemap(vec3 color) {
 	return color;
 }
 )GLSL";
-
-void registerPBRShaderLibs();
 
 }

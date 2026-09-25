@@ -69,15 +69,6 @@ void bind_picking(py::module_& m) {
 		"R=bits[7:0], G=bits[15:8], B=bits[23:16], A=bits[31:24]."
 	);
 
-	m.def(
-		"registerPickShaderLibs",
-		&osgx::registerPickShaderLibs,
-		"Registers the `vec4 osgx_encodePickID(uint id)` GLSL snippet under the "
-		"'#pragma osgx::picking encode' shader-library key, matching decodePickID()'s bit layout - "
-		"for a shader that can't reuse makePickCamera()'s own hook-based pick fragment wholesale "
-		"(e.g. one running its own coverage/discard test before it knows the final ID)."
-	);
-
 	py::class_<osgx::PickIDAllocator>(
 		m,
 		"PickIDAllocator",

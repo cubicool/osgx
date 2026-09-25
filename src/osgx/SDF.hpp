@@ -67,8 +67,8 @@ namespace osg {
 //     sharpest spikes, 1 = a regular n-gon).
 namespace osgx {
 
-// GLSL `#pragma osgx::sdf` catalog registration - see registerShaderLibs()/resolveShaderLibs() in
-// Shader.hpp. Publishes four entries:
+// The `#pragma osgx::sdf` catalog (registered by osgx::Library, expanded by resolveShaderLibs() in
+// Shader.hpp) has four entries:
 //
 //   SHAPES   - the nine closed-form functions listed above.
 //   SAMPLING - pure, texture-agnostic reconstruction helpers for BAKED distance fields (SDF or
@@ -96,7 +96,6 @@ namespace osgx {
 //              (resolveShaderLibs() does one pass, so TEXTURE's own source can't carry a nested
 //              pragma - see the note on SHAPES above). Needs `#version 430` or later
 //              (layout(binding=...) on both the sampler and the block).
-void registerSDFShaderLibs();
 
 // ================================================================================================
 // SDF
@@ -105,7 +104,7 @@ void registerSDFShaderLibs();
 // 3-channel MSDF) plus the metadata needed to reconstruct it: pixelRange (the distance range, in
 // TEXELS, the field was baked with - msdfgen's `range`), an SDF type, and a uvRect selecting which
 // part of the texture is drawn (default: all of it). Attach like any StateAttribute, then call
-// `osgx_SDF_Coverage(uv)` from your own fragment shader (see registerSDFShaderLibs()).
+// `osgx_SDF_Coverage(uv)` from your own fragment shader (see the catalog comment above).
 //
 // Follows Material/GridSettings exactly: claims the reserved CAPABILITY Type with its own member
 // number, keeps its parameters in a small std140 uniform block rewritten in place by every setter, and

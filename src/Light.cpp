@@ -1,3 +1,5 @@
+#include "ShaderLibs.hpp"
+
 #include "osgx/Array.hpp"
 #include "osgx/Light.hpp"
 
@@ -105,7 +107,7 @@ void LightSet::apply(osg::State& state) const {
 	// DEFAULT's own history comment (Light.hpp) for why two different ways of doing that (OSG's
 	// deprecated applyShaderCompositionUniform() stash, then a direct getLastAppliedProgramObject()
 	// push) both turned out unreliable - the second broke the moment ANY Program elsewhere in the
-	// same frame used StateAttribute::OVERRIDE (osgx::gltf::pbribl::PBRIBLScene::create() included),
+	// same frame used StateAttribute::OVERRIDE (osgx::PBRScene::create() included),
 	// confirmed via a live repro 2026-09-03. The shader loop now reads a compile-time OSGX_MAX_LIGHTS
 	// bound instead, gated per-light by `enabled` - data that already lives in the uniform block this single
 	// applyAttribute() call binds, so it needs no separate, Program-targeted push at all.

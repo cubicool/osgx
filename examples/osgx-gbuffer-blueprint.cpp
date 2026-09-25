@@ -3,7 +3,7 @@
 //
 // A "blueprint / hologram" technical-visualization style, built the same way
 // osgx-gbuffer-comic.cpp is: an osgx::Hook::DeferredLighting override REPLACING
-// PBRIBLLightingScene::create()'s entire lighting-pass main() - see that file's own header
+// PBRLightingPass::create()'s entire lighting-pass main() - see that file's own header
 // comment for why the environment/LightSet/ShadowMap stay unused (this style mostly ignores the
 // loaded material entirely, even more than comic does - see GBUFFER.md's "Blueprint / Holographic
 // Renderer" experiment, which is the design brief this file implements).
@@ -21,7 +21,7 @@
 // contact/crevice occlusion at all, so there's nothing for it to feed.
 //
 // No environment/IBL, no LightSet, no ShadowMap - same reasoning as osgx-gbuffer-comic.cpp's own
-// file header: PBRIBLLightingScene::create()'s `environment` parameter is optional specifically
+// file header: PBRLightingPass::create()'s `environment` parameter is optional specifically
 // for a Hook::DeferredLighting override like this one.
 //
 // NOT YET IMPLEMENTED - "soft" contour/edge glow (design intent only, 2026-08-21). The moodboard's
@@ -46,7 +46,8 @@
 
 #include "osgx/Core.hpp"
 #include "osgx/GBuffer.hpp"
-#include "osgx/gltf/PBRIBL.hpp"
+#include "osgx/gltf/Environment.hpp"
+#include "osgx/PBRDeferred.hpp"
 #include "osgx/ImGui.hpp"
 #include "osgx/Library.hpp"
 #include "osgx/PBR.hpp"
@@ -90,7 +91,7 @@ std::filesystem::path findModelFile(std::string_view filename) {
 }
 
 // Gives a hand-authored, non-glTF geometry (a bare osgx::Polyhedron below) the osgx::Material that
-// PBRIBLGBuffer::create()'s geometry pass reads via MATERIAL_INPUTS/GET_MATERIAL (PBR.hpp). It is
+// PBRGBuffer::create()'s geometry pass reads via MATERIAL_INPUTS/GET_MATERIAL (PBR.hpp). It is
 // the same StateAttribute the glTF loader builds for a factor-only material. No textures are bound:
 // every texture read in GET_MATERIAL/GET_ALPHA/GET_EMISSIVE is gated on a has*Map flag that is
 // false here, and alpha mode/cutoff and emissive factor keep their Opaque/0.5/black defaults.
@@ -138,7 +139,7 @@ osg::ref_ptr<osg::Node> buildShapeNode(const std::string& name) {
 class UpdateLightingPassCallback: public osg::Camera::DrawCallback {
 public:
 	UpdateLightingPassCallback(
-		osgx::gltf::pbribl::PBRIBLLightingScene* scene,
+		osgx::PBRLightingPass* scene,
 		osg::Camera* mainCamera,
 		osg::Uniform* timeUniform
 	):
@@ -155,7 +156,7 @@ public:
 	}
 
 private:
-	osgx::gltf::pbribl::PBRIBLLightingScene* _scene;
+	osgx::PBRLightingPass* _scene;
 	osg::observer_ptr<osg::Camera> _mainCamera;
 	osg::observer_ptr<osg::Uniform> _timeUniform;
 };
@@ -164,7 +165,7 @@ private:
 // no LightSet, no ShadowMap, no IBL environment - see the file-level comment above.
 constexpr const char CUSTOM_DEFERRED_LIGHTING_FRAGMENT_SHADER[] = R"GLSL(
 #version 460 core
-#pragma osgx::gltf DEFERRED_LIGHTING_INPUTS, GET_GBUFFER
+#pragma osgx::gbuffer DEFERRED_LIGHTING_INPUTS, GET_GBUFFER
 
 uniform vec3 baseColor;
 uniform vec3 edgeColor;
@@ -410,7 +411,7 @@ int main(int argc, char** argv) {
 	const osg::Vec3 baseColor(0.15f, 0.65f, 1.0f);
 	const osg::Vec3 edgeColor(0.35f, 0.95f, 1.0f);
 
-	auto gbuffer = osgx::gltf::pbribl::PBRIBLGBuffer::create(model, WIDTH, HEIGHT);
+	auto gbuffer = osgx::PBRGBuffer::create(model, WIDTH, HEIGHT);
 
 	if(!gbuffer.valid()) {
 		std::cerr << "Failed to build the G-buffer geometry pass" << std::endl;
@@ -418,23 +419,21 @@ int main(int argc, char** argv) {
 		return 1;
 	}
 
-	osgx::gltf::pbribl::PBRIBLLightingPassOptions lightingOptions;
+	osgx::PBRLightingPassOptions lightingOptions;
 
 	lightingOptions.hooks = {{
 		osgx::Hook::DeferredLighting,
 		new osg::Shader(
 			osg::Shader::FRAGMENT,
-			// resolveShaderLibs() is what expands `#pragma osgx::gltf DEFERRED_LIGHTING_INPUTS,
+			// resolveShaderLibs() is what expands `#pragma osgx::gbuffer DEFERRED_LIGHTING_INPUTS,
 			// GET_GBUFFER` above into real GLSL - see osgx-gbuffer-comic.cpp's own comment at
 			// this exact call site for why raw un-expanded source can't be passed directly.
-			osgx::gltf::pbribl::resolveShaderLibs(CUSTOM_DEFERRED_LIGHTING_FRAGMENT_SHADER)
+			osgx::resolveShaderLibs(CUSTOM_DEFERRED_LIGHTING_FRAGMENT_SHADER)
 		)
 	}};
 
-	auto lighting = osgx::gltf::pbribl::PBRIBLLightingScene::create(
-		// No environment: this style never samples IBL (see the file-level comment).
-		gbuffer, nullptr, viewer.getCamera(), lightingOptions
-	);
+	// No environment: this style never samples IBL (see the file-level comment).
+	auto lighting = osgx::PBRLightingPass::create(gbuffer, viewer.getCamera(), lightingOptions);
 
 	if(!lighting.valid()) {
 		std::cerr << "Failed to build the lighting pass" << std::endl;
@@ -448,8 +447,8 @@ int main(int argc, char** argv) {
 	// so the ImGui section below can push live edits into the SAME osg::Uniform objects.
 	auto* lightingSS = dynamic_cast<osg::Camera*>(lighting.node.get())->getOrCreateStateSet();
 
-	// PBRIBLLightingScene::create()'s composite quad turns GL_DEPTH_TEST off but never touches
-	// GL_BLEND (PBRIBL.cpp) - ambient GL_BLEND defaults to OFF, so `translucency`'s alpha was
+	// PBRLightingPass::create()'s composite quad turns GL_DEPTH_TEST off but never touches
+	// GL_BLEND (PBRDeferred.cpp) - ambient GL_BLEND defaults to OFF, so `translucency`'s alpha was
 	// being computed correctly and then silently dropped at the framebuffer write. This is plain
 	// blending, not depth peeling: the quad only ever carries the single nearest-surface G-buffer
 	// sample per pixel, so there's no second surface to reveal by peeling - "translucent" here
@@ -499,7 +498,7 @@ int main(int argc, char** argv) {
 
 	// gbuffer.gbuffer.camera is the FIRST PRE_RENDER camera in this scene graph (added before
 	// lighting.node below) - see osgx-gbuffer-comic.cpp's own UpdateLightingPassCallback comment
-	// (and PBRIBLLightingScene::create()'s) for why the update() call has to land here.
+	// (and PBRLightingPass::create()'s) for why the update() call has to land here.
 	gbuffer.gbuffer.camera->setPreDrawCallback(
 		new UpdateLightingPassCallback(&lighting, viewer.getCamera(), timeUniform)
 	);

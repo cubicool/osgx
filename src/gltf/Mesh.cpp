@@ -24,7 +24,7 @@ OSGX_DISABLE_WARNINGS
 
 OSGX_ENABLE_WARNINGS
 
-#include "osgx/gltf/Shader.hpp"
+#include "osgx/Skinning.hpp"
 
 #include <algorithm>
 #include <cstdint>
@@ -38,7 +38,7 @@ MeshBuilder::MeshBuilder(
 	const osgDB::Options* readOptions,
 	MaterialBuilder& materialBuilder,
 	const std::vector<osg::ref_ptr<osg::Array>>& arrays,
-	const std::vector<osg::ref_ptr<Skin>>& skins
+	const std::vector<osg::ref_ptr<SkinData>>& skins
 ):
 _model(model),
 _readOptions(readOptions),
@@ -110,7 +110,7 @@ osg::Group* MeshBuilder::makeMesh(const tg3_mesh& mesh, int skinIdx) const {
 				_arrays[arrayIndex]->setBinding(osg::Array::BIND_PER_VERTEX);
 
 				geom->setVertexAttribArray(
-					osgx::gltf::shader::TANGENT_ATTRIBUTE,
+					osgx::TANGENT_ATTRIBUTE,
 					_arrays[arrayIndex]
 				);
 			}
@@ -138,7 +138,7 @@ osg::Group* MeshBuilder::makeMesh(const tg3_mesh& mesh, int skinIdx) const {
 					_arrays[jointsIndex]->setBinding(osg::Array::BIND_PER_VERTEX);
 					_arrays[jointsIndex]->setPreserveDataType(true);
 					geom->setVertexAttribArray(
-						osgx::gltf::shader::JOINT_INDICES_ATTRIBUTE,
+						osgx::JOINT_INDICES_ATTRIBUTE,
 						_arrays[jointsIndex]
 					);
 				}
@@ -148,7 +148,7 @@ osg::Group* MeshBuilder::makeMesh(const tg3_mesh& mesh, int skinIdx) const {
 
 					_arrays[weightsIndex]->setBinding(osg::Array::BIND_PER_VERTEX);
 					geom->setVertexAttribArray(
-						osgx::gltf::shader::JOINT_WEIGHTS_ATTRIBUTE,
+						osgx::JOINT_WEIGHTS_ATTRIBUTE,
 						_arrays[weightsIndex]
 					);
 				}

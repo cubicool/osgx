@@ -10,7 +10,8 @@
 #include "osgx/Manipulators.hpp"
 #include "osgx/Projection.hpp"
 #include "osgx/Shader.hpp"
-#include "osgx/gltf/PBRIBL.hpp"
+#include "osgx/gltf/Environment.hpp"
+#include "osgx/PBRScene.hpp"
 
 OSGX_DISABLE_WARNINGS
 
@@ -242,8 +243,6 @@ osg::ref_ptr<osg::Node> makeHemisphereSky(
 }
 
 osg::ref_ptr<osg::Node> makeInfiniteFloor() {
-	osgx::registerProjectionShaderLibs();
-
 	auto program = osgx::make_ref<osg::Program>();
 
 	program->addShader(new osg::Shader(
@@ -421,7 +420,7 @@ int main(int argc, char** argv) {
 	osg::ref_ptr<osg::TextureCubeMap> skybox;
 
 	if(!environmentPath.empty()) {
-		environment = osgx::gltf::pbribl::loadEnvironment(environmentPath);
+		environment = osgx::gltf::loadEnvironment(environmentPath);
 
 		if(!environment) {
 			std::cerr << "Unable to load PBR/IBL environment manifest: " << environmentPath << std::endl;
@@ -464,7 +463,7 @@ int main(int argc, char** argv) {
 			return 1;
 		}
 
-		if(!osgx::gltf::pbribl::PBRIBLScene::create(subject, environment.get()).valid()) return 1;
+		if(!osgx::PBRScene::create(subject, {.environment = environment.get()}).valid()) return 1;
 	}
 
 	else subject = makePlaceholders();

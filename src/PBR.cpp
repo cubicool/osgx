@@ -1,3 +1,5 @@
+#include "ShaderLibs.hpp"
+
 #include "osgx/Array.hpp"
 #include "osgx/PBR.hpp"
 

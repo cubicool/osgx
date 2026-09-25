@@ -1,4 +1,4 @@
-# `osgx::gltf` — glTF 2.0 loader + PBR/IBL adapter
+# `osgx::gltf` — glTF 2.0 loader
 
 Basic glTF 2.0 mesh/texture support for OpenSceneGraph. As of the last full Khronos sample sweep,
 works for all of [the Khronos samples](https://github.com/KhronosGroup/glTF-Sample-Models).
@@ -13,34 +13,25 @@ renderer should.
 This code **started** as a patched version of the
 [osgEarth](https://github.com/gwaldron/osgearth/tree/master/src/osgEarthDrivers/gltf) reference
 implementation, but has since evolved into something entirely different — more features and
-Khronos parity, but not (yet) exporting state that matches the osgEarth shader pipeline. It defines
-both a "contract" (for custom renderers, via `osgx/gltf/Shader.hpp`) and a "ready-to-use" set of
-helper functions (`osgx::gltf::pbribl`).
-
-`osgx::gltf` and its optional `osgx::gltf::pbribl` adapter, along with `osgx::ktx2` (the KTX2
-reader/writer), were merged in from the formerly separate `osgGLTF` repo: both already depended on
-`osgx::osgx`, so keeping them in a separate repo bought nothing but cross-repo build/version
-friction.
+Khronos parity, but not (yet) exporting state that matches the osgEarth shader pipeline. The
+loader produces only generic osgx data - `osgx::Material`s, the tangent/joint vertex attributes of
+`osgx/Skinning.hpp`, joint palettes - so it renders through osgx's generic renderers
+(`osgx::PBRScene`, `osgx::PBRGBuffer`/`PBRLightingPass`) or any custom one.
 
 Be sure to call `osgDB::Registry::instance()->addFileExtensionAlias("glb", "gltf");` if you want to
 support GLB loading through the same plugin registration path as `.gltf`.
 
 ## CMake
 
-`OSGX_BUILD_GLTF` (default ON at the top level, OFF when embedded) gates two static-library
-targets, plus the `osgdb_gltf` osgDB plugin:
-
-- `osgx::gltf` — the loader itself, plus the small `osgx_sdf` tile-set loader
-  (`osgx/gltf/SDF.hpp`). Links `osgx::osgx` publicly and the vendored `ext/tinygltf` submodule; the
-  SDF loader needs `osgx::SDF`, so it lives here rather than in its own target. This is also what
-  `osgdb_gltf` links.
-- `osgx::gltf_pbribl` — the optional PBR/IBL adapter (`osgx/gltf/PBRIBL.hpp`). Links `osgx::gltf` plus the
-  full `osgx::osgx` PBR/IBL layer. Only an explicit consumer pays for this.
+`OSGX_BUILD_GLTF` (default ON at the top level, OFF when embedded) gates the `osgx::gltf` static
+library and the `osgdb_gltf` osgDB plugin. `osgx::gltf` is the loader plus the `osgx_sdf` and
+`osgx_environment` manifest loaders (`osgx/gltf/SDF.hpp`, `osgx/gltf/Environment.hpp`); it links
+`osgx::osgx` publicly and the vendored `ext/tinygltf` submodule. This is also what `osgdb_gltf`
+links.
 
 ```cmake
 find_package(osgx CONFIG REQUIRED)
-target_link_libraries(my_target PRIVATE osgx::gltf)       # loader only
-target_link_libraries(my_viewer PRIVATE osgx::gltf_pbribl)   # + PBR/IBL renderer
+target_link_libraries(my_target PRIVATE osgx::gltf)
 ```
 
 ```cpp
@@ -62,26 +53,20 @@ it would read any hand-built `osgx::Material`: `#pragma osgx::pbr MATERIAL_INPUT
 (plus `GET_SHADING_NORMAL`, `GET_EMISSIVE`, `GET_ALPHA` as needed). Nothing on the material side
 is glTF-specific, and no sampler uniforms need setting - the GLSL declares its own texture units.
 
-The public `osgx/gltf/Shader.hpp` header covers what IS glTF-specific: the tangent and skinning
-vertex attribute locations, the joint-matrix buffer binding, and the skinning hook shaders.
+The tangent and skinning vertex attributes are generic too (`osgx/Skinning.hpp`, see
+[CORE.md](CORE.md#osgxskinninghpp)): the loader writes tangents to `osgx::TANGENT_ATTRIBUTE` and
+joint indices/weights to `osgx::JOINT_INDICES_ATTRIBUTE`/`osgx::JOINT_WEIGHTS_ATTRIBUTE`, and
+attaches an `osgx::Skin` per glTF skin to each node that references it.
 
 ```cpp
-#include <osgx/gltf/Shader.hpp>
-
 auto program = new osg::Program();
 
 // Fragment source uses `#pragma osgx::pbr MATERIAL_INPUTS, GET_MATERIAL`, resolved via
 // osgx::resolveShaderLibs().
-osgx::gltf::shader::configureProgram(*program);
+osgx::bindMeshAttributes(*program);
 
 model->getOrCreateStateSet()->setAttributeAndModes(program);
 ```
-
-`configureProgram()` maps the tangent and skinning inputs to the locations used by the loader. It
-is optional; the named constants in the same header can be used when an application needs
-different program ownership.
-
-The Python bindings expose the same constants, GLSL source, and helpers under `osgx.gltf.shader`.
 
 
 ## `osgx_sdf` - baked distance-field tiles (`osgx/gltf/SDF.hpp`)
@@ -106,10 +91,10 @@ fields - whoever baked them is irrelevant (slughorn's `bin/slughorn sdf x.slug -
 }
 ```
 
-- `type`: `"SDF"` (read `.r`) or `"MSDF"` (median of `.rgb`). `data` is an array, like `osgx_pbribl`'s
+- `type`: `"SDF"` (read `.r`) or `"MSDF"` (median of `.rgb`). `data` is an array, like `osgx_environment`'s
   `environments`, so one asset can carry several sheets.
 - `texture`: `{"uri": ...}`, relative to the manifest. `{"index": n}` (a glTF `textures[]` entry) is
-  reserved for embedding in a real asset and is not implemented; like `osgx_pbribl`, only a standalone
+  reserved for embedding in a real asset and is not implemented; like `osgx_environment`, only a standalone
   manifest is decoded today.
 - `tiles[name].rect` is `[x, y, width, height]` in PIXELS with the origin at the TOP-left of the image
   (glTF's own convention); the image must be stored upright. The loader derives OSG texture-space UVs
@@ -122,18 +107,18 @@ fields - whoever baked them is irrelevant (slughorn's `bin/slughorn sdf x.slug -
 Bad tiles (malformed, or a rect outside the image) are skipped with a warning; the set is invalid only
 when the file, the extension, the image, or every tile is unusable. Python: `osgx.gltf.sdf.TileSet`.
 
-## Optional PBR/IBL Renderer
+## Rendering glTF content
 
-`osgx::gltf::pbribl` applies `osgx::gltf`'s material interface using the generic PBR/IBL/shadow
-facilities living flat in `osgx::` (see [CORE.md](CORE.md) — those used to be separate `osgx::pbr`/
-`osgx::ibl` namespaces, flattened 2026-08-20). The loader target remains shader-agnostic;
-applications opt into this renderer explicitly via `osgx::gltf_pbribl` (see CMake above):
+glTF-loaded geometry is plain `osgx::Material` geometry: render it with `osgx::PBRScene` (forward) or
+`osgx::PBRGBuffer`/`osgx::PBRLightingPass` (deferred), see [CORE.md](CORE.md#osgxpbrscenehpp). The
+Khronos glTF-Sample-Viewer setup is an `osgx_environment` manifest plus `PBRScene`:
 
 ```cpp
-#include <osgx/gltf/PBRIBL.hpp>
+#include <osgx/PBRScene.hpp>
+#include <osgx/gltf/Environment.hpp>
 
-auto environment = osgx::gltf::pbribl::loadEnvironment("papermill.gltf");
-auto scene = osgx::gltf::pbribl::PBRIBLScene::create(model, environment.get());
+auto environment = osgx::gltf::loadEnvironment("papermill.gltf");
+auto scene = osgx::PBRScene::create(model, {.environment = environment.get()});
 
 if(environment && scene.valid()) {
 	if(environment->getBakeRoot()) root->addChild(environment->getBakeRoot());
@@ -141,79 +126,29 @@ if(environment && scene.valid()) {
 }
 ```
 
-The scenes are lit by a caller-owned `osgx::Environment` ([CORE.md](CORE.md)), which may be shared
-between scenes; its intensities and rotation stay live-tunable. Two ways to get one:
+`osgx/gltf/Environment.hpp` holds the glTF-side pieces:
 
-- `osgx::gltf::pbribl::loadEnvironment(manifestPath)` (or `(manifest, baseDir)`) — the pre-baked
-  path: an `osgx_pbribl` manifest's specular/diffuse KTX2 resources plus a serialized or built-in
-  BRDF LUT, zero HDR decode or cubemap bake at runtime. Returns null on failure. The only
-  glTF-specific piece is the manifest decoding.
-- `osgx::make_ref<osgx::Environment>(hdrImage)` — a fully dynamic GPU bake from an equirectangular
-  HDR; textures are bindable immediately but only correct once `getBakeRoot()`'s passes have run a
-  few frames.
+- `loadEnvironment(manifestPath)` (or `(manifest, baseDir)`) — an `osgx::Environment` from an
+  `osgx_environment` manifest: pre-baked specular/diffuse KTX2 cubemaps plus a serialized or
+  built-in BRDF LUT, with no HDR decode or cubemap bake at runtime. Returns null on failure.
+- `KHRONOS_ENVIRONMENT_ROTATION` — the `osgx::Environment` rotation matching the Khronos
+  glTF-Sample-Viewer for glTF content. `loadEnvironment()` applies it; an HDR-built environment
+  (`osgx::make_ref<osgx::Environment>(hdrImage)`) lighting glTF content sets it with
+  `environment->setRotation(KHRONOS_ENVIRONMENT_ROTATION)`.
+- `EnvironmentManifest`/`decodeEnvironments()` — the decoded manifest data.
 
-`KHRONOS_ENVIRONMENT_ROTATION` is the `osgx::Environment` rotation matching the Khronos
-glTF-Sample-Viewer for glTF content. `loadEnvironment()` applies it; an HDR-built environment
-lighting glTF content sets it with `environment->setRotation(KHRONOS_ENVIRONMENT_ROTATION)`.
-
-`PBRIBLScene::create()` also takes an optional `const osgx::ShadowMap*` — when non-null, it swaps
-in `osgx::DIRECT_LIGHTING_HOOK_SHADOWED` in place of the default unshadowed hook and wires the
-shadow depth texture/uniforms onto the node's StateSet; the caller still owns building the
-`ShadowMap` itself and adding `shadowMap->camera` to the scene graph (see [CORE.md's Shadow
-section](CORE.md#osgxshadowhpp)). An optional `const osgx::HookList& hooks` (see [CORE.md's
-`Shader.hpp` section](CORE.md#osgxshaderhpp)) substitutes this Program's built-in shader for either
-of the two slots it supports: `osgx::Hook::Skinning` enables standard glTF joint-matrix skinning
-(`shader::SKINNING_HOOK_LINEAR_BLEND`) in place of the default identity passthrough, and
-`osgx::Hook::Tonemap` substitutes a custom tone curve —
-
-```cpp
-auto scene = osgx::gltf::pbribl::PBRIBLScene::create(model, environment.get(), false, nullptr, {
-	{osgx::Hook::Skinning, new osg::Shader(osg::Shader::VERTEX,
-		osgx::resolveShaderLibs(osgx::gltf::shader::SKINNING_HOOK_LINEAR_BLEND))}
-});
-```
-
-The material GLSL helpers these shaders use are the generic `#pragma osgx::pbr` ones
-(`MATERIAL_INPUTS`, `GET_MATERIAL`, `GET_SHADING_NORMAL`, `GET_EMISSIVE`, `GET_ALPHA`, reading the
-`osgx_materialInputs` buffer and `osgx_baseColorMap`/`osgx_normalMap`/`osgx_ormMap`/
-`osgx_emissiveMap` samplers). `#pragma osgx::gltf ...` now holds only the deferred G-buffer read
-contract (`DEFERRED_LIGHTING_INPUTS`, `GET_GBUFFER`). Python exposes the same API under
-`osgx.gltf.pbribl`. `utils/osgx-gltf-viewer` is the corresponding complete C++ consumer.
-
-### Deferred split
-
-`PBRIBLGBuffer::create(node, width, height)` + `PBRIBLLightingScene::create(gbuffer, environment,
-mainCamera, ...)` are a two-camera counterpart to `PBRIBLScene::create()`'s one-shader-does-
-everything shape: a geometry pass writing material-only G-buffer textures (built on
-[`osgx::GBuffer`](CORE.md#osgxgbufferhpp)), then a fullscreen-quad lighting pass running the same
-`osgx_EvaluateEnvironment()`/`osgx_DirectLighting()` logic against those textures instead of interpolated
-varyings. `PBRIBLLightingPassOptions` carries the lighting pass's independent, optional inputs —
-`shadowMap` (same contract as `PBRIBLScene::create()`'s own parameter), `aoTexture` (an externally-
-baked occlusion result, multiplied into the ambient term — this pass does not bake it itself;
-[`osgx::SSAO::create()`](CORE.md#osgxgbufferhpp) is the standard implementation to feed this seam),
-`tonemap`/`hooks` (whether/how this pass tone-maps its own output, vs. leaving it linear HDR for a
-caller chaining further passes — `hooks` supports only `osgx::Hook::Tonemap` here, no vertex stage
-to skin), and `colorTexture`/`renderOrderNum` (retarget the pass to an offscreen texture instead of
-the backbuffer).
-
-**Call `PBRIBLLightingScene::update(mainCamera)` from a `preDrawCallback` on the first `PRE_RENDER`
-camera in the scene graph** (by render order) — not from `mainCamera`'s own `preDrawCallback`, and
-not from application code after `viewer.frame()` returns. Every `PRE_RENDER` camera finishes
-drawing before `mainCamera`'s own `preDrawCallback` fires, so either of those alternatives hands the
-lighting pass a stale view matrix relative to what the geometry pass actually rendered with —
-visible as position/lighting artifacts that worsen while the camera moves.
-
-See `examples/osgx-gbuffer.cpp` for the full wiring, including the shadow camera plugged into the
-split (depth-only, so it sits alongside the geometry pass rather than inside it) and a per-channel
-G-buffer visualizer (press `0`-`5`).
+Skinned models deform with `{.hooks = {{osgx::Hook::Skinning, new osg::Shader(osg::Shader::VERTEX,
+osgx::resolveShaderLibs(osgx::SKINNING_HOOK_LINEAR_BLEND))}}}`. Python: `osgx.PBRScene`,
+`osgx.PBRSceneOptions`, `osgx.gltf.loadEnvironment`, `osgx.gltf.KHRONOS_ENVIRONMENT_ROTATION`.
+`utils/osgx-gltf-viewer` is the complete C++ consumer.
 
 ## PBR/IBL environment baking
 
-`utils/osgx-pbribl` turns one HDR equirectangular image into a complete
-`osgx_pbribl` environment bundle consumable by `utils/osgx-gltf-viewer --env`:
+`utils/osgx-environment` turns one HDR equirectangular image into a complete `osgx_environment`
+bundle consumable by `utils/osgx-gltf-viewer --env`:
 
 ```bash
-utils/osgx-pbribl input.hdr environments/studio
+utils/osgx-environment input.hdr environments/studio
 utils/osgx-gltf-viewer --env environments/studio.gltf model.gltf
 ```
 
@@ -229,7 +164,7 @@ supported.
 Optional quality controls are `--prefilter-size`, `--samples`, `--diffuse-cube-size`,
 `--diffuse-samples`, and `--lut-size`.
 
-| Output | `osgx-pbribl` default | Khronos Sample Viewer reference default |
+| Output | `osgx-environment` default | Khronos Sample Viewer reference default |
 | --- | ---: | ---: |
 | GGX specular cubemap base size (`--prefilter-size`) | 128 | 256 |
 | GGX samples per texel (`--samples`) | 1024 | 1024 |
@@ -238,5 +173,5 @@ Optional quality controls are `--prefilter-size`, `--samples`, `--diffuse-cube-s
 | BRDF LUT size (`--lut-size`) | 1024 | 1024 |
 | BRDF LUT integration samples | 512 (fixed) | 512 |
 
-`osgx-pbribl` emits the full specular mip chain down to 1×1. The Khronos reference environment
+`osgx-environment` emits the full specular mip chain down to 1×1. The Khronos reference environment
 uses an eight-level GGX chain; this mainly affects the roughest lookup levels.

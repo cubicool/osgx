@@ -34,7 +34,7 @@ set(OSGX_OPENSCENEGRAPH_PY_BUILD_DIR "" CACHE PATH
 libOpenSceneGraph_python{d}.a (experimental -- see TODO.md)"
 )
 option(OSGX_BUILD_KTX2 "Build the KTX2 osgDB plugin (osgdb_ktx2) and the osgx::ktx2 static library" ${OSGX_IS_TOP_LEVEL})
-option(OSGX_BUILD_GLTF "Build the glTF osgDB plugin (osgdb_gltf) and the osgx::gltf/osgx::gltf_pbribl static libraries" ${OSGX_IS_TOP_LEVEL})
+option(OSGX_BUILD_GLTF "Build the glTF osgDB plugin (osgdb_gltf) and the osgx::gltf static library" ${OSGX_IS_TOP_LEVEL})
 option(OSGX_INSTALL "Generate osgx installation rules" ${OSGX_IS_TOP_LEVEL})
 
 if(WIN32)
@@ -244,6 +244,8 @@ add_library(osgx ${OSGX_LIBRARY_TYPE}
 	src/Light.cpp
 	src/Manipulators.cpp
 	src/PBR.cpp
+	src/PBRDeferred.cpp
+	src/PBRScene.cpp
 	src/Picking.cpp
 	src/PixelText.cpp
 	src/Projection.cpp
@@ -252,6 +254,7 @@ add_library(osgx ${OSGX_LIBRARY_TYPE}
 	src/Shadow.cpp
 	src/Shapes.cpp
 	src/Shader.cpp
+	src/Skinning.cpp
 	# src/TemporalEdge.cpp
 )
 add_library(osgx::osgx ALIAS osgx)
@@ -277,6 +280,8 @@ target_sources(osgx PUBLIC
 	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/Light.hpp>"
 	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/Manipulators.hpp>"
 	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/PBR.hpp>"
+	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/PBRDeferred.hpp>"
+	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/PBRScene.hpp>"
 	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/Picking.hpp>"
 	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/PixelText.hpp>"
 	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/Projection.hpp>"
@@ -285,6 +290,7 @@ target_sources(osgx PUBLIC
 	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/Shadow.hpp>"
 	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/Shapes.hpp>"
 	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/Shader.hpp>"
+	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/Skinning.hpp>"
 	# "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/TemporalEdge.hpp>"
 	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/Debug.hpp>"
 	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/ImGui.hpp>"
@@ -496,9 +502,9 @@ function(OSGX_COMPILE_OPTIONS _target)
 	# the freshly-compiled osgx implementation can then disagree about a type's size/layout.
 	#
 	# This used to only be applied in OSGX_ADD_EXECUTABLE below (examples/utils), not here -- so any
-	# LIBRARY calling this function directly (osgx_gltf, osgx_gltf_pbribl, osgx_ktx2, osgdb_gltf,
+	# LIBRARY calling this function directly (osgx_gltf, osgx_ktx2, osgdb_gltf,
 	# osgdb_ktx2, osgdb_debug, osgx_python_bindings, osgx_python) was still exposed. Found the hard
-	# way 2026-07-31 via GGXPrefilterOptions::fireflyClamp: osgx_gltf_pbribl silently built against
+	# way 2026-07-31 via GGXPrefilterOptions::fireflyClamp: a glTF library silently built against
 	# an installed GGXPrefilterOptions missing that field entirely while `osgx` itself (compiled
 	# fresh from source, via this same function but previously without this guard) read it,
 	# causing GGXPrefilterScene's bake to read past the end of the caller's undersized struct.
@@ -507,7 +513,7 @@ function(OSGX_COMPILE_OPTIONS _target)
 	# compilation -- every real compiled target in this project calls osgx_compile_options() on
 	# itself directly, so there's no need to propagate it to downstream consumers too. PUBLIC would
 	# also break `install(EXPORT osgxTargets ...)` for the library targets that use it (osgx_gltf,
-	# osgx_gltf_pbribl, osgx_ktx2, ...): CMake refuses to export a raw, unwrapped absolute
+	# osgx_ktx2, ...): CMake refuses to export a raw, unwrapped absolute
 	# source/build-tree path in INTERFACE_INCLUDE_DIRECTORIES, since it would be meaningless for an
 	# external consumer installing to a different prefix (confirmed by hitting exactly that "which
 	# is prefixed in the source directory" configure error on the first attempt at this fix).
@@ -551,7 +557,7 @@ endif()
 add_subdirectory("plugins")
 
 # examples/ and utils/ must come after the blocks above -- some utils (the osgx::gltf tools) link
-# osgx::gltf_pbribl/osgx::ktx2, which are only defined by that point in the configure pass.
+# osgx::gltf/osgx::ktx2, which are only defined by that point in the configure pass.
 if(OSGX_BUILD_EXAMPLES)
 	add_subdirectory("examples")
 endif()
@@ -601,6 +607,7 @@ if(OSGX_BUILD_PYTHON AND Python3_Development.Module_FOUND)
 		"ext/python/osgx-pixel-text.cpp"
 		"ext/python/osgx-projection.cpp"
 		"ext/python/osgx-sdf.cpp"
+		"ext/python/osgx-skinning.cpp"
 		"ext/python/osgx-aura.cpp"
 	)
 
@@ -712,7 +719,7 @@ if(OSGX_BUILD_PYTHON AND Python3_Development.Module_FOUND)
 	endif()
 
 	# osgx.gltf, unlike imgui/EGL/GBM above, isn't already carried by osgx::osgx -- it needs its
-	# own explicit link (osgx::gltf_pbribl, which pulls in osgx::gltf + osgx::osgx transitively),
+	# own explicit link (osgx::gltf, which pulls in osgx::osgx transitively),
 	# the tinygltf headers, and a preprocessor define to guard ext/python/osgx-gltf.cpp (which also
 	# isn't added to the source list at all unless this is on). PUBLIC for the same reason as the
 	# osgx::osgx link above: ext/python/osgx.cpp's own #ifdef OSGX_GLTF guard needs to see it too.
@@ -720,7 +727,7 @@ if(OSGX_BUILD_PYTHON AND Python3_Development.Module_FOUND)
 		target_sources(osgx_python_bindings PRIVATE "ext/python/osgx-gltf.cpp")
 		target_compile_definitions(osgx_python_bindings PUBLIC OSGX_GLTF)
 		target_include_directories(osgx_python_bindings PRIVATE "${PROJECT_SOURCE_DIR}/ext/tinygltf")
-		target_link_libraries(osgx_python_bindings PRIVATE osgx::gltf_pbribl)
+		target_link_libraries(osgx_python_bindings PRIVATE osgx::gltf)
 	else()
 		message(STATUS "OSGX_BUILD_GLTF is OFF; osgx.gltf Python bindings will be unavailable")
 	endif()

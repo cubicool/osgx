@@ -4,7 +4,7 @@
 // osgx::Cube shapes of different sizes/colors sitting on a flat floor quad, lit by one directional
 // osgx::LightSet light, its shadow cast via osgx::ShadowMap::create().
 //
-// Deliberately NOT osgx::gltf::pbribl - no glTF asset, no IBL environment, nothing but the
+// Deliberately NOT osgx::PBRScene - no glTF asset, no IBL environment, nothing but the
 // generic osgx::pbr direct-lighting hook contract plus the new shadow one, mirroring
 // osgx-lights.cpp's own "load nothing, just press a key" shape as closely as possible: the
 // fragment shader here is IDENTICAL to osgx-lights.cpp's (only DIRECT_LIGHTING_DECL + a call
@@ -139,10 +139,6 @@ void main() {
 // 's'-key toggle in main() rebuilds the Program via this same function, swapping only that one
 // shader object.
 osg::ref_ptr<osg::Program> makeProgram(bool shadowed) {
-	osgx::registerPBRShaderLibs();
-	osgx::registerLightShaderLibs();
-	osgx::registerShadowShaderLibs();
-
 	auto program = osgx::make_nref<osg::Program>(
 		shadowed ? "osgx_shadow_demo_shadowed" : "osgx_shadow_demo_unshadowed"
 	);

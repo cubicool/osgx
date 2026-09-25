@@ -36,19 +36,19 @@ if(OSGX_BUILD_GLTF)
 	target_link_libraries(osgx-sdf PRIVATE osgx::gltf)
 
 	osgx_add_executable("osgx" "turntable")
-	target_link_libraries(osgx-turntable PRIVATE osgx::gltf_pbribl)
+	target_link_libraries(osgx-turntable PRIVATE osgx::gltf)
 
 	osgx_add_executable("osgx" "gbuffer")
-	target_link_libraries(osgx-gbuffer PRIVATE osgx::gltf_pbribl)
+	target_link_libraries(osgx-gbuffer PRIVATE osgx::gltf)
 
 	osgx_add_executable("osgx" "gbuffer-comic")
-	target_link_libraries(osgx-gbuffer-comic PRIVATE osgx::gltf_pbribl)
+	target_link_libraries(osgx-gbuffer-comic PRIVATE osgx::gltf)
 
 	osgx_add_executable("osgx" "gbuffer-blueprint")
-	target_link_libraries(osgx-gbuffer-blueprint PRIVATE osgx::gltf_pbribl)
+	target_link_libraries(osgx-gbuffer-blueprint PRIVATE osgx::gltf)
 
 	osgx_add_executable("osgx" "gbuffer-edgewear")
-	target_link_libraries(osgx-gbuffer-edgewear PRIVATE osgx::gltf_pbribl)
+	target_link_libraries(osgx-gbuffer-edgewear PRIVATE osgx::gltf)
 
 else()
 	message(STATUS "OSGX_BUILD_GLTF is OFF; skipping osgx-sdf, osgx-turntable and osgx-gbuffer")

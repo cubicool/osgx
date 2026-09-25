@@ -271,8 +271,8 @@ class Environment: public osg::StateAttribute {
 		mutable std::once_flag _unitsResolved;
 };
 
-// GLSL `#pragma osgx::environment` catalog registration (ENVIRONMENT_INPUTS, ENVIRONMENT_SAMPLE,
-// ENVIRONMENT_LIGHTING) - see registerShaderLibs()/resolveShaderLibs() in Shader.hpp.
-void registerEnvironmentShaderLibs();
+// The `#pragma osgx::environment` catalog (ENVIRONMENT_INPUTS, ENVIRONMENT_SAMPLE,
+// ENVIRONMENT_LIGHTING) is registered by osgx::Library and expanded by resolveShaderLibs()
+// (Shader.hpp).
 
 }

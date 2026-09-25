@@ -183,7 +183,7 @@ uniform int osgx_lightCount;
 )GLSL";
 
 // Combines osgx_DirectDiffuse + osgx_DirectSpecular into one per-light contribution against an
-// osgx_Material (MATERIAL_STRUCT, "osgx::pbr") - the "modular hook" PBRIBLScene::create()'s own
+// osgx_Material (MATERIAL_STRUCT, "osgx::pbr") - the "modular hook" PBRScene::create()'s own
 // comment has been waiting on: a caller loops `osgx_lightCount` times, calling
 // osgx_PointLightRadiance for L/radiance then this for the shaded result, and accumulates (or just
 // calls osgx_DirectLighting(), see DIRECT_LIGHTING_DECL/DIRECT_LIGHTING_HOOK_DEFAULT below, which
@@ -344,7 +344,7 @@ vec3 osgx_DirectLightSphere(
 
 // osgx_DirectLighting() CONTRACT - the per-light dispatch loop above (LIGHT_UNIFORMS' osgx_lightCount/
 // osgx_lights buffer array) factored out behind a single function boundary, instead of every consumer
-// hand-copying it into its own main() (PBRIBL.cpp's FULL_PBR_FRAGMENT_SHADER_SRC and
+// hand-copying it into its own main() (PBRScene.cpp's FULL_PBR_FRAGMENT_SHADER_SRC and
 // OpenSceneGraph.py's pyosg_dice.py both did exactly that, and the latter has already drifted out
 // of sync - see osgx TODO.md). Follows the separate-compiled-shader-object "hook" pattern osgSlug
 // already uses to good effect (~/dev/osgSlug/src/Atlas.shaders.cpp's SHADER_NOOP_*_HOOK/HookList,
@@ -374,7 +374,7 @@ vec3 osgx_DirectLighting(vec3 N, vec3 V, vec3 worldPos, osgx_Material mat);
 //   ));
 // as an EXTRA shader object on the same Program that already has the consumer's own fragment
 // shader (which only needs DIRECT_LIGHTING_DECL + a call site, see above) - not spliced by name via
-// #pragma, so it is deliberately NOT in registerLightShaderLibs()'s catalog. Pulls MATERIAL_STRUCT
+// #pragma, so it is deliberately NOT in the "osgx::light" catalog. Pulls MATERIAL_STRUCT
 // and the pure BRDF snippets from "osgx::pbr" and the rest of its own dependencies from
 // "osgx::light" - two separate pragma lines, since resolveShaderLibs() resolves each line against
 // whichever registered namespace it names, independent of the others.
@@ -394,7 +394,7 @@ vec3 osgx_DirectLighting(vec3 N, vec3 V, vec3 worldPos, osgx_Material mat) {
 	// osg::State::applyShaderCompositionUniform()/direct getLastAppliedProgramObject() push,
 	// see LightSet::apply()'s own history comment). Both were confirmed unreliable whenever a
 	// DIFFERENT Program elsewhere in the same frame (a sibling subgraph, even) uses
-	// StateAttribute::OVERRIDE - e.g. osgx::gltf::pbribl::PBRIBLScene::create()'s own Program
+	// StateAttribute::OVERRIDE - e.g. osgx::PBRScene::create()'s own Program
 	// attachment - silently zeroing direct lighting for every OTHER Program sharing this
 	// LightSet. `enabled` travels on the SAME buffer binding the light data itself does
 	// (state.applyAttribute(), never State's separate/unreliable uniform-push machinery), so it
@@ -571,10 +571,8 @@ struct OrbitLightRig: public osg::NodeCallback {
 	void operator()(osg::Node* node, osg::NodeVisitor* nv) override;
 };
 
-// GLSL `#pragma osgx::light` catalog registration - see registerShaderLibs()/resolveShaderLibs()
-// in Shader.hpp. A separate namespace from "osgx::pbr" (2026-09-23 decision - real churn at every
-// existing call site, accepted deliberately: taxonomy should match the header split exactly, not
-// be papered over for compatibility).
-void registerLightShaderLibs();
+// The `#pragma osgx::light` catalog is registered by osgx::Library and expanded by
+// resolveShaderLibs() (Shader.hpp). It is a separate catalog from "osgx::pbr", matching the header
+// split.
 
 }

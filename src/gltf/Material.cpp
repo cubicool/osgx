@@ -21,7 +21,6 @@ OSGX_DISABLE_WARNINGS
 
 OSGX_ENABLE_WARNINGS
 
-#include "osgx/gltf/Shader.hpp"
 #include "osgx/PBR.hpp"
 
 #include <algorithm>
@@ -34,9 +33,9 @@ namespace osgx::gltf::detail {
 
 namespace {
 
-// KHR_materials_pbrSpecularGlossiness value-tree decode helpers - same shape as
-// PBRIBL.cpp's decodeString/decodeInt for its own (unrelated) manifest format, just against
-// tg3_value (glTF extension values) instead of tinygltf_json_c.h's tg3json_value.
+// KHR_materials_pbrSpecularGlossiness value-tree decode helpers - same shape as Json.hpp's
+// decodeString/decodeInt for the manifest formats, just against tg3_value (glTF extension values)
+// instead of tinygltf_json_c.h's tg3json_value.
 double extNumber(const tg3_value& value, const char* key, double fallback) {
 	const tg3_value* found = tg3_object_get(value, key);
 	double result = fallback;

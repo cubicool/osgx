@@ -7,23 +7,12 @@ namespace osgx_python {
 // unlike Projection.hpp's CPU/GLSL twins - see SDF.hpp's own comment for why) plus the SDF
 // StateAttribute for baked distance-field textures.
 void bind_sdf(py::module_& m) {
-	m.def(
-		"registerSDFShaderLibs",
-		&osgx::registerSDFShaderLibs,
-		"Registers the '#pragma osgx::sdf' shader-library entries: SHAPES (nine closed-form 2D "
-		"signed-distance functions, negative = inside), SAMPLING (osgx_SDF_Median/"
-		"ScreenPixelRange/CoverageFromDistance for baked fields), SAMPLING_DECL (the same "
-		"signatures, declarations only, for a second shader object in one Program), and TEXTURE (the SDF "
-		"attribute's own inputs + osgx_SDF_Coverage(uv); list it AFTER SAMPLING). See SDF.hpp's "
-		"own doc comment for full per-function signatures."
-	);
-
 	py::class_<osgx::SDF, osg::StateAttribute, osg::ref_ptr<osgx::SDF>> sdf(
 		m,
 		"SDF",
 		"A real osg.StateAttribute carrying one baked distance-field texture (single-channel "
-		"SDF or 3-channel MSDF) plus its pixelRange, sdfType, and uvRect, applied via a std430 shader "
-		"storage buffer and a texture unit (the \"osgx::sdf\" and \"osgx::sdf.texture\" binding slots). Use with "
+		"SDF or 3-channel MSDF) plus its pixelRange, sdfType, and uvRect, applied via a std140 uniform "
+		"block and a texture unit (the \"osgx::sdf\" and \"osgx::sdf.texture\" binding slots). Use with "
 		"'#pragma osgx::sdf SAMPLING,TEXTURE' and osgx_SDF_Coverage(uv). osgx only CONSUMES "
 		"distance fields - it never generates them."
 	);

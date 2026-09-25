@@ -22,8 +22,8 @@ namespace osgx {
 // `examples/pyosg-mrt.py` validated (OpenSceneGraph.py, 2026-07-11 - one geometry pass writing
 // several SIMULTANEOUS color attachments via `layout(location = n) out`, plus a real depth
 // attachment), generalized from that example's fixed two-color-buffer toon-shading demo into a
-// reusable helper any deferred consumer can call - osgx::gltf::pbribl's own G-buffer split
-// (PBRIBL.hpp's PBRIBLGBuffer::create()) is built on top of this, not a separate mechanism,
+// reusable helper any deferred consumer can call - osgx::PBRGBuffer::create() (PBRDeferred.hpp)
+// is built on top of this, not a separate mechanism,
 // and a non-PBR deferred shader (e.g. a toon pipeline like pyosg-mrt.py's own) can use it
 // directly too. Lives directly under `osgx::`, not its own namespace - it's not a separate
 // opt-in subsystem (its own #include outside the umbrella, its own CMake link target) the way
@@ -89,7 +89,7 @@ struct GBuffer {
 // `AttachmentFormat::RGBA32F` comment gives), then a small fixed-radius box-blur RTT pass to
 // denoise it. `aoTexture` (the blurred result) is a single-channel `GL_R8` texture in `[0, 1]`
 // (1.0 = fully unoccluded) that plugs directly into
-// `osgx::gltf::pbribl::PBRIBLLightingPassOptions::aoTexture` (PBRIBL.hpp) - that seam was built
+// `osgx::PBRLightingPassOptions::aoTexture` (PBRDeferred.hpp) - that seam was built
 // exactly for this - or any other consumer wanting a generic screen-space occlusion mask.
 struct SSAO {
 	osg::ref_ptr<osg::Camera> rawCamera;
@@ -102,16 +102,16 @@ struct SSAO {
 
 	bool valid() const;
 
-	// `normalTexture`/`positionTexture` must be VIEW-space (matching `PBRIBLGBuffer::
+	// `normalTexture`/`positionTexture` must be VIEW-space (matching `PBRGBuffer::
 	// normalTexture`/`positionTexture`'s own contract) - the hemisphere kernel and the forward
 	// re-projection below both assume it.
 	//
 	// `projectionMatrix` is a CALLER-OWNED uniform this pass reads every draw, not a one-time
 	// snapshot - SSAO reconstructs each sample's screen position via a forward projection, and
-	// (same reasoning as `PBRIBLLightingScene`'s own view-matrix uniforms) the real matrix isn't
+	// (same reasoning as `PBRLightingPass`'s own view-matrix uniforms) the real matrix isn't
 	// meaningfully established until well after this call returns, and can change every frame
 	// besides. Keep its value fresh yourself from the same per-frame `preDrawCallback` that updates
-	// any other deferred-pass matrix uniforms you already have (see `PBRIBLLightingScene::update()`'s
+	// any other deferred-pass matrix uniforms you already have (see `PBRLightingPass::update()`'s
 	// own comment for why that must be a `PRE_RENDER` `preDrawCallback`, not application code after
 	// `viewer.frame()` returns) - e.g. `projectionMatrix->set(osg::Matrixf(mainCamera->
 	// getProjectionMatrix()))`.

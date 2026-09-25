@@ -4,7 +4,7 @@
 // osgx::LightGizmos visualizations, without any glTF asset or baked IBL environment - just one shaded
 // osgx::Cube (6 flat, axis-aligned faces - deliberately not a more "interesting" shape, so which
 // face is lit is visually unambiguous), a hand-assembled minimal PBR fragment shader (osgx::pbr's
-// GLSL snippets composed directly, the same mechanism osgx::gltf::pbribl's
+// GLSL snippets composed directly, the same mechanism osgx::PBRScene's
 // FULL_PBR_FRAGMENT_SHADER_SRC uses internally), and a small constant ambient term standing in for
 // real image-based lighting (see the fragment shader below - deliberately NOT osgx::ibl's
 // prefiltered-cubemap pipeline, which would need an HDR asset and a bake pass; out of scope for
@@ -66,8 +66,8 @@ void main() {
 }
 )GLSL";
 
-// Mirrors osgx::gltf::pbribl::FULL_PBR_FRAGMENT_SHADER_SRC's own per-light loop (see
-// src/gltf/PBRIBL.cpp) almost verbatim, minus the IBL diffuse/specular terms and diagnostics --
+// Mirrors osgx::PBRScene's FULL_PBR_FRAGMENT_SHADER_SRC per-light loop (see src/PBRScene.cpp)
+// almost verbatim, minus the IBL diffuse/specular terms and diagnostics --
 // this is the same osgx::pbr type-dispatch, just without a glTF material or environment feeding
 // it. `ambientColor`/`ambientIntensity` is a flat fill light, not real IBL (see file header).
 constexpr std::string_view FRAGMENT_SHADER = R"GLSL(
@@ -75,7 +75,7 @@ constexpr std::string_view FRAGMENT_SHADER = R"GLSL(
 
 // PI must precede the pragma below - it's textually replaced in place by the spliced snippet
 // source, and D_GGX/DIRECT_DIFFUSE/etc. reference `PI` assuming it's already in scope (see
-// PBR.hpp's file-level contract note). PBRIBL.cpp's own FULL_PBR_FRAGMENT_SHADER_SRC gets this
+// PBR.hpp's file-level contract note). PBRScene.cpp's own FULL_PBR_FRAGMENT_SHADER_SRC gets this
 // ordering right; this shader originally didn't.
 const float PI = 3.14159265359;
 
@@ -127,13 +127,9 @@ void main() {
 )GLSL";
 
 osg::ref_ptr<osg::Program> makeProgram() {
-	osgx::registerPBRShaderLibs();
-	osgx::registerLightShaderLibs();
-
 	auto program = osgx::make_nref<osg::Program>("osgx_lights_demo");
 	// Only the fragment shader carries `#pragma osgx::pbr ...` directives - matches
-	// osgx::gltf::pbribl::PBRIBLScene::create()'s own split (PBRIBL.cpp), which resolves its
-	// fragment shader but adds its vertex shader unchanged.
+	// a vertex shader with no pragmas of its own.
 	auto fragmentSrc = osgx::resolveShaderLibs(std::string(FRAGMENT_SHADER));
 	// The osgx_DirectLighting() CONTRACT's default definition - a second, separately compiled
 	// FRAGMENT shader object with no main() of its own, added alongside fragmentSrc above. GLSL

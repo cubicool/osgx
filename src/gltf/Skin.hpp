@@ -5,17 +5,14 @@
 OSGX_DISABLE_WARNINGS
 
 #include <osg/Array>
-#include <osg/Callback>
+#include <osg/Matrixf>
 #include <osg/MatrixTransform>
 #include <osg/Referenced>
 #include <osg/observer_ptr>
 #include <osg/ref_ptr>
-#include <osg/BufferIndexBinding>
 
 OSGX_ENABLE_WARNINGS
 
-#include <cstddef>
-#include <mutex>
 #include <string>
 #include <vector>
 
@@ -23,64 +20,27 @@ struct tg3_model;
 
 namespace osgx::gltf::detail {
 
-struct Skin: public osg::Referenced {
+// One glTF skin, gathered while the scene is built; attachSkins() turns it into an osgx::Skin
+// (osgx/Skinning.hpp) once every node's transform exists.
+struct SkinData: public osg::Referenced {
 	int index = -1;
 	std::string name;
+	// glTF node indices, in palette order.
 	std::vector<int> joints;
 	std::vector<osg::Matrixf> inverseBindMatrices;
-	std::vector<osg::observer_ptr<osg::MatrixTransform>> jointNodes;
+	// The transforms of the nodes that reference this skin.
 	std::vector<osg::observer_ptr<osg::MatrixTransform>> skinnedNodes;
-	int skeleton = -1;
-	osg::ref_ptr<osg::MatrixfArray> paletteMatrices;
-
-	// Index of each joint's parent joint within this skin, or -1 when its parent lies outside it.
-	std::vector<int> parentJointIndex;
-
-	// Scratch buffers reused for every palette update to avoid per-frame allocation.
-	std::vector<osg::Matrixd> jointWorldCache;
-	std::vector<char> jointWorldComputed;
-
-	void initPalette();
-	osg::Matrixd computeJointWorld(std::size_t jointIndex);
-	bool updatePalette(osg::Node* skinnedNode);
 };
 
-// Reflects, not drives: every update traversal this reads whatever the CURRENT world matrices of
-// the skin's joint nodes happen to be (Skin::computeJointWorld()) and rewrites the joint-matrix
-// SSBO the vertex shader deforms the mesh against. It has no play/pause state and no idea what (if
-// anything) is moving those joints - installSkinPaletteCallbacks() attaches this unconditionally
-// on every skinned mesh node, independent of AnimationCallback (Animation.hpp) or SimplePlayer.
-// A joint that has its own animation channels visibly deforms the mesh purely because
-// AnimationCallback moves the joint transform and this callback picks up whatever that transform
-// currently is; a joint with no animation just has this recompute the same bind-pose matrix every
-// frame, harmlessly. The two callbacks never call into each other.
-//
-// The node's joint-matrix binding is built at load time with index 0 (the loader may run with no
-// osgx::Library); the first update sets it to the "osgx::gltf::joints" slot.
-class SkinPaletteCallback: public osg::NodeCallback {
-public:
-	SkinPaletteCallback(Skin* skin, osg::ShaderStorageBufferBinding* binding);
-
-	void operator()(osg::Node* node, osg::NodeVisitor* nv) override;
-
-private:
-	osg::ref_ptr<Skin> _skin;
-	osg::ref_ptr<osg::ShaderStorageBufferBinding> _binding;
-	std::once_flag _bindingResolved;
-	bool _loggedOnce = false;
-};
-
-std::vector<osg::ref_ptr<Skin>> prepareSkins(
+std::vector<osg::ref_ptr<SkinData>> prepareSkins(
 	const tg3_model& model,
 	const std::vector<osg::ref_ptr<osg::Array>>& arrays
 );
 
-void resolveSkinJointNodes(
-	const tg3_model& model,
+// Builds an osgx::Skin per SkinData from the node transforms and attaches it to each skinned node.
+void attachSkins(
 	const std::vector<osg::observer_ptr<osg::MatrixTransform>>& nodeTransforms,
-	const std::vector<osg::ref_ptr<Skin>>& skins
+	const std::vector<osg::ref_ptr<SkinData>>& skins
 );
-
-void installSkinPaletteCallbacks(const std::vector<osg::ref_ptr<Skin>>& skins);
 
 }

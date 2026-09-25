@@ -1,8 +1,6 @@
 import osgx
 
-def test_register_sdf_shader_libs_expands_shapes_pragma():
-	osgx.registerSDFShaderLibs()
-
+def test_sdf_catalog_expands_shapes_pragma():
 	resolved = osgx.resolveShaderLibs("#pragma osgx::sdf SHAPES\n")
 
 	# One entry, nine functions - see SDF.hpp's own comment for why these aren't split into
@@ -25,15 +23,7 @@ def test_register_sdf_shader_libs_expands_shapes_pragma():
 	assert "osgx_SDF_Box" not in resolved
 	assert "osgx_SDF_Pie" not in resolved
 
-def test_register_sdf_shader_libs_is_idempotent():
-	# registerShaderLibs() only throws on a genuine content conflict -- re-registering the same
-	# catalog (e.g. called from more than one module/example) must be a safe no-op.
-	osgx.registerSDFShaderLibs()
-	osgx.registerSDFShaderLibs()
-
 def test_sampling_and_texture_expand_in_order():
-	osgx.registerSDFShaderLibs()
-
 	resolved = osgx.resolveShaderLibs("#pragma osgx::sdf SAMPLING,TEXTURE\n")
 
 	for name in (

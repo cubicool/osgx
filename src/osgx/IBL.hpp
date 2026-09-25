@@ -77,8 +77,8 @@ private:
 //
 // Kept as an `inline constexpr` header definition (not moved to IBL.cpp like the rest of this
 // file): it's bound directly by name in ext/osgx-python.cpp (osgx::FULLSCREEN_VERT), which
-// needs real external linkage, AND referenced inside registerIBLShaderLibs()'s `static constexpr
-// ShaderLib` array below, which needs a genuine constant expression - `inline constexpr` in a
+// needs real external linkage, AND referenced inside the "osgx::ibl" catalog's `static constexpr
+// ShaderLib` array (IBL.cpp), which needs a genuine constant expression - `inline constexpr` in a
 // header is the one form that satisfies both at once.
 inline constexpr const char* FULLSCREEN_VERT = R"GLSL(
 #version 430 core
@@ -335,7 +335,5 @@ vec3 osgx_HemisphereAmbient(vec3 N, vec3 up, vec3 albedo, float ao, vec3 skyColo
 	return mix(groundColor, skyColor, hemi) * albedo * ao;
 }
 )GLSL";
-
-void registerIBLShaderLibs();
 
 }

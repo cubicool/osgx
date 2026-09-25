@@ -1,3 +1,5 @@
+#include "ShaderLibs.hpp"
+
 #include "osgx/Shadow.hpp"
 
 OSGX_DISABLE_WARNINGS
@@ -139,7 +141,7 @@ ShadowMap ShadowMap::create(
 	camera->setViewMatrix(result.lightView);
 	camera->setProjectionMatrix(result.lightProj);
 	// ON|OVERRIDE, no PROTECTED: wins over any Program a child subgraph sets on its OWN StateSet
-	// with just ON (the convention every osgx::gltf::pbribl/pyosg-lighting Program uses today) --
+	// with just ON (the convention every osgx::PBRScene/pyosg-lighting Program uses) --
 	// see this function's own header comment for the full rationale.
 	camera->getOrCreateStateSet()->setAttributeAndModes(
 		makeDepthOnlyProgram(), osg::StateAttribute::ON | osg::StateAttribute::OVERRIDE

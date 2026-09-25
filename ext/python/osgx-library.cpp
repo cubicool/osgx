@@ -1,19 +1,11 @@
 #include "osgx-python.hpp"
 #include "osgx-library.hpp"
 
-#ifdef OSGX_GLTF
-#include "osgx/gltf/PBRIBL.hpp"
-#endif
-
 #include <memory>
 
 namespace osgx_python {
 
-Library::Library(const osgx::LibraryOptions& options): osgx::Library(nullptr, options) {
-#ifdef OSGX_GLTF
-	osgx::gltf::pbribl::registerShaderLibs();
-#endif
-}
+Library::Library(const osgx::LibraryOptions& options): osgx::Library(nullptr, options) {}
 
 void bind_library(py::module_& m) {
 	auto bindingsClass = py::class_<osgx::Bindings>(

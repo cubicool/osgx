@@ -19,7 +19,7 @@ struct tg3_mesh;
 namespace osgx::gltf::detail {
 
 class MaterialBuilder;
-struct Skin;
+struct SkinData;
 
 class MeshBuilder {
 public:
@@ -28,7 +28,7 @@ public:
 		const osgDB::Options* readOptions,
 		MaterialBuilder& materialBuilder,
 		const std::vector<osg::ref_ptr<osg::Array>>& arrays,
-		const std::vector<osg::ref_ptr<Skin>>& skins
+		const std::vector<osg::ref_ptr<SkinData>>& skins
 	);
 
 	osg::Group* makeMesh(const tg3_mesh& mesh, int skinIndex) const;
@@ -38,7 +38,7 @@ private:
 	const osgDB::Options* _readOptions;
 	MaterialBuilder& _materialBuilder;
 	const std::vector<osg::ref_ptr<osg::Array>>& _arrays;
-	const std::vector<osg::ref_ptr<Skin>>& _skins;
+	const std::vector<osg::ref_ptr<SkinData>>& _skins;
 
 	static GLenum _primitiveMode(int gltfMode);
 };

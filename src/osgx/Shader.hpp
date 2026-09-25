@@ -65,7 +65,7 @@ osg::Shader* cachedShader(osg::Shader::Type type, std::string src);
 // ================================================================================================
 // Hook points: shader-object SUBSTITUTION, the counterpart to registerShaderLibs()/
 // resolveShaderLibs()' text-splicing above. A Program-building call site (e.g.
-// osgx::gltf::pbribl::PBRIBLScene::create()) declares which slots it supports via `defaults`;
+// osgx::PBRScene::create()) declares which slots it supports via `defaults`;
 // a caller overrides only the slots it cares about via `hooks`, leaving every other slot at that
 // call site's own built-in. One shared enum/mechanism used everywhere osgx composes a Program
 // this way, instead of each call site growing its own `osg::Shader* someHook=nullptr` parameter
@@ -79,15 +79,15 @@ osg::Shader* cachedShader(osg::Shader::Type type, std::string src);
 //
 // Tonemap/Skinning substitute one leaf function's body while the rest of a Program stays fixed --
 // genuinely reusable across whichever Program-building call sites happen to need that exact
-// concept (Tonemap already is, across both osgx::gltf::pbribl's forward and deferred paths).
+// concept (Tonemap already is, across the forward PBR renderer and osgx::PBRLightingPass).
 // DeferredLighting is different in kind: it substitutes the WHOLE shader that defines main() for
-// osgx::gltf::pbribl::PBRIBLLightingScene::create()'s fullscreen lighting pass - an "I know what
+// osgx::PBRLightingPass::create()'s fullscreen lighting pass - an "I know what
 // I'm doing, replace the entire pipeline" escape hatch, not a leaf-function swap, and NOT
 // interchangeable with an equivalent hook on a differently-shaped Program (e.g. the forward path's
 // own main() reads vertex-interpolated PBR inputs, not G-buffer textures) - hence the
 // pass-specific name instead of a generic one. See docs/CORE.md and docs/GLTF.md.
 //
-// DirectLighting (migrated 2026-08-21, `osgx-gbuffer-dice.cpp`) - PBRIBLLightingScene::create()
+// DirectLighting (migrated 2026-08-21, `osgx-gbuffer-dice.cpp`) - PBRLightingPass::create()
 // used to attach its osgx_DirectLighting() shader (DIRECT_LIGHTING_HOOK_DEFAULT/_SHADOWED,
 // PBR.hpp) UNCONDITIONALLY, outside applyHooks() entirely, on the assumption that a
 // DeferredLighting override simply ignores it (true, and harmless, RIGHT UP UNTIL an override

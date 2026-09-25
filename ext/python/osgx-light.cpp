@@ -94,8 +94,8 @@ void bind_light(py::module_& m) {
 	py::class_<osgx::LightSet, osg::StateAttribute, osg::ref_ptr<osgx::LightSet>>(
 		m,
 		"LightSet",
-		"A real osg.StateAttribute owning up to MAX_LIGHTS direct lights in one std430 shader "
-		"storage buffer plus their count uniform. Attach with setAttributeAndModes() on an "
+		"A real osg.StateAttribute owning up to MAX_LIGHTS direct lights in one std140 uniform "
+		"block plus their count uniform. Attach with setAttributeAndModes() on an "
 		"ancestor StateSet and every lit subgraph beneath it inherits the same lights. "
 		"OrbitLightRig can animate a subset of an attached LightSet's lights on top of this."
 	)

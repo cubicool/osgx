@@ -1,3 +1,5 @@
+#include "ShaderLibs.hpp"
+
 #include "osgx/SDF.hpp"
 #include "osgx/Array.hpp"
 #include "osgx/Shader.hpp"
@@ -200,7 +202,6 @@ void registerSDFShaderLibs() {
 }
 
 SDF::SDF() {
-	registerSDFShaderLibs();
 	_initBuffer();
 }
 

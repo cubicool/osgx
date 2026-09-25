@@ -1,3 +1,5 @@
+#include "ShaderLibs.hpp"
+
 #include "osgx/Projection.hpp"
 #include "osgx/Shader.hpp"
 
@@ -17,7 +19,7 @@ namespace {
 
 // Self-contained (declares its own osg_ProjectionMatrix/osg_ViewMatrixInverse) so a caller's
 // shader needs nothing but the #pragma line and a call site - matching the same pattern
-// registerPickShaderLibs()'s PICK_ENCODE_SRC uses (see Picking.cpp). Extracted verbatim from
+// the "osgx::picking" catalog's PICK_ENCODE_SRC uses (see Picking.cpp). Extracted verbatim from
 // examples/osgx-grid.cpp's and examples/osgx-turntable.cpp's own identical, previously-duplicated
 // unproject(ndc, depth) function - see unprojectRay()'s own comment for why the CPU side doesn't
 // need this same text-splicing trick to stay in sync with it (it's hand-mirrored instead, and both
@@ -37,7 +39,7 @@ vec3 osgx_Unproject(vec2 ndc, float depth) {
 }
 )GLSL";
 
-// See registerProjectionShaderLibs()'s own comment (Projection.hpp) for the derivation: solving
+// See the "osgx::projection" catalog comment (Projection.hpp) for the derivation: solving
 // ndcZ = clip.z/clip.w for eye.z using only projectionMatrix's [2][2]/[3][2] entries (a standard
 // symmetric perspective matrix's own near/far encoding), then negating - eye-space Z is negative
 // in front of the camera, and every caller of the previous, duplicated linearizeDepth(d, near,

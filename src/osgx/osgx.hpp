@@ -12,6 +12,7 @@
 #include "PixelText.hpp"
 #include "Shapes.hpp"
 #include "Shader.hpp"
+#include "Skinning.hpp"
 #include "PBR.hpp"
 #include "Light.hpp"
 #include "Shadow.hpp"
@@ -23,3 +24,5 @@
 #include "GGXPrefilter.hpp"
 #include "LambertianBake.hpp"
 #include "Environment.hpp"
+#include "PBRDeferred.hpp"
+#include "PBRScene.hpp"

@@ -69,7 +69,7 @@ void main() {
 }
 )GLSL";
 
-// SAMPLING must precede TEXTURE - see registerSDFShaderLibs() in SDF.hpp. `#version 430` is
+// SAMPLING must precede TEXTURE - see the "osgx::sdf" catalog comment in SDF.hpp. `#version 430` is
 // required by the layout(binding=...) qualifiers TEXTURE declares.
 constexpr const char* FRAGMENT_SHADER = R"GLSL(
 #version 430 core

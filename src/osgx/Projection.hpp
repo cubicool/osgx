@@ -82,8 +82,8 @@ bool unprojectToPlane(
 // which is exactly this call - no plane, no ray, just the one point.
 osg::Vec3d unprojectPoint(const osg::Camera* camera, double ndcX, double ndcY, double ndcDepth);
 
-// GLSL `#pragma osgx::projection UNPROJECT` / `#pragma osgx::projection DEPTH` catalog
-// registration - see registerShaderLibs()/resolveShaderLibs() in Shader.hpp.
+// The `#pragma osgx::projection` catalog (UNPROJECT, DEPTH) is registered by osgx::Library and
+// expanded by resolveShaderLibs() (Shader.hpp).
 //
 // UNPROJECT publishes `vec3 osgx_Unproject(vec2 ndc, float depth)`, matching this file's own
 // unprojectRay() math exactly (inverse(osg_ProjectionMatrix) * ndc, then osg_ViewMatrixInverse),
@@ -111,6 +111,5 @@ osg::Vec3d unprojectPoint(const osg::Camera* camera, double ndcX, double ndcY, d
 // bridge (it can't be removed: OSG's automatic per-camera uniforms have no way to carry a
 // DIFFERENT camera's matrix across passes), it just makes the one bridged uniform this function
 // actually needs unambiguous at the call site instead of silently assumed.
-void registerProjectionShaderLibs();
 
 }

@@ -77,7 +77,7 @@ void bind_core(py::module_& m) {
 		m,
 		"GridSettings",
 		"Live-tunable Grid rendering parameters (line width/intervals/colors/modes), stored in a "
-		"std430 SSBO. Normally accessed through a Grid's own property passthroughs - construct "
+		"std140 uniform block. Normally accessed through a Grid's own property passthroughs - construct "
 		"directly only to share one GridSettings across multiple Grid instances."
 	);
 
@@ -243,10 +243,6 @@ void bind_core(py::module_& m) {
 			"radius"_a=1.0f, "slices"_a=48, "stacks"_a=24,
 			"Builds a UV sphere using this Grid's own shader and uniforms; duplicated seam/pole "
 			"vertices keep grid coordinates continuous except at the intentional longitude wrap."
-		)
-		.def_static(
-			"registerShaderLibs", &osgx::registerGridShaderLibs,
-			"Registers Grid's GLSL snippets under the #pragma osgx::grid shader-library key."
 		)
 	;
 
@@ -671,7 +667,7 @@ void bind_core(py::module_& m) {
 	);
 
 	// Shader-object substitution hook slots, the counterpart to resolveShaderLibs()' text
-	// splicing above - see osgx::applyHooks() (Shader.hpp) and PBRIBLScene.create()'s "hooks"
+	// splicing above - see osgx::applyHooks() (Shader.hpp) and PBRScene.create()'s "hooks"
 	// parameter. Every HookList-accepting binding goes through pyx::unpack_one_or_many<T>()
 	// (pybind11x.hpp), so a HookList is `{osgx.Hook.Tonemap: shader, ...}` in Python (preferred -
 	// a dict rules out two shaders for the same slot by construction), `[(osgx.Hook.Tonemap,
@@ -682,10 +678,10 @@ void bind_core(py::module_& m) {
 		m,
 		"Hook",
 		"Shader-object substitution slots (see resolveShaderLibs()/applyHooks() and "
-		"PBRIBLScene.create()'s `hooks` parameter). Each hook REPLACES its default shader object "
+		"PBRScene.create()'s `hooks` parameter). Each hook REPLACES its default shader object "
 		"entirely - GLSL permits one body per function, so attaching a second definition "
 		"alongside the built-in is a link error, not an override. Tonemap replaces "
-		"osgx_Tonemap(); Skinning replaces osgx_gltf_ApplySkin(); DirectLighting replaces "
+		"osgx_Tonemap(); Skinning replaces osgx_ApplySkin(); DirectLighting replaces "
 		"osgx_DirectLighting(); DeferredLighting replaces the entire fullscreen deferred-lighting shader."
 	)
 		.value("Tonemap", osgx::Hook::Tonemap)

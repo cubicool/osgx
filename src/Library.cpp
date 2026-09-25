@@ -1,4 +1,5 @@
 #include "LibraryState.hpp"
+#include "ShaderLibs.hpp"
 
 #include "osgx/Environment.hpp"
 #include "osgx/Grid.hpp"
@@ -160,7 +161,7 @@ Library::Library(osg::ArgumentParser* arguments, const LibraryOptions& options) 
 		slots.declare(Bindings::Type::UBO, "osgx::material");
 		slots.declare(Bindings::Type::UBO, "osgx::sdf");
 
-		slots.declare(Bindings::Type::SSBO, "osgx::gltf::joints");
+		slots.declare(Bindings::Type::SSBO, "osgx::joints");
 		slots.declare(Bindings::Type::SSBO, "osgx::pixelText");
 
 		// Preferred indices are the units these textures used before they were slots, which
@@ -173,16 +174,16 @@ Library::Library(osg::ArgumentParser* arguments, const LibraryOptions& options) 
 		slots.declare(Bindings::Type::TextureUnit, "osgx::environment.brdfLUT", 6);
 		slots.declare(Bindings::Type::TextureUnit, "osgx::environment.diffuse", 7);
 		slots.declare(Bindings::Type::TextureUnit, "osgx::sdf.texture", 10);
-		slots.declare(Bindings::Type::TextureUnit, "osgx::gltf::shadowMap", 4);
-		slots.declare(Bindings::Type::TextureUnit, "osgx::gltf::lighting.albedo", 0);
-		slots.declare(Bindings::Type::TextureUnit, "osgx::gltf::lighting.normal", 1);
-		slots.declare(Bindings::Type::TextureUnit, "osgx::gltf::lighting.material", 2);
-		slots.declare(Bindings::Type::TextureUnit, "osgx::gltf::lighting.emissive", 3);
-		slots.declare(Bindings::Type::TextureUnit, "osgx::gltf::lighting.position", 4);
-		slots.declare(Bindings::Type::TextureUnit, "osgx::gltf::lighting.ao", 8);
-		slots.declare(Bindings::Type::TextureUnit, "osgx::gltf::lighting.shadowMap", 9);
+		slots.declare(Bindings::Type::TextureUnit, "osgx::shadowMap", 9);
+		slots.declare(Bindings::Type::TextureUnit, "osgx::gbuffer.albedo", 0);
+		slots.declare(Bindings::Type::TextureUnit, "osgx::gbuffer.normal", 1);
+		slots.declare(Bindings::Type::TextureUnit, "osgx::gbuffer.material", 2);
+		slots.declare(Bindings::Type::TextureUnit, "osgx::gbuffer.emissive", 3);
+		slots.declare(Bindings::Type::TextureUnit, "osgx::gbuffer.position", 4);
+		slots.declare(Bindings::Type::TextureUnit, "osgx::gbuffer.ao", 8);
 
 		registerEnvironmentShaderLibs();
+		registerGBufferShaderLibs();
 		registerGridShaderLibs();
 		registerIBLShaderLibs();
 		registerLightShaderLibs();
@@ -191,6 +192,7 @@ Library::Library(osg::ArgumentParser* arguments, const LibraryOptions& options) 
 		registerProjectionShaderLibs();
 		registerSDFShaderLibs();
 		registerShadowShaderLibs();
+		registerSkinningShaderLibs();
 	}
 
 	catch(...) {

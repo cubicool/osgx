@@ -6,13 +6,21 @@
 // diffuse-irradiance passes never bake; both are ABSOLUTE_RF, so placement within that graph does
 // not matter.
 
-#include "osgx/gltf/PBRIBL.hpp"
+#include "osgx/gltf/Environment.hpp"
+#include "osgx/gltf/SimplePlayer.hpp"
 #include "osgx/Library.hpp"
+#include "osgx/PBRScene.hpp"
 
 #include "osgx/Callbacks.hpp"
 #include "osgx/Core.hpp"
 #include "osgx/IBL.hpp"
+#include "osgx/Skinning.hpp"
+#include "osgx/Visitors.hpp"
 #include "osgx/Warnings.hpp"
+
+#ifdef OSGX_IMGUI
+#include "osgx/ImGui.hpp"
+#endif
 
 OSGX_DISABLE_WARNINGS
 
@@ -317,7 +325,7 @@ int main(int argc, char** argv) {
 
 	args.getApplicationUsage()->setCommandLineUsage(
 		std::string(args.getApplicationName()) +
-		" <model.gltf> (--hdr <path> | --env <manifest.gltf> | --official-ibl <dir>) [--camera <camera.gltf>] [--capture <path.png>] [--samples <count>] [--debug [mode]]"
+		" <model.gltf> (--hdr <path> | --env <manifest.gltf> | --official-ibl <dir>) [--camera <camera.gltf>] [--capture <path.png>] [--samples <count>] [--debug [mode]] [--animation]"
 	);
 	args.getApplicationUsage()->addCommandLineOption(
 		"--hdr <path>",
@@ -326,7 +334,7 @@ int main(int argc, char** argv) {
 	);
 	args.getApplicationUsage()->addCommandLineOption(
 		"--env <manifest.gltf>",
-		"Static/shipping path: an osgx_pbribl manifest referencing pre-baked specular/diffuse KTX2 "
+		"Static/shipping path: an osgx_environment manifest referencing pre-baked specular/diffuse KTX2 "
 		"cubemaps and a declared BRDF LUT. No HDR decode or cubemap bake at runtime."
 	);
 	args.getApplicationUsage()->addCommandLineOption(
@@ -344,6 +352,12 @@ int main(int argc, char** argv) {
 	args.getApplicationUsage()->addCommandLineOption(
 		"--samples <count>",
 		"Request this many default-framebuffer MSAA samples (default: 4)"
+	);
+	args.getApplicationUsage()->addCommandLineOption(
+		"--animation",
+		"Show an ImGui panel selecting/pausing/restarting the model's animations (ImGui builds "
+		"only), and deform skinned meshes when the model has any (linear blend skinning for the "
+		"whole model, so unskinned meshes in a partly skinned model deform wrongly)"
 	);
 	args.getApplicationUsage()->addCommandLineOption(
 		"--debug [mode]",
@@ -365,6 +379,7 @@ int main(int argc, char** argv) {
 	const bool haveOfficialIBL = args.read("--official-ibl", officialIBLPath);
 	const bool haveCamera = args.read("--camera", cameraPath);
 	const bool captureRequested = args.read("--capture", capturePath);
+	const bool animation = args.read("--animation");
 	args.read("--samples", samples);
 	const int debugPos = args.find("--debug");
 	const bool diagnostics = debugPos >= 0;
@@ -431,7 +446,7 @@ int main(int argc, char** argv) {
 				specularMap.get(), officialIBL.diffuse.get(), officialIBL.lut.get(), 4.0f
 			);
 
-			environment->setRotation(osgx::gltf::pbribl::KHRONOS_ENVIRONMENT_ROTATION);
+			environment->setRotation(osgx::gltf::KHRONOS_ENVIRONMENT_ROTATION);
 		}
 	}
 
@@ -444,13 +459,13 @@ int main(int argc, char** argv) {
 			return 1;
 		}
 
-		environment = osgx::gltf::pbribl::loadEnvironment(manifest.string());
+		environment = osgx::gltf::loadEnvironment(manifest.string());
 	}
 
 	else if(auto hdrImage = osgDB::readRefImageFile(hdrEnvironment.string())) {
 		environment = osgx::make_ref<osgx::Environment>(hdrImage.get());
 
-		environment->setRotation(osgx::gltf::pbribl::KHRONOS_ENVIRONMENT_ROTATION);
+		environment->setRotation(osgx::gltf::KHRONOS_ENVIRONMENT_ROTATION);
 	}
 
 	if(!environment) {
@@ -459,9 +474,36 @@ int main(int argc, char** argv) {
 		return 1;
 	}
 
-	auto pis = osgx::gltf::pbribl::PBRIBLScene::create(model, environment.get(), diagnostics);
+	// Linear blend skinning replaces the identity hook for the whole model, so it is used only when
+	// some geometry carries joint weights: a vertex with no joint arrays reads GL's default
+	// attribute values and would be deformed by an arbitrary joint matrix.
+	bool skinned = false;
 
-	if(!pis.valid()) return 1;
+	if(animation) {
+		osgx::LambdaVisitor<osg::Geometry> findJointWeights([&skinned](osg::Geometry& geometry) {
+			if(geometry.getVertexAttribArray(osgx::JOINT_WEIGHTS_ATTRIBUTE)) skinned = true;
+		});
+
+		findJointWeights(model.get());
+	}
+
+	osgx::HookList hooks;
+
+	if(skinned) hooks.push_back({
+		osgx::Hook::Skinning,
+		new osg::Shader(
+			osg::Shader::VERTEX,
+			osgx::resolveShaderLibs(osgx::SKINNING_HOOK_LINEAR_BLEND)
+		)
+	});
+
+	auto pbrs = osgx::PBRScene::create(model, {
+		.environment = environment.get(),
+		.hooks = hooks,
+		.diagnostics = diagnostics
+	});
+
+	if(!pbrs.valid()) return 1;
 
 	const auto debug = debugModes.find(debugName);
 
@@ -471,7 +513,7 @@ int main(int argc, char** argv) {
 		return 1;
 	}
 
-	if(diagnostics) pis.debugMode->set(debug->second);
+	if(diagnostics) pbrs.debugMode->set(debug->second);
 
 	auto root = osgx::make_ref<osg::Group>();
 
@@ -507,10 +549,10 @@ int main(int argc, char** argv) {
 
 	if(diagnostics) viewer.addEventHandler(new osgx::LambdaKeyHandler(
 		{'1', '2', '3', 'n', 'N', 'r', 'R', 'a', 'A'},
-		[pis](const osgGA::GUIEventAdapter&, osgGA::GUIActionAdapter&, int key) {
+		[pbrs](const osgGA::GUIEventAdapter&, osgGA::GUIActionAdapter&, int key) {
 			switch(key) {
 				case '1': {
-					pis.debugMode->set(0);
+					pbrs.debugMode->set(0);
 
 					std::cout << "[diagnostic] combined" << std::endl;
 
@@ -518,7 +560,7 @@ int main(int argc, char** argv) {
 				}
 
 				case '2': {
-					pis.debugMode->set(1);
+					pbrs.debugMode->set(1);
 
 					std::cout << "[diagnostic] diffuse only" << std::endl;
 
@@ -526,7 +568,7 @@ int main(int argc, char** argv) {
 				}
 
 				case '3': {
-					pis.debugMode->set(2);
+					pbrs.debugMode->set(2);
 
 					std::cout << "[diagnostic] specular only" << std::endl;
 
@@ -536,8 +578,8 @@ int main(int argc, char** argv) {
 				case 'n': case 'N': {
 					int v = 0;
 
-					pis.disableNormalMap->get(v);
-					pis.disableNormalMap->set(1 - v);
+					pbrs.disableNormalMap->get(v);
+					pbrs.disableNormalMap->set(1 - v);
 
 					std::cout << "[diagnostic] normal map " << (v ? "on" : "off") << std::endl;
 
@@ -547,8 +589,8 @@ int main(int argc, char** argv) {
 				case 'r': case 'R': {
 					int v = 0;
 
-					pis.disableRoughnessMap->get(v);
-					pis.disableRoughnessMap->set(1 - v);
+					pbrs.disableRoughnessMap->get(v);
+					pbrs.disableRoughnessMap->set(1 - v);
 
 					std::cout << "[diagnostic] roughness map " << (v ? "on" : "off") << std::endl;
 
@@ -558,8 +600,8 @@ int main(int argc, char** argv) {
 				case 'a': case 'A': {
 					int v = 0;
 
-					pis.disableSpecularAA->get(v);
-					pis.disableSpecularAA->set(1 - v);
+					pbrs.disableSpecularAA->get(v);
+					pbrs.disableSpecularAA->set(1 - v);
 
 					std::cout << "[diagnostic] specular AA " << (v ? "on" : "off") << std::endl;
 
@@ -572,6 +614,45 @@ int main(int argc, char** argv) {
 			return true;
 		}
 	));
+
+	osgx::gltf::SimplePlayer player(model);
+
+	if(animation && !player) std::cout << "--animation: the model has no animations" << std::endl;
+
+#ifdef OSGX_IMGUI
+	if(animation && player) {
+		// Dear ImGui's single global context is not safe across several OSG draw threads.
+		viewer.setThreadingModel(osgViewer::Viewer::SingleThreaded);
+
+		auto* gui = new osgx::imgui::Widget(viewer);
+
+		gui->addSection("Animation", [&player](osg::RenderInfo&) {
+			for(std::size_t i = 0; i < player.getNumAnimations(); i++) {
+				std::string name = player.getAnimationName(i);
+
+				if(name.empty()) name = "animation " + std::to_string(i);
+
+				ImGui::PushID(static_cast<int>(i));
+
+				if(ImGui::Selectable(name.c_str(), player.getCurrentAnimationIndex() == i)) {
+					player.playAnimation(i);
+				}
+
+				ImGui::PopID();
+			}
+
+			if(ImGui::Button(player.getPlaying() ? "Pause" : "Play")) player.togglePlaying();
+
+			ImGui::SameLine();
+
+			if(ImGui::Button("Restart")) player.restart();
+		});
+	}
+#else
+	if(animation && player) {
+		std::cout << "--animation: built without ImGui, no animation panel" << std::endl;
+	}
+#endif
 
 	osg::ref_ptr<FramebufferPNG> capture;
 

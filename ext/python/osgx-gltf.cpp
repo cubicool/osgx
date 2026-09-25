@@ -8,10 +8,9 @@
 // pay their parse cost, even ones that never touch glTF at all.
 #ifdef OSGX_GLTF
 
-#include "osgx/gltf/PBRIBL.hpp"
+#include "osgx/gltf/Environment.hpp"
 #include "osgx/gltf/Reader.hpp"
 #include "osgx/gltf/SDF.hpp"
-#include "osgx/gltf/Shader.hpp"
 #include "osgx/gltf/SimplePlayer.hpp"
 #include "osgx/Shadow.hpp"
 
@@ -738,9 +737,8 @@ osg::ref_ptr<osg::Node> readNodeFile(
 
 namespace osgx_python {
 
-// osgx::gltf - glTF 2.0 loader plus its optional osgx::gltf::pbribl PBR/IBL adapter, merged from
-// the formerly-separate osgGLTF repo/Python module 2026-07-30. Nested exactly like the C++
-// namespace (osgx::gltf::shader, osgx::gltf::pbribl).
+// osgx::gltf - the glTF 2.0 loader, the osgx_sdf and osgx_environment manifest loaders, and the
+// Khronos environment rotation. Nested exactly like the C++ namespace (osgx::gltf::sdf).
 void bind_gltf(py::module_& m_gltf) {
 	auto m_gltf_sdf = m_gltf.def_submodule(
 		"sdf",
@@ -822,307 +820,16 @@ void bind_gltf(py::module_& m_gltf) {
 		)
 	;
 
-	auto m_gltf_shader = m_gltf.def_submodule(
-		"shader",
-		"Shader inputs and setup matching the scene state populated by the osgx::gltf loader"
-	);
+	m_gltf.attr("KHRONOS_ENVIRONMENT_ROTATION") = osgx::gltf::KHRONOS_ENVIRONMENT_ROTATION;
 
-	m_gltf_shader.attr("TANGENT_ATTRIBUTE") = osgx::gltf::shader::TANGENT_ATTRIBUTE;
-	m_gltf_shader.attr("JOINT_INDICES_ATTRIBUTE") = osgx::gltf::shader::JOINT_INDICES_ATTRIBUTE;
-	m_gltf_shader.attr("JOINT_WEIGHTS_ATTRIBUTE") = osgx::gltf::shader::JOINT_WEIGHTS_ATTRIBUTE;
-	m_gltf_shader.attr("TANGENT_ATTRIBUTE_NAME") = py::str(osgx::gltf::shader::TANGENT_ATTRIBUTE_NAME);
-	m_gltf_shader.attr("JOINT_INDICES_ATTRIBUTE_NAME") =
-		py::str(osgx::gltf::shader::JOINT_INDICES_ATTRIBUTE_NAME);
-	m_gltf_shader.attr("JOINT_WEIGHTS_ATTRIBUTE_NAME") =
-		py::str(osgx::gltf::shader::JOINT_WEIGHTS_ATTRIBUTE_NAME);
-	m_gltf_shader.attr("SKINNING_HOOK_IDENTITY") =
-		py::str(osgx::gltf::shader::SKINNING_HOOK_IDENTITY);
-	m_gltf_shader.attr("SKINNING_HOOK_LINEAR_BLEND") =
-		py::str(osgx::gltf::shader::SKINNING_HOOK_LINEAR_BLEND);
-
-	m_gltf_shader
-		.def(
-			"configureProgram", &osgx::gltf::shader::configureProgram, "program"_a,
-			"Binds the tangent/skinning generic vertex attribute locations (TANGENT_ATTRIBUTE, "
-			"JOINT_INDICES_ATTRIBUTE, JOINT_WEIGHTS_ATTRIBUTE) on `program`."
-		)
-	;
-
-	auto m_gltf_pbribl = m_gltf.def_submodule(
-		"pbribl",
-		"Optional osgx::gltf rendering using the generic osgx PBR and IBL facilities"
-	);
-
-	m_gltf_pbribl.def(
-		"registerShaderLibs", &osgx::gltf::pbribl::registerShaderLibs,
-		"Registers the pbribl-specific `#pragma osgx::gltf ...` GLSL catalog "
-		"(DEFERRED_LIGHTING_INPUTS, GET_GBUFFER) so resolveShaderLibs() can expand it. "
-		"Idempotent; called automatically on module import."
-	);
-	m_gltf_pbribl.def("resolveShaderLibs", [](const std::string& source) {
-		return osgx::gltf::pbribl::resolveShaderLibs(source);
-	}, "source"_a,
-		"Expands `#pragma osgx::gltf ...` (plus the generic osgx::pbr/ibl/shadow catalogs) in "
-		"`source`, returning the fully expanded GLSL. Required before wrapping a custom "
-		"Hook shader that uses the pbribl-specific catalog in an osg.Shader."
-	);
-
-	m_gltf_pbribl.attr("KHRONOS_ENVIRONMENT_ROTATION") = osgx::gltf::pbribl::KHRONOS_ENVIRONMENT_ROTATION;
-
-	m_gltf_pbribl.def(
+	m_gltf.def(
 		"loadEnvironment",
-		py::overload_cast<const std::string&>(&osgx::gltf::pbribl::loadEnvironment),
+		py::overload_cast<const std::string&>(&osgx::gltf::loadEnvironment),
 		"manifestPath"_a,
-		"Loads a pre-baked osgx_pbribl environment manifest as an osgx.Environment, rotated by "
+		"Loads a pre-baked osgx_environment manifest as an osgx.Environment, rotated by "
 		"KHRONOS_ENVIRONMENT_ROTATION. Returns None (and logs) on failure. Add its bakeRoot to the "
 		"scene graph if not None."
 	);
-
-	py::class_<osgx::gltf::pbribl::PBRIBLScene>(
-		m_gltf_pbribl,
-		"PBRIBLScene",
-		"The result of applying osgx::gltf::pbribl's renderer to a node - the node itself plus "
-		"live debug/intensity osg.Uniform refs a caller can tune after scene creation."
-	)
-		.def(py::init<>(), "Constructs an empty, invalid PBRIBLScene.")
-		.def_readwrite(
-			"node", &osgx::gltf::pbribl::PBRIBLScene::node,
-			"The node the renderer was applied to."
-		)
-		.def_readwrite(
-			"debugMode", &osgx::gltf::pbribl::PBRIBLScene::debugMode,
-			"Debug-visualization mode uniform (see the shader's debugMode switch)."
-		)
-		.def_readwrite(
-			"disableNormalMap", &osgx::gltf::pbribl::PBRIBLScene::disableNormalMap,
-			"When set, forces the shading normal to the geometric normal, ignoring any normal map."
-		)
-		.def_readwrite(
-			"disableRoughnessMap",
-			&osgx::gltf::pbribl::PBRIBLScene::disableRoughnessMap,
-			"When set, ignores the material's roughness texture, using a constant instead."
-		)
-		.def_readwrite(
-			"disableSpecularAA",
-			&osgx::gltf::pbribl::PBRIBLScene::disableSpecularAA,
-			"When set, disables geometric specular anti-aliasing (roughness widening from normal "
-			"map curvature)."
-		)
-		.def_readwrite(
-			"environment",
-			&osgx::gltf::pbribl::PBRIBLScene::environment,
-			"The osgx.Environment passed to create() and attached to `node`."
-		)
-		.def(
-			"valid", &osgx::gltf::pbribl::PBRIBLScene::valid,
-			"True once node is set."
-		)
-		.def_static(
-			"create",
-			// A lambda rather than &PBRIBLScene::create directly, purely to intercept `hooks`:
-			// pyx::unpack_one_or_many<T>() (pybind11x.hpp) accepts it as a dict of
-			// {osgx.Hook: osg.Shader} (preferred - matches osgSlug.Text.setHooks()'s own reasoning,
-			// see osgx-rtt.cpp's attach() for the fuller writeup), a list of (Hook, Shader) pairs,
-			// or a single bare (Hook, Shader) pair, instead of requiring the list form only.
-			[](
-				osg::Node* node,
-				osgx::Environment* environment,
-				bool diagnostics,
-				const osgx::ShadowMap* shadowMap,
-				py::object hooks
-			) {
-				return osgx::gltf::pbribl::PBRIBLScene::create(
-					node,
-					environment,
-					diagnostics,
-					shadowMap,
-					pyx::unpack_one_or_many<osgx::HookList::value_type>(hooks)
-				);
-			},
-			"node"_a,
-			"environment"_a,
-			"diagnostics"_a=false,
-			"shadowMap"_a=nullptr,
-			"hooks"_a=py::dict(),
-			"Apply osgx::gltf's optional osgx-powered PBR/IBL renderer to `node`, lit by "
-			"`environment` (an osgx.Environment; its intensities/rotation stay live-tunable). Pass "
-			"an osgx.shadow.ShadowMap to shadow the key/directional light (osgx::LightSet index "
-			"shadowMap.casterIndex); omit it for today's unshadowed behavior.\n\n"
-			"hooks: substitutes this Program's built-in shader for a slot - a dict of "
-			"{osgx.Hook: osg.Shader} (preferred), a list of (osgx.Hook, osg.Shader) pairs, or a "
-			"single bare (osgx.Hook, osg.Shader) pair are all accepted. This Program supports "
-			"osgx.Hook.Skinning (a VERTEX osg.Shader defining osgx_gltf_ApplySkin(vec4, vec3, vec3), "
-			"REPLACING the default identity passthrough - pass "
-			"osgx.gltf.shader.SKINNING_HOOK_LINEAR_BLEND, wrapped in "
-			"osgx.gltf.pbribl.resolveShaderLibs(), to enable standard glTF joint-matrix skinning) and "
-			"osgx.Hook.Tonemap (a FRAGMENT osg.Shader defining osgx_Tonemap(vec3), REPLACING the "
-			"built-in PBR Neutral curve). Each hook substitutes rather than adds - GLSL permits one "
-			"body per function, so attaching a second definition alongside the built-in is a link "
-			"error, not an override."
-		)
-	;
-
-	py::class_<osgx::gltf::pbribl::PBRIBLGBuffer>(
-		m_gltf_pbribl,
-		"PBRIBLGBuffer",
-		"Deferred-split geometry-pass output: material only (no lighting, not even emissive "
-		"add), ready to feed PBRIBLLightingScene.create()."
-	)
-		.def(py::init<>(), "Constructs an empty, invalid PBRIBLGBuffer.")
-		.def_readwrite(
-			"gbuffer", &osgx::gltf::pbribl::PBRIBLGBuffer::gbuffer,
-			"The underlying osgx.gbuffer.GBuffer this was built from."
-		)
-		.def_readwrite(
-			"albedoTexture", &osgx::gltf::pbribl::PBRIBLGBuffer::albedoTexture,
-			"rgb = albedo, a = ambient occlusion."
-		)
-		.def_readwrite(
-			"normalTexture", &osgx::gltf::pbribl::PBRIBLGBuffer::normalTexture,
-			"rgb = view-space shading normal (RGB16F)."
-		)
-		.def_readwrite(
-			"materialTexture", &osgx::gltf::pbribl::PBRIBLGBuffer::materialTexture,
-			"r = roughness, g = metallic."
-		)
-		.def_readwrite(
-			"emissiveTexture", &osgx::gltf::pbribl::PBRIBLGBuffer::emissiveTexture,
-			"rgb = emissive (HDR), a = alpha coverage."
-		)
-		.def_readwrite(
-			"positionTexture", &osgx::gltf::pbribl::PBRIBLGBuffer::positionTexture,
-			"rgb = view-space position (RGBA32F)."
-		)
-		.def_readwrite(
-			"depthTexture", &osgx::gltf::pbribl::PBRIBLGBuffer::depthTexture,
-			"The geometry pass's depth attachment."
-		)
-		.def(
-			"valid", &osgx::gltf::pbribl::PBRIBLGBuffer::valid,
-			"True once every G-buffer texture is set."
-		)
-		.def_static(
-			"create",
-			&osgx::gltf::pbribl::PBRIBLGBuffer::create,
-			"node"_a,
-			"width"_a,
-			"height"_a,
-			"Deferred-split geometry pass: writes material only (albedo/view-space normal/ORM/"
-			"emissive + depth) to a PBRIBLGBuffer, no lighting. Feed the result to "
-			"PBRIBLLightingScene.create()."
-		)
-	;
-
-	py::class_<osgx::gltf::pbribl::PBRIBLLightingPassOptions>(
-		m_gltf_pbribl,
-		"PBRIBLLightingPassOptions",
-		"Extra PBRIBLLightingScene.create() inputs, each an independent, optional seam rather "
-		"than one monolithic flag blob."
-	)
-		.def(py::init<>(), "Constructs the default options (tonemap on, everything else unset).")
-		.def_readwrite(
-			"tonemap", &osgx::gltf::pbribl::PBRIBLLightingPassOptions::tonemap,
-			"True applies the built-in (or hooks[osgx.Hook.Tonemap]-substituted) tonemap curve; "
-			"False leaves the result linear HDR, for a caller chaining further passes."
-		)
-		.def_property(
-			"hooks",
-			// A property (not def_readwrite) purely so the setter can go through
-			// pyx::unpack_one_or_many<T>() (pybind11x.hpp) - same reasoning, and same accepted
-			// shapes, as PBRIBLScene.create()'s own "hooks" parameter above: a dict of
-			// {osgx.Hook: osg.Shader} (preferred), a list of (Hook, Shader) pairs, or a single
-			// bare pair. The getter is unchanged - reading back a plain osgx.HookList (a list of
-			// pairs) is unambiguous, there's nothing to disambiguate on the way out.
-			[](const osgx::gltf::pbribl::PBRIBLLightingPassOptions& self) { return self.hooks; },
-			[](osgx::gltf::pbribl::PBRIBLLightingPassOptions& self, py::object hooks) {
-				self.hooks = pyx::unpack_one_or_many<osgx::HookList::value_type>(hooks);
-			},
-			"Substitutes this pass's built-in shader for a slot - a dict of "
-			"{osgx.Hook: osg.Shader} (preferred), a list of (osgx.Hook, osg.Shader) pairs, or a "
-			"single bare (osgx.Hook, osg.Shader) pair are all accepted. osgx.Hook.DeferredLighting "
-			"(the whole fragment main()), osgx.Hook.DirectLighting, and osgx.Hook.Tonemap are "
-			"supported. Each REPLACES its default, it does not add alongside it."
-		)
-		.def_readwrite(
-			"shadowMap", &osgx::gltf::pbribl::PBRIBLLightingPassOptions::shadowMap,
-			"Mirrors PBRIBLScene.create()'s own parameter exactly; None is unshadowed."
-		)
-		.def_readwrite(
-			"aoTexture", &osgx::gltf::pbribl::PBRIBLLightingPassOptions::aoTexture,
-			"Optional ambient-occlusion texture, multiplied into the ambient term. This pass does "
-			"not bake SSAO itself - feed osgx.gbuffer.SSAO.create()'s result here, or any other "
-			"occlusion source."
-		)
-		.def_readwrite(
-			"diagnostics", &osgx::gltf::pbribl::PBRIBLLightingPassOptions::diagnostics,
-			"Enables extra debug output on the lighting pass."
-		)
-	;
-
-	py::class_<osgx::gltf::pbribl::PBRIBLLightingScene>(
-		m_gltf_pbribl,
-		"PBRIBLLightingScene",
-		"The result of PBRIBLLightingScene.create(): a fullscreen-quad deferred lighting pass "
-		"reading a PBRIBLGBuffer, plus live uniforms a caller must keep in sync via update()."
-	)
-		.def(py::init<>(), "Constructs an empty, invalid PBRIBLLightingScene.")
-		.def_readwrite(
-			"node", &osgx::gltf::pbribl::PBRIBLLightingScene::node,
-			"The fullscreen-quad lighting-pass node (an ABSOLUTE_RF camera)."
-		)
-		.def_readwrite(
-			"environment",
-			&osgx::gltf::pbribl::PBRIBLLightingScene::environment,
-			"The osgx.Environment passed to create() and attached to the lighting pass; None if "
-			"none was given."
-		)
-		.def_readwrite(
-			"mainViewMatrix",
-			&osgx::gltf::pbribl::PBRIBLLightingScene::mainViewMatrix,
-			"mainCamera's view matrix, refreshed by update() - the quad's own camera is "
-			"ABSOLUTE_RF, so OSG's automatic osg_ViewMatrix resolves to identity, not mainCamera's "
-			"real matrix."
-		)
-		.def_readwrite(
-			"mainViewMatrixInverse",
-			&osgx::gltf::pbribl::PBRIBLLightingScene::mainViewMatrixInverse,
-			"mainCamera's inverse view matrix, refreshed by update() alongside mainViewMatrix."
-		)
-		.def(
-			"valid", &osgx::gltf::pbribl::PBRIBLLightingScene::valid,
-			"True once node is set."
-		)
-		.def_static(
-			"create",
-			&osgx::gltf::pbribl::PBRIBLLightingScene::create,
-			"gbuffer"_a,
-			"environment"_a,
-			"mainCamera"_a,
-			"options"_a=osgx::gltf::pbribl::PBRIBLLightingPassOptions{},
-			"Deferred-split lighting pass: a fullscreen quad reading `gbuffer` (position included, "
-			"not reconstructed from depth), rotating it into world space via `mainCamera`'s real "
-			"view matrix, running the same osgx_EvaluateEnvironment()/osgx_DirectLighting() logic "
-			"PBRIBLScene.create() does. options.hooks supports osgx.Hook.DeferredLighting (the "
-			"entire fullscreen lighting shader), osgx.Hook.DirectLighting (the "
-			"osgx_DirectLighting() definition), and osgx.Hook.Tonemap. Each replaces its default "
-			"shader object. Call .update() from a preDrawCallback on the "
-			"FIRST PRE_RENDER camera in the scene graph every frame to keep it in sync as mainCamera "
-			"moves - NOT from mainCamera's own preDrawCallback or from application code after "
-			"frame() returns, both of which hand this pass a stale matrix."
-		)
-		.def(
-			"update",
-			&osgx::gltf::pbribl::PBRIBLLightingScene::update,
-			"mainCamera"_a,
-			"Refreshes this scene's manually-maintained view-matrix uniforms from mainCamera's "
-			"current matrices. Call from a preDrawCallback on the FIRST PRE_RENDER camera in the "
-			"scene graph (by render order) every frame - every PRE_RENDER camera finishes drawing "
-			"before mainCamera's own preDrawCallback fires, so calling this from mainCamera's "
-			"callback (or from application code after viewer.frame() returns) hands the lighting "
-			"pass a one-frame-stale matrix relative to what the geometry pass just rendered with, "
-			"which shows up as artifacts that worsen while the camera is moving."
-		)
-	;
 
 	py::class_<osgx::gltf::SimplePlayer>(
 		m_gltf,

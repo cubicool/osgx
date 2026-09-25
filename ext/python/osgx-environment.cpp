@@ -41,7 +41,7 @@ void bind_environment(py::module_& m) {
 		"Environment",
 		"Distant image-based lighting as one osg.StateAttribute: a prefiltered specular cubemap, a "
 		"diffuse irradiance cubemap, and the split-sum BRDF LUT, plus orientation, roughness-to-mip "
-		"mapping, and intensities in one std430 buffer. Attaching it binds all of that and enables "
+		"mapping, and intensities in one std140 uniform block. Attaching it binds all of that and enables "
 		"seamless cubemap filtering. Read in GLSL via `#pragma osgx::environment ENVIRONMENT_INPUTS, "
 		"ENVIRONMENT_SAMPLE[, ENVIRONMENT_LIGHTING]`."
 	)

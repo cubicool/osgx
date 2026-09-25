@@ -128,17 +128,9 @@ def test_pick_id_allocator_instances_are_independent():
 	# A fresh allocator still starts at 1 -- state lives on the instance, not process-wide.
 	assert b.alloc() == 1
 
-def test_register_pick_shader_libs_expands_encode_pragma():
-	osgx.registerPickShaderLibs()
-
+def test_picking_catalog_expands_encode_pragma():
 	resolved = osgx.resolveShaderLibs("#pragma osgx::picking encode\n")
 
 	assert "osgx_encodePickID" in resolved
 	# Bit layout must match decodePickID()'s R/G/B/A convention.
 	assert "0xFFu" in resolved
-
-def test_register_pick_shader_libs_is_idempotent():
-	# registerShaderLibs() only throws on a genuine content conflict -- re-registering the
-	# same catalog (e.g. called from more than one module import) must be a safe no-op.
-	osgx.registerPickShaderLibs()
-	osgx.registerPickShaderLibs()

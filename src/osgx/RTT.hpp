@@ -22,7 +22,7 @@ namespace osgx {
 // RTT - a single render-to-texture osg::Camera.
 //
 // Every hand-rolled RTT camera in this codebase (GBuffer, Picking, Grid, GGXPrefilter,
-// CaptureCubeMap, LambertianBake, Shadow, Aura, gltf::PBRIBL) independently repeats the same four
+// CaptureCubeMap, LambertianBake, Shadow, Aura, PBRDeferred) independently repeats the same four
 // lines - PRE_RENDER, FRAME_BUFFER_OBJECT, ABSOLUTE_RF, and a viewport matching the target
 // texture's size - and forgetting ABSOLUTE_RF is a SILENT failure: without it, the camera's own
 // view matrix gets folded into the PARENT scene's bound computation (osg::Camera IS-A

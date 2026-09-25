@@ -22,9 +22,10 @@ idioms (concepts, ranges, spans, lambdas) and adds five optional, explicitly-inc
 - `osgx::platform` — X11/XRandr window helpers (`alwaysOnTop`, `listMonitors`, `moveWindow`), plus
   EGL- and GBM/DRM-backed `GraphicsWindow` factories for driving a window without GLX or X11 at
   all.
-- `osgx::gltf` — a glTF 2.0 loader (`osgdb_gltf`), plus an optional `osgx::gltf::pbribl` adapter that
-  renders it using the generic PBR/IBL/shadow facilities living flat in `osgx::`. Merged in from the
-  formerly separate `osgGLTF` repo.
+- `osgx::gltf` — a glTF 2.0 loader (`osgdb_gltf`) producing generic osgx data (`osgx::Material`,
+  skinning attributes), plus the `osgx_environment` manifest loader and the Khronos environment
+  rotation. glTF content renders through `osgx::PBRScene` (forward) or `osgx::PBRGBuffer`/
+  `PBRLightingPass` (deferred).
 - `osgx::ktx2` — a KTX2 texture reader/writer built on vendored KTX-Software, merged in alongside
   `osgx::gltf` for the same reason (several `osgx::ibl` bake tools need KTX2 output).
 
@@ -126,7 +127,7 @@ by concern:
 - `osgx/LambertianBake.hpp` — frame-driven GPU Lambertian/diffuse cubemap baking and readback
   (`LambertianBakeScene`, `LambertianCubeReadback`).
 - `osgx/GBuffer.hpp` — generic deferred G-buffer camera setup (`GBuffer::create()`), the primitive
-  `osgx::gltf::pbribl`'s deferred forward/deferred split builds on.
+  `osgx::PBRGBuffer` builds on.
 - `osgx.hpp` — convenience umbrella that includes all of the above (but not `osgx::debug` or
   `osgx::imgui` — see [Documentation](#documentation) below).
 - `osgx/Version.hpp` — `OSGX_VERSION_MAJOR`/`MINOR`/`PATCH` and the `OSGX_VERSION` string, generated
@@ -171,7 +172,7 @@ Per-subsystem deep dives live in [`docs/`](docs/):
 
 **glTF PBR/IBL parity**
 
-`osgx::gltf::pbribl`'s output compared against BabylonJS, same model and environment lighting. The
+`osgx::PBRScene`'s output for a glTF model compared against BabylonJS, same model and environment lighting. The
 goal isn't pixel-perfect matching, but a material response — reflections, roughness, HDR
 environment lighting — that reads as a modern glTF renderer should. See
 [docs/GLTF.md](docs/GLTF.md) for the full writeup.

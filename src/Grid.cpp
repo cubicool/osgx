@@ -1,3 +1,5 @@
+#include "ShaderLibs.hpp"
+
 #include "osgx/Grid.hpp"
 #include "osgx/Array.hpp"
 #include "osgx/Shader.hpp"
@@ -249,7 +251,6 @@ osg::Vec4 getVec4(const float* data, std::size_t offset) {
 }
 
 GridSettings::GridSettings() {
-	registerGridShaderLibs();
 	_initBuffer();
 }
 

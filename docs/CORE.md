@@ -56,8 +56,7 @@ osgViewer::Viewer viewer(arguments);
   free for the application's own buffers. Two pins sharing an index, or a pin naming an undeclared
   slot, throw.
 - Python: `lib = osgx.initialize()`, kept referenced until the viewer is done. The Python module's
-  subclass also owns `osgx.gltf`'s async-reader texture cache and registers the `osgx::gltf`
-  catalog.
+  subclass also owns `osgx.gltf`'s async-reader texture cache.
 
 ### Buffer blocks and samplers
 
@@ -85,7 +84,7 @@ layout under `std140` and `std430`; `std140` differs by rounding scalar and `vec
 and struct alignment, up to 16 bytes.
 
 In osgx: `Material`, `Environment`, `LightSet`, `GridSettings` and `SDF` are UBOs; the glTF joint
-palette (`osgx::gltf::joints`) and `PixelText`'s glyph indices (`osgx::pixelText`) are SSBOs.
+palette (`osgx::joints`) and `PixelText`'s glyph indices (`osgx::pixelText`) are SSBOs.
 
 Samplers: a sampler declared in more than one shader object of a Program takes its unit from a
 uniform, not `layout(binding)`. NVIDIA's linker rejects identical `layout(binding)` sampler
@@ -234,8 +233,8 @@ fovy/aspect reconstruction.
   its signature exactly (unlike `unprojectRay()`, which only ever exposes the near/far pair
   together). Motivated by the `osgx-aoe` example's Mode 2: reading a G-buffer depth sample back
   to the CPU at the cursor's pixel and turning that `(x, y, depth)` triple into a world point.
-- `registerProjectionShaderLibs()` — publishes two entries under the `osgx::projection`
-  shader-library catalog tag (not a C++ namespace — see [Namespaces](#namespaces)):
+- The `osgx::projection` shader-library catalog (a catalog tag, not a C++ namespace — see
+  [Namespaces](#namespaces); registered by `osgx::Library`) has two entries:
   - `#pragma osgx::projection UNPROJECT` → `vec3 osgx_Unproject(vec2 ndc, float depth)`, matching
     `unprojectRay()`'s own math exactly. Extracted from a GLSL function `examples/osgx-grid.cpp`
     and `examples/osgx-turntable.cpp` used to duplicate verbatim; both now use the shared
@@ -269,7 +268,7 @@ was already pure math with zero dependency on osgSlug's own state, a clean extra
 Mask-struct-specific dispatch/coverage/MSDF glue stayed behind in `osgSlug`, since that part IS
 genuinely osgSlug-specific.
 
-- `registerSDFShaderLibs()` — publishes ONE entry, `#pragma osgx::sdf SHAPES`, expanding to all
+- The `osgx::sdf` catalog's `#pragma osgx::sdf SHAPES` entry expands to all
   nine functions below at once (not individually-selectable tags the way `Projection.hpp`'s
   `UNPROJECT`/`DEPTH` are): a `Mask`-style runtime dispatch needs every shape function compiled
   in regardless of which one is actually active per-fragment, so no real caller would ever want
@@ -337,23 +336,47 @@ optional GLSL-function aliases, and `*` to expand an entire catalog in registrat
 worked example in the main [README](../README.md#osgxhpp--public-headers).
 
 This header also holds `Hook`/`HookList`/`applyHooks()` — the shader-object *substitution*
-counterpart to the text-splicing above. A Program-building call site (e.g. `osgx::gltf::pbribl::
-PBRIBLScene::create()`, see [GLTF.md](GLTF.md)) declares which `Hook` slots it supports as a
+counterpart to the text-splicing above. A Program-building call site (e.g.
+`osgx::PBRScene::create()`) declares which `Hook` slots it supports as a
 `defaults` `HookList`; a caller overrides only the slots it cares about via its own `HookList`,
 via one shared enum/mechanism instead of each call site growing its own `osg::Shader*
 someHook=nullptr` parameter. `applyHooks()` guarantees exactly one shader ends up attached per
 supported slot, always — never zero, never two (GLSL permits one body per function, so an override
 substitutes the built-in rather than competing with it).
 
+## `osgx/Skinning.hpp`
+
+Generic mesh vertex attributes and linear blend skinning, independent of any file format.
+
+- `TANGENT_ATTRIBUTE` (7), `JOINT_INDICES_ATTRIBUTE` (8), `JOINT_WEIGHTS_ATTRIBUTE` (9) and their
+  GLSL names `osg_Tangent`, `osgx_JointIndices`, `osgx_JointWeights`. `bindMeshAttributes(program)`
+  binds the names to the locations.
+- The `"osgx::skinning"` catalog: `SKINNING_DECL` (`struct osgx_SkinnedVertex` and the
+  `osgx_ApplySkin(position, normal, tangent)` prototype a vertex shader calls) and `JOINT_INPUTS`
+  (the joint attributes plus `mat4 osgx_jointMatrices[]`, a storage buffer at the `osgx::joints`
+  slot).
+- `SKINNING_HOOK_IDENTITY` and `SKINNING_HOOK_LINEAR_BLEND`: complete VERTEX sources defining
+  `osgx_ApplySkin()`, for the `Hook::Skinning` slot. Pass them through `resolveShaderLibs()`.
+
+- `Skin(joints, inverseBindMatrices)`: a skeleton's joint palette source. Palette entry `i` is
+  `inverseBind[i] * jointWorld[i] * inverse(meshWorld)`, read from the joint `MatrixTransform`s'
+  current matrices; whatever moves the joints is independent of the `Skin`. `attach(mesh)` gives
+  `mesh` its own palette (a `MatrixfArray` storage buffer bound at the `osgx::joints` slot) and a
+  `SkinPaletteCallback` that recomputes it every update traversal. One `Skin` can be attached to
+  several meshes.
+
+The glTF loader fills these attributes and builds one `Skin` per glTF skin, attached to each node
+that references it.
+
 ## `osgx/PBR.hpp`
 
 Reusable BRDF GLSL snippets and the `Material` `StateAttribute`, living flat in `osgx::` (not its
-own namespace — `registerPBRShaderLibs()`'s `"osgx::pbr"` catalog tag is a conventional shader-lib
+own namespace — the `"osgx::pbr"` catalog tag is a conventional shader-lib
 key only, unrelated to the C++ namespace; see [Namespaces](#namespaces) below).
 
 - GLSL snippets — GGX distribution, Schlick Fresnel, Smith geometry — plain function-body
-  snippets, concatenated into a consuming fragment shader via `registerPBRShaderLibs()`/
-  `resolveShaderLibs()`, not full shaders of their own.
+  snippets, concatenated into a consuming fragment shader via `resolveShaderLibs()`, not full
+  shaders of their own.
 - `Material` — a `StateAttribute` carrying PBR material factors (base color/roughness/metallic/
   occlusion/emissive factor/alpha mode + cutoff) and up to four texture maps, applied via ONE
   `std140` uniform block - no per-material uniforms, and no sampler uniforms to set.
@@ -372,8 +395,8 @@ includes both, same as always via the `osgx.hpp` umbrella.
 Typed direct lights (Point/Directional/Spot, plus a Sphere variant via nonzero `sourceRadius` -
 not a fourth type), and the per-light "direct" GLSL math (`DIRECT_LIGHT`/`DIRECT_LIGHTING_*`) that
 consumes them - a separate domain from `PBR.hpp`'s `Material`/BRDF snippets that happened to live
-in the same file by history, not by dependency. Registers under its own `"osgx::light"` catalog
-tag (`registerLightShaderLibs()`), distinct from `"osgx::pbr"` - a consumer using both writes two
+in the same file by history, not by dependency. Its snippets are the `"osgx::light"` catalog,
+distinct from `"osgx::pbr"` - a consumer using both writes two
 `#pragma` lines, e.g. `#pragma osgx::pbr MATERIAL_STRUCT` + `#pragma osgx::light DIRECT_LIGHTING_DECL`.
 
 Vocabulary note: this codebase calls the group "direct" lights, not glTF's "punctual" - glTF's
@@ -402,7 +425,7 @@ See `examples/osgx-lights.cpp` for one shaded object cycling through every light
 
 ## `osgx/IBL.hpp`, `CaptureCubeMap.hpp`, `GGXPrefilter.hpp`, `LambertianBake.hpp`
 
-Reusable IBL GLSL snippets (`registerIBLShaderLibs()`'s `"osgx::ibl"` catalog tag, same
+Reusable IBL GLSL snippets (the `"osgx::ibl"` catalog tag, same
 flat-namespace/conventional-tag split as `PBR.hpp` above) plus environment-map loading, BRDF-LUT
 baking, SH9/Lambertian diffuse irradiance, and cubemap readback helpers.
 
@@ -450,8 +473,8 @@ stateSet->setAttributeAndModes(env);
 ## `osgx/Shadow.hpp`
 
 Directional shadow mapping, shared by any `LightSet`-lit scene (nothing here is glTF/PBR-specific;
-`osgx::gltf::pbribl` consumes it as an optional parameter — see [GLTF.md](GLTF.md)). Lives flat in
-`osgx::` — `registerShadowShaderLibs()`'s `"osgx::shadow"` catalog tag is a conventional shader-lib
+`PBRSceneOptions`/`PBRLightingPassOptions` take it as an optional input). Lives flat in
+`osgx::` — the `"osgx::shadow"` catalog tag is a conventional shader-lib
 key only, same split as `PBR.hpp`/`IBL.hpp` above.
 
 Only ONE light — the key/directional light — is ever shadowed; point/spot-light shadows need a
@@ -491,16 +514,16 @@ below).
 
 ## `osgx/GBuffer.hpp`
 
-Generic deferred G-buffer camera setup — not PBR/glTF-specific. `osgx::gltf::pbribl`'s own deferred
-split (`PBRIBLGBuffer::create()`, see [GLTF.md](GLTF.md)) is built on top of this, not a separate
-mechanism, and a non-PBR deferred shader can use it directly too. Lives flat in `osgx::`, same
+Generic deferred G-buffer camera setup — not PBR-specific. `PBRGBuffer::create()` (see
+[`osgx/PBRDeferred.hpp`](#osgxpbrdeferredhpp)) is built on top of this, and a non-PBR deferred
+shader can use it directly too. Lives flat in `osgx::`, same
 reasoning as `Shadow.hpp` above.
 
 - `AttachmentFormat` — texture internal-format presets for one G-buffer color attachment: `RGBA8`
   (ordinary LDR color/albedo), `RGB16F` (signed `[-1,1]` data, e.g. a view-space normal, needing no
   encode/decode remap), `RGBA16F` (HDR color, e.g. emissive, which can exceed `1.0` before
   tonemapping), `RGBA32F` (real eye-space position, written straight from the vertex shader rather
-  than reconstructed from depth — see `PBRIBLGBuffer::positionTexture`'s note in GLTF.md for why
+  than reconstructed from depth — see `PBRGBuffer::positionTexture` below for why
   that reconstruction is unreliable across nested `PRE_RENDER` cameras).
 - `GBuffer` — `camera` is the `PRE_RENDER` FBO pass that writes `colorTextures` (indexed exactly as
   passed to `create()`) plus `depthTexture`. The caller still owns adding `camera` to the scene
@@ -520,32 +543,98 @@ reasoning as `Shadow.hpp` above.
   implementation: a 16-sample hemisphere kernel + a small tiled tangent-space noise-rotation
   texture, a raw RTT pass, then a small box-blur RTT pass denoising it. `radius`/`bias` are live
   `osg::Uniform`s — set them at any time, no pass rebuild needed. `aoTexture` (the blurred,
-  single-channel `GL_R8` result) plugs directly into `PBRIBLLightingPassOptions::aoTexture`
-  (GLTF.md) or any other consumer wanting a generic occlusion mask.
+  single-channel `GL_R8` result) plugs directly into `PBRLightingPassOptions::aoTexture` or any
+  other consumer wanting a generic occlusion mask.
   - `SSAO::create(normalTexture, positionTexture, projectionMatrix, width, height, radius=0.5, bias=0.02)`
     — `projectionMatrix` is a caller-owned uniform this pass reads every draw; keep it refreshed
-    from the same per-frame callback that updates `PBRIBLLightingScene`'s own view-matrix uniforms
-    (see that type's own doc comment, GLTF.md, for why it must be a `PRE_RENDER` `preDrawCallback`).
+    from the same per-frame callback that updates `PBRLightingPass`'s own view-matrix uniforms
+    (see `PBRLightingPass::update()` below for why it must be a `PRE_RENDER` `preDrawCallback`).
     `radius`/`bias` are scale-dependent (a sane radius is a small fraction of the scene's own
     bounding radius, not a fixed constant) — compute them from the scene being rendered.
 
-See `examples/osgx-gbuffer.cpp` for the full deferred pipeline (`PBRIBLGBuffer` +
-`PBRIBLLightingScene`, both built on this), live SSAO wired into `PBRIBLLightingPassOptions::aoTexture`
+See `examples/osgx-gbuffer.cpp` for the full deferred pipeline (`PBRGBuffer` +
+`PBRLightingPass`, both built on this), live SSAO wired into `PBRLightingPassOptions::aoTexture`
 with live ImGui radius/bias sliders, and a channel-by-channel G-buffer visualizer (press `0`-`6`,
 `6` being SSAO's own output). Python: `osgx.GBuffer`/`osgx.SSAO`.
+
+## `osgx/PBRScene.hpp`
+
+Forward PBR for `osgx::Material` geometry: one Program (`PBR_VERTEX_SHADER` plus a fragment shader)
+shading each material by whichever light sources are present.
+
+- `PBRScene::create(node, options={})` attaches the Program (`ON|OVERRIDE`) to `node`'s StateSet.
+  `PBRSceneOptions`, every field optional:
+  - `environment` — an `osgx::Environment` (image-based light), attached to the node. Without one
+    the environment term is zero and surfaces are lit by the `osgx::LightSet` direct lights
+    inherited from the scene graph and their own emissive.
+  - `shadowMap` — shadows the key light (`DIRECT_LIGHTING_HOOK_SHADOWED`; depth texture at the
+    `osgx::shadowMap` slot).
+  - `hooks` — substitutes `Hook::Skinning` (`osgx_ApplySkin()`, e.g. `SKINNING_HOOK_LINEAR_BLEND`)
+    and `Hook::Tonemap` (`osgx_Tonemap()`).
+  - `diagnostics` — adds the `debugMode`/`disableNormalMap`/`disableRoughnessMap`/
+    `disableSpecularAA` uniforms returned in `PBRScene`.
+- Imported StateSet defines: `OSGX_PBR_ENVIRONMENT` (set when an environment is given),
+  `OSGX_PBR_DIAGNOSTICS`.
+
+The Khronos glTF-Sample-Viewer setup is `osgx::gltf::loadEnvironment()` plus this (see
+[GLTF.md](GLTF.md#rendering-gltf-content)). Python: `osgx.PBRScene.create(node,
+osgx.PBRSceneOptions(environment=env, ...))`.
+
+## `osgx/PBRDeferred.hpp`
+
+Deferred PBR for `osgx::Material` geometry: a geometry pass writing material-only G-buffer
+textures, then a fullscreen lighting pass running the same `osgx_EvaluateEnvironment()`/
+`osgx_DirectLighting()` logic as a forward PBR shader, against those textures.
+
+- `PBRGBuffer::create(node, width, height)` — `node` becomes the child of a `PRE_RENDER` geometry
+  pass (built on `GBuffer`) using `PBR_VERTEX_SHADER` (`PBR.hpp`). Textures: `albedoTexture`
+  (rgb albedo, a ao), `normalTexture` (view-space normal, RGB16F), `materialTexture` (r roughness,
+  g metallic), `emissiveTexture` (rgb HDR emissive, a alpha coverage), `positionTexture`
+  (view-space position, RGBA32F), `depthTexture`. Position is written straight from the vertex
+  shader, not reconstructed from depth: each nested `PRE_RENDER` camera clamps its own private
+  copy of the projection during cull and never writes it back, so a projection read off the main
+  camera does not reliably match the one the geometry pass used.
+- `PBRLightingPass::create(gbuffer, mainCamera, options={})` — a `POST_RENDER` fullscreen-quad
+  pass. `PBRLightingPassOptions`, every field optional:
+  - `environment` — same contract as `PBRSceneOptions::environment`; without one the built-in
+    shader's environment term is zero.
+  - `tonemap` — `false` leaves the output linear HDR (no curve, no gamma) for further passes.
+  - `hooks` — substitutes `Hook::Tonemap` (the `osgx_Tonemap()` definition),
+    `Hook::DirectLighting` (the `osgx_DirectLighting()` definition) or `Hook::DeferredLighting`
+    (the whole fragment `main()`).
+  - `shadowMap` — shadows the key light (`DIRECT_LIGHTING_HOOK_SHADOWED`).
+  - `aoTexture` — multiplied into the ambient term (e.g. `SSAO`'s output).
+  - `diagnostics`.
+- **Call `PBRLightingPass::update(mainCamera)` from a `preDrawCallback` on the first `PRE_RENDER`
+  camera in the scene graph** (by render order) — not from `mainCamera`'s own `preDrawCallback`,
+  and not after `viewer.frame()` returns. Every `PRE_RENDER` camera draws before `mainCamera`'s
+  `preDrawCallback` fires, so either alternative hands the pass a stale view matrix — visible as
+  artifacts that worsen while the camera moves.
+- The `osgx::gbuffer` catalog, for a `Hook::DeferredLighting` shader: `DEFERRED_LIGHTING_INPUTS`
+  (`vUV`, the samplers `gAlbedo`/`gNormal`/`gMaterial`/`gEmissive`/`gPosition`,
+  `osgx_mainViewMatrix`/`osgx_mainViewMatrixInverse`, `out vec4 fragColor`) and `GET_GBUFFER`
+  (`struct osgx_GBuffer` and `osgx_GetGBuffer(uv)`). Pass the shader source through
+  `resolveShaderLibs()`. The G-buffer textures bind at the `osgx::gbuffer.*` texture-unit slots.
+- StateSet defines a custom lighting shader can import (`#pragma import_defines`): `OSGX_PBR_AO`
+  (`aoTexture` set, sampled as `aoTex`), `OSGX_PBR_NO_TONEMAP`, `OSGX_PBR_DIAGNOSTICS`,
+  `OSGX_PBR_ENVIRONMENT`.
+
+See `examples/osgx-gbuffer.cpp` for the full wiring (shadow camera, SSAO, and a per-channel
+G-buffer visualizer) and `examples/osgx-gbuffer-comic.cpp`/`-blueprint.cpp`/`-edgewear.cpp` for
+`Hook::DeferredLighting` shaders. Python: `osgx.PBRGBuffer`, `osgx.PBRLightingPass`,
+`osgx.PBRLightingPassOptions`.
 
 ## Namespaces
 
 `osgx::pbr`, `osgx::ibl`, `osgx::shadow`, and `osgx::gbuffer` used to exist as separate C++
 namespaces; as of 2026-08-20 every symbol they held lives directly under `osgx::`. The rule: a
 namespace exists only for a genuinely separate opt-in subsystem — its own `#include` outside the
-`osgx.hpp` umbrella AND its own CMake link target (exactly `debug`/`imgui`/`platform`/`gltf` (+ its
-own `gltf::pbribl` sub-target)/`ktx2`). Everything that compiles unconditionally into `libosgx`
+`osgx.hpp` umbrella AND its own CMake link target (exactly `debug`/`imgui`/`platform`/`gltf`/
+`ktx2`). Everything that compiles unconditionally into `libosgx`
 stays flat, no matter how "topic-shaped" it feels — this is also why `picking`/`grid`/
 `manipulators`/`shadow`/`gbuffer` never got their own namespace. The `"osgx::pbr"`/`"osgx::ibl"`/
-`"osgx::shadow"` strings passed to `registerPBRShaderLibs()`/`registerIBLShaderLibs()`/
-`registerShadowShaderLibs()` are shader-lib registry catalog tags only — conventional, `#pragma`-
-addressable names, unrelated to the (now-flat) C++ namespace.
+`"osgx::shadow"` catalog names are shader-lib registry tags only — conventional, `#pragma`-
+addressable names, unrelated to the C++ namespace.
 
 ## `osgx/Version.hpp`
 

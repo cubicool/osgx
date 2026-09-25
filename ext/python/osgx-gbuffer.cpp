@@ -108,7 +108,7 @@ void bind_gbuffer(py::module_& m) {
 			"Generic hemisphere-kernel SSAO: reads any G-buffer's view-space normal+position "
 			"textures directly, needs nothing else. `projectionMatrix` is a caller-owned "
 			"osg.Uniform this pass reads every draw - keep it refreshed from the same per-frame "
-			"callback that updates PBRIBLLightingScene's own view-matrix uniforms (see that type's "
+			"callback that updates PBRLightingPass's own view-matrix uniforms (see that type's "
 			"own doc comment for why it must be a PRE_RENDER preDrawCallback). `radius`/`bias` seed "
 			"the returned live osg.Uniform-backed `radius`/`bias` attributes - set() them at any "
 			"time, no pass rebuild needed."

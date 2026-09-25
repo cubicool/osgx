@@ -1,7 +1,7 @@
-// osgx-pbribl - bake a self-contained osgx_pbribl environment bundle.
+// osgx-environment - bake a self-contained osgx_environment bundle.
 //
 // Usage:
-//   osgx-pbribl <input.hdr> <output-basename>
+//   osgx-environment <input.hdr> <output-basename>
 //       [--prefilter-size N] [--samples N] [--diffuse-cube-size N]
 //       [--diffuse-samples N] [--lut-size N] [--software]
 //
@@ -15,7 +15,7 @@
 #include "osgx/Library.hpp"
 #include "osgx/Warnings.hpp"
 
-#ifdef OSGX_PBRIBL_SOFTWARE_AVAILABLE
+#ifdef OSGX_ENVIRONMENT_SOFTWARE_AVAILABLE
 # include "osgx/ktx2/KTX2.hpp"
 #endif
 
@@ -75,7 +75,7 @@ bool writeManifest(
 	std::ofstream file(path);
 
 	if(!file) {
-		OSG_WARN << "osgx-pbribl: failed to open " << path << std::endl;
+		OSG_WARN << "osgx-environment: failed to open " << path << std::endl;
 
 		return false;
 	}
@@ -83,10 +83,10 @@ bool writeManifest(
 	// Resource URIs are relative to this manifest, even when the requested basename includes a
 	// directory.  The loader resolves them against manifest.parent_path().
 	file << "{" << std::endl
-		<< "  \"asset\": {\"version\": \"2.0\", \"generator\": \"osgx-pbribl\"}," << std::endl
-		<< "  \"extensionsUsed\": [\"osgx_pbribl\"]," << std::endl
+		<< "  \"asset\": {\"version\": \"2.0\", \"generator\": \"osgx-environment\"}," << std::endl
+		<< "  \"extensionsUsed\": [\"osgx_environment\"]," << std::endl
 		<< "  \"extensions\": {" << std::endl
-		<< "    \"osgx_pbribl\": {" << std::endl
+		<< "    \"osgx_environment\": {" << std::endl
 		<< "      \"environments\": [{" << std::endl
 		<< "        \"specular\": {\"uri\": \"" << outputs.specular.filename().string() << "\"}," << std::endl
 		<< "        \"diffuse\": {\"uri\": \"" << outputs.diffuse.filename().string() << "\"}," << std::endl
@@ -97,12 +97,12 @@ bool writeManifest(
 		<< "}" << std::endl;
 
 	if(!file) {
-		OSG_WARN << "osgx-pbribl: failed to write " << path << std::endl;
+		OSG_WARN << "osgx-environment: failed to write " << path << std::endl;
 
 		return false;
 	}
 
-	OSG_NOTICE << "osgx-pbribl: wrote " << path << std::endl;
+	OSG_NOTICE << "osgx-environment: wrote " << path << std::endl;
 
 	return true;
 }
@@ -116,7 +116,7 @@ void usage(const char* program) {
 
 }
 
-#ifdef OSGX_PBRIBL_SOFTWARE_AVAILABLE
+#ifdef OSGX_ENVIRONMENT_SOFTWARE_AVAILABLE
 
 namespace {
 
@@ -439,7 +439,7 @@ bool bakeSoftwareIBL(
 	const EquirectangularImage input(*equirectangularHDR);
 
 	if(!input.valid()) {
-		OSG_WARN << "osgx-pbribl: --software requires an RGB/RGBA float HDR image" << std::endl;
+		OSG_WARN << "osgx-environment: --software requires an RGB/RGBA float HDR image" << std::endl;
 
 		return false;
 	}
@@ -447,9 +447,9 @@ bool bakeSoftwareIBL(
 	const int numMips = mipCountForSize(specularOptions.prefilterSize);
 	std::vector<CubeMip> specular(static_cast<std::size_t>(numMips));
 
-	OSG_NOTICE << "osgx-pbribl: CPU software bake" << std::endl;
+	OSG_NOTICE << "osgx-environment: CPU software bake" << std::endl;
 #ifdef _OPENMP
-	OSG_NOTICE << "osgx-pbribl: OpenMP threads: " << omp_get_max_threads() << std::endl;
+	OSG_NOTICE << "osgx-environment: OpenMP threads: " << omp_get_max_threads() << std::endl;
 #endif
 
 	for(int mip = 0; mip < numMips; mip++) {
@@ -499,19 +499,19 @@ bool bakeSoftwareIBL(
 	}
 
 	if(!writeCubeMap(specular, specularOptions.prefilterSize, specularPath)) {
-		OSG_WARN << "osgx-pbribl: failed to write " << specularPath << std::endl;
+		OSG_WARN << "osgx-environment: failed to write " << specularPath << std::endl;
 
 		return false;
 	}
 
 	if(!writeCubeMap(diffuse, diffuseOptions.cubeSize, diffusePath)) {
-		OSG_WARN << "osgx-pbribl: failed to write " << diffusePath << std::endl;
+		OSG_WARN << "osgx-environment: failed to write " << diffusePath << std::endl;
 
 		return false;
 	}
 
-	OSG_NOTICE << "osgx-pbribl: wrote " << specularPath << std::endl;
-	OSG_NOTICE << "osgx-pbribl: wrote " << diffusePath << std::endl;
+	OSG_NOTICE << "osgx-environment: wrote " << specularPath << std::endl;
+	OSG_NOTICE << "osgx-environment: wrote " << diffusePath << std::endl;
 
 	return true;
 }
@@ -546,7 +546,7 @@ int main(int argc, char* argv[]) {
 		else if(argument == "--lut-size" && i + 1 < argc) lutSize = std::atoi(argv[++i]);
 		else if(argument == "--software") software = true;
 		else {
-			OSG_WARN << "osgx-pbribl: unknown or incomplete option " << argument << std::endl;
+			OSG_WARN << "osgx-environment: unknown or incomplete option " << argument << std::endl;
 			usage(argv[0]);
 
 			return 1;
@@ -555,7 +555,7 @@ int main(int argc, char* argv[]) {
 
 	if(specularOptions.prefilterSize < 1 || specularOptions.sampleCount < 1 ||
 		diffuseOptions.cubeSize < 1 || diffuseOptions.sampleCount < 1 || lutSize < 1) {
-		OSG_WARN << "osgx-pbribl: all bake sizes and sample counts must be positive" << std::endl;
+		OSG_WARN << "osgx-environment: all bake sizes and sample counts must be positive" << std::endl;
 
 		return 1;
 	}
@@ -564,13 +564,13 @@ int main(int argc, char* argv[]) {
 	auto image = osgDB::readRefImageFile(inputPath);
 
 	if(!image) {
-		OSG_WARN << "osgx-pbribl: failed to load HDR image " << inputPath << std::endl;
+		OSG_WARN << "osgx-environment: failed to load HDR image " << inputPath << std::endl;
 
 		return 1;
 	}
 
 	if(software) {
-#ifdef OSGX_PBRIBL_SOFTWARE_AVAILABLE
+#ifdef OSGX_ENVIRONMENT_SOFTWARE_AVAILABLE
 		if(!bakeSoftwareIBL(
 			image,
 			specularOptions,
@@ -581,7 +581,7 @@ int main(int argc, char* argv[]) {
 
 		return writeManifest(outputs.manifest, outputs, lutSize) ? 0 : 1;
 #else
-		OSG_WARN << "osgx-pbribl: --software requires OSGX_BUILD_KTX2=ON" << std::endl;
+		OSG_WARN << "osgx-environment: --software requires OSGX_BUILD_KTX2=ON" << std::endl;
 
 		return 1;
 #endif
@@ -591,7 +591,7 @@ int main(int argc, char* argv[]) {
 	auto diffuse = osgx::LambertianBakeScene::create(image, diffuseOptions);
 
 	if(!specular.root || !diffuse.root) {
-		OSG_WARN << "osgx-pbribl: failed to create cubemap bake passes" << std::endl;
+		OSG_WARN << "osgx-environment: failed to create cubemap bake passes" << std::endl;
 
 		return 1;
 	}
@@ -622,7 +622,7 @@ int main(int argc, char* argv[]) {
 	}
 
 	if(!specular.readback->isDone() || !diffuseReadback->isDone()) {
-		OSG_WARN << "osgx-pbribl: one or more cubemap readbacks did not complete" << std::endl;
+		OSG_WARN << "osgx-environment: one or more cubemap readbacks did not complete" << std::endl;
 
 		return 1;
 	}
@@ -631,19 +631,19 @@ int main(int argc, char* argv[]) {
 	auto diffuseResult = diffuseReadback->finish();
 
 	if(!specularResult || !osgDB::writeObjectFile(*specularResult, outputs.specular.string())) {
-		OSG_WARN << "osgx-pbribl: failed to write " << outputs.specular << std::endl;
+		OSG_WARN << "osgx-environment: failed to write " << outputs.specular << std::endl;
 
 		return 1;
 	}
 
 	if(!diffuseResult || !osgDB::writeObjectFile(*diffuseResult, outputs.diffuse.string())) {
-		OSG_WARN << "osgx-pbribl: failed to write " << outputs.diffuse << std::endl;
+		OSG_WARN << "osgx-environment: failed to write " << outputs.diffuse << std::endl;
 
 		return 1;
 	}
 
-	OSG_NOTICE << "osgx-pbribl: wrote " << outputs.specular << std::endl;
-	OSG_NOTICE << "osgx-pbribl: wrote " << outputs.diffuse << std::endl;
+	OSG_NOTICE << "osgx-environment: wrote " << outputs.specular << std::endl;
+	OSG_NOTICE << "osgx-environment: wrote " << outputs.diffuse << std::endl;
 
 	return writeManifest(outputs.manifest, outputs, lutSize) ? 0 : 1;
 }

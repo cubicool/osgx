@@ -59,7 +59,8 @@ void installAnimationCallback(
 //
 // For a skinned/rigged model, this callback only ever moves the JOINT nodes' own transforms --
 // the mesh deformation those transforms produce is a second, entirely separate mechanism; see
-// Skin.hpp's SkinPaletteCallback, which has no dependency on this class or on SimplePlayer either.
+// osgx::SkinPaletteCallback (osgx/Skinning.hpp), which has no dependency on this class or on
+// SimplePlayer either.
 class AnimationCallback:
 	public osg::NodeCallback,
 	public SimplePlayerControl {

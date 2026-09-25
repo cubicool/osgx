@@ -23,9 +23,10 @@ namespace osgx::gltf::sdf {
 //
 // The loader half of osgx's SDF support: it only ever CONSUMES baked SDF/MSDF data (osgx never
 // generates it) and knows nothing about whoever produced it - slughorn's `bin/slughorn sdf` writes
-// exactly this schema, but so could an msdfgen/msdf-atlas-gen post-process. Like `osgx_pbribl`, the
-// same schema is meant to work both as a STANDALONE manifest (a glTF-shaped file with no real scene
-// data - what load() reads today) and embedded in a real asset (not decoded yet; see Json.hpp).
+// exactly this schema, but so could an msdfgen/msdf-atlas-gen post-process. Like
+// `osgx_environment`, the same schema is meant to work both as a STANDALONE manifest (a glTF-shaped
+// file with no real scene data - what load() reads today) and embedded in a real asset (not
+// decoded yet; see Json.hpp).
 //
 //   {
 //     "asset": {"version": "2.0", "generator": "slughorn"},
@@ -49,8 +50,8 @@ namespace osgx::gltf::sdf {
 //     }
 //   }
 //
-// - `data` is an array (like `osgx_pbribl`'s `environments`), so an asset can carry an SDF sheet and
-//   an MSDF sheet together.
+// - `data` is an array (like `osgx_environment`'s `environments`), so an asset can carry an SDF
+//   sheet and an MSDF sheet together.
 // - `rect` follows glTF's own convention - origin at the TOP-left of the image as it is stored/
 //   displayed, y growing downward - and the image must be stored UPRIGHT (content as displayed).
 //   The loader turns it into OSG's texture space (V = 0 at the bottom, since OSG flips images on

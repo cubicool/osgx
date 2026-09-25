@@ -76,9 +76,8 @@ public:
 			}
 		}
 
-		resolveSkinJointNodes(_model, _nodeTransforms, _skins);
 		_installAnimationCallback(root);
-		installSkinPaletteCallbacks(_skins);
+		attachSkins(_nodeTransforms, _skins);
 
 		root->getOrCreateStateSet()->setAttributeAndModes(
 			new osg::CullFace(osg::CullFace::BACK),
@@ -95,7 +94,7 @@ private:
 	MaterialBuilder _materialBuilder;
 	Reader::ProgressCallback _progress;
 	std::vector<osg::ref_ptr<osg::Array>> _arrays;
-	std::vector<osg::ref_ptr<Skin>> _skins;
+	std::vector<osg::ref_ptr<SkinData>> _skins;
 	MeshBuilder _meshBuilder;
 	std::vector<osg::observer_ptr<osg::MatrixTransform>> _nodeTransforms;
 	std::uint64_t _nodesBuilt = 0;

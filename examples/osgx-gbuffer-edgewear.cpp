@@ -39,7 +39,8 @@
 #include "osgx/Library.hpp"
 #include "osgx/PBR.hpp"
 #include "osgx/Shapes.hpp"
-#include "osgx/gltf/PBRIBL.hpp"
+#include "osgx/gltf/Environment.hpp"
+#include "osgx/PBRDeferred.hpp"
 
 OSGX_DISABLE_WARNINGS
 
@@ -71,11 +72,11 @@ void attachFlatMaterial(osg::Geometry* geometry) {
 	geometry->getOrCreateStateSet()->setAttributeAndModes(material);
 }
 
-// PBRIBLLightingScene owns the view-space G-buffer contract even when our DeferredLighting hook
+// PBRLightingPass owns the view-space G-buffer contract even when our DeferredLighting hook
 // supplies all visible shading. Refresh its matrices immediately before the G-buffer is drawn.
 class UpdateLightingPassCallback: public osg::Camera::DrawCallback {
 public:
-	UpdateLightingPassCallback(osgx::gltf::pbribl::PBRIBLLightingScene* scene, osg::Camera* camera):
+	UpdateLightingPassCallback(osgx::PBRLightingPass* scene, osg::Camera* camera):
 		_scene(scene), _camera(camera) {}
 
 	void operator()(osg::RenderInfo&) const override {
@@ -83,13 +84,13 @@ public:
 	}
 
 private:
-	osgx::gltf::pbribl::PBRIBLLightingScene* _scene;
+	osgx::PBRLightingPass* _scene;
 	osg::observer_ptr<osg::Camera> _camera;
 };
 
 constexpr const char EDGEWEAR_FRAGMENT_SHADER[] = R"GLSL(
 #version 460 core
-#pragma osgx::gltf DEFERRED_LIGHTING_INPUTS, GET_GBUFFER
+#pragma osgx::gbuffer DEFERRED_LIGHTING_INPUTS, GET_GBUFFER
 
 uniform int viewMode;
 uniform float edgeWidthPixels;
@@ -286,7 +287,7 @@ int main() {
 
 	model->addDrawable(shape);
 
-	auto gbuffer = osgx::gltf::pbribl::PBRIBLGBuffer::create(model, WIDTH, HEIGHT);
+	auto gbuffer = osgx::PBRGBuffer::create(model, WIDTH, HEIGHT);
 
 	if(!gbuffer.valid()) {
 		std::cerr << "Failed to build the G-buffer geometry pass" << std::endl;
@@ -294,19 +295,17 @@ int main() {
 		return 1;
 	}
 
-	osgx::gltf::pbribl::PBRIBLLightingPassOptions lightingOptions;
+	osgx::PBRLightingPassOptions lightingOptions;
 
 	lightingOptions.hooks = {{
 		osgx::Hook::DeferredLighting,
 		new osg::Shader(
 			osg::Shader::FRAGMENT,
-			osgx::gltf::pbribl::resolveShaderLibs(EDGEWEAR_FRAGMENT_SHADER)
+			osgx::resolveShaderLibs(EDGEWEAR_FRAGMENT_SHADER)
 		)
 	}};
 
-	auto lighting = osgx::gltf::pbribl::PBRIBLLightingScene::create(
-		gbuffer, nullptr, viewer.getCamera(), lightingOptions
-	);
+	auto lighting = osgx::PBRLightingPass::create(gbuffer, viewer.getCamera(), lightingOptions);
 
 	if(!lighting.valid()) {
 		std::cerr << "Failed to build the edgewear lighting pass" << std::endl;
