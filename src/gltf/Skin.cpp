@@ -11,6 +11,8 @@ OSGX_ENABLE_WARNINGS
 
 #include "Log.hpp"
 
+#include "osgx/Library.hpp"
+
 OSGX_DISABLE_WARNINGS
 
 #include <osg/BufferIndexBinding>
@@ -109,10 +111,13 @@ bool Skin::updatePalette(osg::Node* skinnedNode) {
 	return anyUpdated;
 }
 
-SkinPaletteCallback::SkinPaletteCallback(Skin* skin):
-_skin(skin) {}
+SkinPaletteCallback::SkinPaletteCallback(Skin* skin, osg::ShaderStorageBufferBinding* binding):
+_skin(skin),
+_binding(binding) {}
 
 void SkinPaletteCallback::operator()(osg::Node* node, osg::NodeVisitor* nv) {
+	osgx::resolveBinding(_bindingResolved, _binding.get(), "osgx::gltf::joints");
+
 	if(_skin.valid() && _skin->updatePalette(node) && !_loggedOnce) {
 		_loggedOnce = true;
 
@@ -120,7 +125,7 @@ void SkinPaletteCallback::operator()(osg::Node* node, osg::NodeVisitor* nv) {
 			<< "updated skin[" << _skin->index << "] palette "
 			<< _skin->paletteMatrices->size()
 			<< " matrix/matrices at buffer binding "
-			<< shader::JOINT_MATRICES_BINDING << std::endl
+			<< _binding->getIndex() << std::endl
 		;
 	}
 
@@ -287,23 +292,18 @@ void installSkinPaletteCallbacks(const std::vector<osg::ref_ptr<Skin>>& skins) {
 
 			if(!skinnedNode) continue;
 
-			skinnedNode->addUpdateCallback(new SkinPaletteCallback(skin));
-			skinnedNode->getOrCreateStateSet()->setAttributeAndModes(
-				new osg::ShaderStorageBufferBinding(
-					shader::JOINT_MATRICES_BINDING,
-					skin->paletteMatrices,
-					0,
-					totalSize
-				),
-				osg::StateAttribute::ON
-			);
+			// Index 0 until SkinPaletteCallback resolves the "osgx::gltf::joints" slot.
+			auto* binding = new osg::ShaderStorageBufferBinding(0, skin->paletteMatrices, 0, totalSize);
+
+			skinnedNode->addUpdateCallback(new SkinPaletteCallback(skin, binding));
+			skinnedNode->getOrCreateStateSet()->setAttributeAndModes(binding, osg::StateAttribute::ON);
 
 			skin->updatePalette(skinnedNode);
 
 			GLTF_NOTIFY(1)
 				<< "installed skin[" << skin->index << "] palette callback on '"
 				<< skinnedNode->getName() << "'"
-				<< " buffer binding=" << shader::JOINT_MATRICES_BINDING
+				<< " buffer binding (resolved on first update)"
 				<< " bytes=" << totalSize << std::endl
 			;
 		}

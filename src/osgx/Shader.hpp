@@ -32,7 +32,10 @@ void registerShaderLibs(std::string_view namespaceName, std::span<const ShaderLi
 
 // Expands every `#pragma <namespace> <lib1>[,<lib2>...]` (or `#pragma <namespace> *` for all)
 // directive in `src` whose namespace matches a registered catalog, inline-splicing the matching
-// libraries' source. Pragmas for namespaces that were never registered are left untouched --
+// libraries' source. A library's own source is expanded the same way before it is spliced in, so
+// a library may pull in other libraries; one that pulls itself in (directly or through others)
+// throws. Nothing is deduplicated: a library pulled in twice is spliced twice. Pragmas for
+// namespaces that were never registered are left untouched --
 // this lets callers compose osgx's own snippet expansion with OSG's own state-driven shader
 // variant pragmas (#pragma import_defines(...), import_modes(...), requires(...)) in the same
 // source without conflict.

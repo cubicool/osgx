@@ -6,8 +6,6 @@
 namespace osgx_python {
 
 void bind_ibl(py::module_& m) {
-	osgx::registerIBLShaderLibs();
-
 	m.attr("FULLSCREEN_VERT") = osgx::FULLSCREEN_VERT;
 	m.attr("BRDF_LUT_FRAG") = osgx::BRDF_LUT_FRAG;
 	m.attr("SH_IRRADIANCE") = osgx::SH_IRRADIANCE;

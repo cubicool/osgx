@@ -1,4 +1,4 @@
-#include "osgx/Shader.hpp"
+#include "LibraryState.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -11,21 +11,6 @@
 namespace osgx {
 
 namespace {
-
-struct ShaderLibCatalog {
-	std::string namespaceName;
-	std::vector<ShaderLib> libs;
-};
-
-// Process-wide registry of shader-library catalogs, populated by registerShaderLibs() and read
-// by resolveShaderLibs(). Defined exactly once here, compiled into libosgx - the same fix as
-// osgx::SharedBRDFLUT::create()'s cache: a function-local static inside a header-defined `inline`
-// function only merges into one instance within a single link unit, not across separately
-// dlopen()'d modules.
-std::vector<ShaderLibCatalog>& shaderLibCatalogs() {
-	static std::vector<ShaderLibCatalog> catalogs;
-	return catalogs;
-}
 
 bool shaderLibCatalogNameMatches(std::string_view lhs, std::string_view rhs) {
 	return lhs.size() == rhs.size() && std::equal(lhs.begin(), lhs.end(), rhs.begin(), [](
@@ -81,7 +66,7 @@ std::vector<std::string_view> splitShaderLibNames(std::string_view names) {
 
 void registerShaderLibs(std::string_view namespaceName, std::span<const ShaderLib> libs) {
 	if(namespaceName.empty() || libs.empty()) throw std::runtime_error("osgx::registerShaderLibs: namespace and catalog must not be empty");
-	auto& catalogs = shaderLibCatalogs();
+	auto& catalogs = detail::libraryState().shaderLibCatalogs;
 	auto catalog = std::find_if(catalogs.begin(), catalogs.end(), [namespaceName](const auto& candidate) {
 		return shaderLibCatalogNameMatches(namespaceName, candidate.namespaceName);
 	});
@@ -97,20 +82,8 @@ void registerShaderLibs(std::string_view namespaceName, std::span<const ShaderLi
 	}
 }
 
-namespace {
-
-// Process-wide shader cache, keyed by (type, source text). Same "function-local static inside a
-// header-defined inline function only merges within one link unit" concern as
-// shaderLibCatalogs() above - defined exactly once here, compiled into libosgx.
-std::map<std::pair<osg::Shader::Type, std::string>, osg::ref_ptr<osg::Shader>>& shaderCache() {
-	static std::map<std::pair<osg::Shader::Type, std::string>, osg::ref_ptr<osg::Shader>> cache;
-	return cache;
-}
-
-}
-
 osg::Shader* cachedShader(osg::Shader::Type type, std::string src) {
-	auto& cache = shaderCache();
+	auto& cache = detail::libraryState().shaderCache;
 	auto key = std::make_pair(type, std::move(src));
 	const auto found = cache.find(key);
 
@@ -171,7 +144,16 @@ void applyHooks(osg::Program* program, const HookList& hooks, const HookList& de
 	}
 }
 
-std::string resolveShaderLibs(std::string src) {
+namespace {
+
+// Expands `src`, then (recursively) each library it pulls in. `expanding` holds the
+// "<namespace> <lib>" keys of the libraries currently being expanded, so a library that pulls
+// itself in (directly or through others) throws instead of recursing forever.
+std::string expandShaderLibs(
+	std::string_view src,
+	const std::vector<detail::ShaderLibCatalog>& catalogs,
+	std::vector<std::string>& expanding
+) {
 	// Only pragmas whose namespace matches a registered osgx catalog are expanded.
 	// Other pragmas are intentionally preserved. In particular, this lets callers
 	// compose snippet expansion with OSG's state-driven shader variants, such as
@@ -194,13 +176,20 @@ std::string resolveShaderLibs(std::string src) {
 			const auto nsEnd = rest.find_first_of(SHADER_WHITESPACE);
 			const auto namespaceName = rest.substr(0, nsEnd);
 			const auto names = nsEnd == std::string_view::npos ? std::string_view{} : rest.substr(nsEnd);
-			for(const auto& catalog : shaderLibCatalogs()) {
+			for(const auto& catalog : catalogs) {
 				if(!shaderLibCatalogNameMatches(namespaceName, catalog.namespaceName)) continue;
 				const auto requested = splitShaderLibNames(names);
 				if(requested.empty()) throw std::runtime_error("osgx::resolveShaderLibs: empty #pragma " + std::string(namespaceName));
 				const bool all = requested.size() == 1 && requested.front() == "*";
 				std::string expanded;
-				for(const auto& lib : catalog.libs) if(all || std::any_of(requested.begin(), requested.end(), [&lib](auto name) { return shaderLibNameMatches(name, lib); })) expanded += lib.source;
+				for(const auto& lib : catalog.libs) {
+					if(!all && !std::any_of(requested.begin(), requested.end(), [&lib](auto name) { return shaderLibNameMatches(name, lib); })) continue;
+					auto key = catalog.namespaceName + " " + std::string(lib.name);
+					if(std::find(expanding.begin(), expanding.end(), key) != expanding.end()) throw std::runtime_error("osgx::resolveShaderLibs: #pragma " + key + " pulls itself in");
+					expanding.push_back(std::move(key));
+					expanded += expandShaderLibs(lib.source, catalogs, expanding);
+					expanding.pop_back();
+				}
 				if(!all) for(const auto name : requested) if(!std::any_of(catalog.libs.begin(), catalog.libs.end(), [name](const auto& lib) { return shaderLibNameMatches(name, lib); })) throw std::runtime_error("osgx::resolveShaderLibs: unknown #pragma " + std::string(namespaceName) + " lib '" + std::string(name) + "'");
 				replacement = std::move(expanded);
 				break;
@@ -216,6 +205,60 @@ std::string resolveShaderLibs(std::string src) {
 		else { resolved += src[lineEnd]; pos = lineEnd + 1; }
 	}
 	return resolved;
+}
+
+}
+
+namespace {
+
+bool isBindingNameChar(char c) {
+	return std::isalnum(static_cast<unsigned char>(c)) || c == '_' || c == ':' || c == '.';
+}
+
+// Replaces every `@<name>@` token (name characters: alphanumerics, '_', ':', '.') with that
+// binding's index. An '@' not starting such a token is copied unchanged.
+std::string substituteBindings(const std::string& src, Bindings& bindings) {
+	std::string out;
+
+	out.reserve(src.size());
+
+	for(size_t pos = 0; pos < src.size();) {
+		const auto open = src.find('@', pos);
+
+		if(open == std::string::npos) {
+			out.append(src, pos, std::string::npos);
+
+			break;
+		}
+
+		out.append(src, pos, open - pos);
+
+		auto close = open + 1;
+
+		while(close < src.size() && isBindingNameChar(src[close])) close++;
+
+		if(close == open + 1 || close >= src.size() || src[close] != '@') {
+			out += '@';
+			pos = open + 1;
+
+			continue;
+		}
+
+		out += std::to_string(bindings.get(std::string_view(src).substr(open + 1, close - open - 1)));
+		pos = close + 1;
+	}
+
+	return out;
+}
+
+}
+
+std::string resolveShaderLibs(std::string src) {
+	auto& state = detail::libraryState();
+
+	std::vector<std::string> expanding;
+
+	return substituteBindings(expandShaderLibs(src, state.shaderLibCatalogs, expanding), state.bindings);
 }
 
 }

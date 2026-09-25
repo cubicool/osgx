@@ -7,8 +7,15 @@ sys.path.append("BUILD-clang++-18.1.3-NOASAN")
 os.putenv("OSG_THREADING", "SingleThreaded")
 
 import osgx
+import pytest
 
 from OpenSceneGraph import *
+
+@pytest.fixture(scope="session", autouse=True)
+def osgx_library():
+	"""One osgx.Library for the whole test session, released after the last test."""
+
+	yield osgx.initialize()
 
 def refcmp(obj: osg.Referenced, cpp: int, py: int) -> bool:
 	"""

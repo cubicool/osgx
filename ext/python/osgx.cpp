@@ -13,6 +13,7 @@ PYBIND11_MODULE(osgx, m) {
 	// from one of them runs below.
 	py::module_::import("OpenSceneGraph");
 
+	osgx_python::bind_library(m);
 	osgx_python::bind_core(m);
 	osgx_python::bind_callbacks(m);
 	osgx_python::bind_rtt(m);

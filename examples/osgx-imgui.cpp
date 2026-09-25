@@ -2,6 +2,7 @@
 
 #include "osgx/Core.hpp"
 #include "osgx/ImGui.hpp"
+#include "osgx/Library.hpp"
 
 OSGX_DISABLE_WARNINGS
 
@@ -66,6 +67,8 @@ namespace {
 }
 
 int main(int argc, char** argv) {
+	auto lib = osgx::initialize();
+
 	osgViewer::Viewer viewer;
 
 	// osgx::imgui::Widget no longer checks/forces this itself (see its class

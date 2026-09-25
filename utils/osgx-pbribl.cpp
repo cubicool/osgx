@@ -12,6 +12,7 @@
 
 #include "osgx/GGXPrefilter.hpp"
 #include "osgx/LambertianBake.hpp"
+#include "osgx/Library.hpp"
 #include "osgx/Warnings.hpp"
 
 #ifdef OSGX_PBRIBL_SOFTWARE_AVAILABLE
@@ -520,6 +521,8 @@ bool bakeSoftwareIBL(
 #endif
 
 int main(int argc, char* argv[]) {
+	auto lib = osgx::initialize();
+
 	if(argc < 3) {
 		usage(argv[0]);
 

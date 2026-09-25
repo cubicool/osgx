@@ -2,6 +2,7 @@
 
 #include "osgx/Core.hpp"
 #include "osgx/Debug.hpp"
+#include "osgx/Library.hpp"
 #include "osgx/Visitors.hpp"
 
 OSGX_DISABLE_WARNINGS
@@ -45,6 +46,8 @@ auto createSphereAt(const osg::Vec3& pos, osgx::vec_t radius, osgx::vec_t pSize=
 }
 
 int main(int argc, char** argv) {
+	auto lib = osgx::initialize();
+
 	osgx::debug::FrameByFrameViewer viewer;
 
 	auto debugSupported = osgx::make_ref<osgx::debug::GraphicsOperation>();

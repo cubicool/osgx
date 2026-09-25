@@ -68,8 +68,9 @@ LightSet::LightSet() {
 	std::fill(_lights->begin(), _lights->end(), 0.0f);
 	_lights->setBufferObject(new osg::ShaderStorageBufferObject());
 
+	// Index 0 until apply() resolves the "osgx::light" slot.
 	_binding = new osg::ShaderStorageBufferBinding(
-		LIGHT_BINDING, _lights, 0, static_cast<GLsizeiptr>(_lights->getTotalDataSize())
+		0, _lights, 0, static_cast<GLsizeiptr>(_lights->getTotalDataSize())
 	);
 	_lightCount = new osg::Uniform("osgx_lightCount", 0);
 	setDataVariance(osg::Object::DYNAMIC);
@@ -79,8 +80,9 @@ LightSet::LightSet(const LightSet& lights, const osg::CopyOp& copyop):
 osg::StateAttribute(lights, copyop),
 _lights(static_cast<osgx::FloatArray*>(copyop(lights._lights.get()))),
 _lightCount(static_cast<osg::Uniform*>(copyop(lights._lightCount.get()))) {
+	// Index 0 until apply() resolves the "osgx::light" slot.
 	_binding = new osg::ShaderStorageBufferBinding(
-		LIGHT_BINDING, _lights, 0, static_cast<GLsizeiptr>(_lights->getTotalDataSize())
+		0, _lights, 0, static_cast<GLsizeiptr>(_lights->getTotalDataSize())
 	);
 	setDataVariance(osg::Object::DYNAMIC);
 }
@@ -97,6 +99,8 @@ int LightSet::compare(const osg::StateAttribute& sa) const {
 }
 
 void LightSet::apply(osg::State& state) const {
+	resolveBinding(_bindingResolved, _binding.get(), "osgx::light");
+
 	// osgx_lightCount is NOT pushed as a uniform at all - see LIGHT_UNIFORMS/DIRECT_LIGHTING_HOOK_
 	// DEFAULT's own history comment (Light.hpp) for why two different ways of doing that (OSG's
 	// deprecated applyShaderCompositionUniform() stash, then a direct getLastAppliedProgramObject()

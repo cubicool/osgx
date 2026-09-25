@@ -131,8 +131,9 @@ void Environment::_initBuffer() {
 	_inputs = osgx::make_ref<osgx::FloatArray>(ENVIRONMENT_FLOATS);
 	_inputs->setBufferObject(new osg::ShaderStorageBufferObject());
 
+	// Index 0 until apply() resolves the "osgx::environment" slot.
 	_binding = new osg::ShaderStorageBufferBinding(
-		ENVIRONMENT_BINDING, _inputs, 0, static_cast<GLsizeiptr>(_inputs->getTotalDataSize())
+		0, _inputs, 0, static_cast<GLsizeiptr>(_inputs->getTotalDataSize())
 	);
 
 	_writeInputs();
@@ -195,9 +196,11 @@ int Environment::compare(const osg::StateAttribute& sa) const {
 // State::applyTextureAttribute(). The latter records them in State's per-unit texture stacks as
 // "changed"; on the next drawable whose StateSets don't list a texture on those units, State resets
 // them to the global default (an empty texture), while this attribute - unchanged - is not
-// re-applied. Binding outside that bookkeeping means units 5-7 belong to Environment: nothing else
-// should bind textures there through a StateSet.
+// re-applied. Binding outside that bookkeeping means the "osgx::environment.*" units belong to
+// Environment: nothing else should bind textures there through a StateSet.
 void Environment::apply(osg::State& state) const {
+	resolveBinding(_bindingResolved, _binding.get(), "osgx::environment");
+
 	const auto bind = [&state](unsigned int unit, const osg::Texture* texture) {
 		if(!texture) return;
 
@@ -206,9 +209,19 @@ void Environment::apply(osg::State& state) const {
 		texture->apply(state);
 	};
 
-	bind(ENVIRONMENT_SPECULAR_TEXTURE_UNIT, _specularMap.get());
-	bind(ENVIRONMENT_BRDF_LUT_TEXTURE_UNIT, _brdfLUT.get());
-	bind(ENVIRONMENT_DIFFUSE_TEXTURE_UNIT, _diffuseMap.get());
+	std::call_once(_unitsResolved, [this]() {
+		auto& bindings = Library::instance().bindings();
+
+		_units = {
+			bindings.get("osgx::environment.specular"),
+			bindings.get("osgx::environment.brdfLUT"),
+			bindings.get("osgx::environment.diffuse")
+		};
+	});
+
+	bind(_units[0], _specularMap.get());
+	bind(_units[1], _brdfLUT.get());
+	bind(_units[2], _diffuseMap.get());
 
 	state.applyAttribute(_binding.get());
 }

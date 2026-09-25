@@ -2,6 +2,7 @@
 
 #include "osgx/Callbacks.hpp"
 #include "osgx/Core.hpp"
+#include "osgx/Library.hpp"
 
 OSGX_DISABLE_WARNINGS
 
@@ -15,6 +16,8 @@ OSGX_ENABLE_WARNINGS
 using namespace osgx::literals;
 
 int main(int argc, char** argv) {
+	auto lib = osgx::initialize();
+
 	osgViewer::Viewer viewer;
 
 	// Single key, 2-arg lambda (unchanged).

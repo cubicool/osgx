@@ -45,8 +45,9 @@ void Material::_initBuffer() {
 	_buffer = osgx::make_ref<osgx::FloatArray>(static_cast<std::size_t>(16));
 	_buffer->setBufferObject(new osg::ShaderStorageBufferObject());
 
+	// Index 0 until apply() resolves the "osgx::material" slot.
 	_binding = new osg::ShaderStorageBufferBinding(
-		MATERIAL_BINDING, _buffer, 0, static_cast<GLsizeiptr>(_buffer->getTotalDataSize())
+		0, _buffer, 0, static_cast<GLsizeiptr>(_buffer->getTotalDataSize())
 	);
 
 	_writeFactors();
@@ -91,21 +92,39 @@ int Material::compare(const osg::StateAttribute& sa) const {
 }
 
 // Read-only over this object's state - see the class comment (PBR.hpp) for why that matters
-// across multiple graphics contexts. Textures bind through osg::State's own per-unit tracking
-// (applyTextureAttribute), so a texture already current at that unit from elsewhere is a no-op;
-// the factor buffer binds through the usual osg::Array/BufferObject per-context sync.
+// across multiple graphics contexts.
+//
+// Textures are bound directly (active unit + Texture::apply()), not through
+// State::applyTextureAttribute(), for the same reason as Environment::apply(): State records units
+// applied that way as "changed" and resets them to the global default before the next drawable
+// whose StateSets don't list them, while this attribute - unchanged - is not re-applied, so every
+// drawable after the first would lose its maps. The "osgx::material.*" units therefore belong to
+// Material; nothing else should bind textures at them through a StateSet.
 void Material::apply(osg::State& state) const {
-	if(_baseColorMap.valid())
-		state.applyTextureAttribute(BASE_COLOR_TEXTURE_UNIT, _baseColorMap.get());
+	resolveBinding(_bindingResolved, _binding.get(), "osgx::material");
 
-	if(_normalMap.valid())
-		state.applyTextureAttribute(NORMAL_TEXTURE_UNIT, _normalMap.get());
+	std::call_once(_unitsResolved, [this]() {
+		auto& bindings = Library::instance().bindings();
 
-	if(_metallicRoughnessMap.valid())
-		state.applyTextureAttribute(ORM_TEXTURE_UNIT, _metallicRoughnessMap.get());
+		_units = {
+			bindings.get("osgx::material.baseColor"),
+			bindings.get("osgx::material.normal"),
+			bindings.get("osgx::material.orm"),
+			bindings.get("osgx::material.emissive")
+		};
+	});
 
-	if(_emissiveMap.valid())
-		state.applyTextureAttribute(EMISSIVE_TEXTURE_UNIT, _emissiveMap.get());
+	const osg::Texture2D* maps[] = {
+		_baseColorMap.get(), _normalMap.get(), _metallicRoughnessMap.get(), _emissiveMap.get()
+	};
+
+	for(std::size_t i = 0; i < _units.size(); i++) {
+		if(!maps[i]) continue;
+
+		state.setActiveTextureUnit(_units[i]);
+
+		maps[i]->apply(state);
+	}
 
 	state.applyAttribute(_binding.get());
 }

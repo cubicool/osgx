@@ -36,6 +36,7 @@
 #include "osgx/Core.hpp"
 #include "osgx/GBuffer.hpp"
 #include "osgx/ImGui.hpp"
+#include "osgx/Library.hpp"
 #include "osgx/PBR.hpp"
 #include "osgx/Shapes.hpp"
 #include "osgx/gltf/PBRIBL.hpp"
@@ -269,6 +270,8 @@ void main() {
 }
 
 int main() {
+	auto lib = osgx::initialize();
+
 	osg::DisplaySettings::instance()->setNumMultiSamples(4);
 	osgViewer::Viewer viewer;
 

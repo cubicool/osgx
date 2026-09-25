@@ -29,6 +29,42 @@ subsystems (each with its own C++ namespace), see [DEBUG.md](DEBUG.md), [IMGUI.m
 - `ring_buffer<T, N>` and `aring_buffer<T, N>` keep fixed-size recent samples, with the arithmetic version adding `.average()` (all valid samples) and `.average(count)` (last N). `RING_BUFFER_T(T, N)` exposes protected members in subclasses via `using`.
 - `findDataFile()` wraps the `osgDB` file utils, letting you specify multiple paths/suffixes in one call.
 
+## `osgx/Library.hpp`
+
+`osgx::Library` owns libosgx's process-wide state: the shader-lib catalogs (registered by its
+constructor), the `cachedShader()` cache, the `SharedBRDFLUT` textures, and the `PixelText` atlas.
+The state is created by the constructor and released by the destructor, so none of it is left for
+static destruction at process exit.
+
+```cpp
+auto lib = osgx::initialize(arguments); // before the viewer, so the viewer is destroyed first
+osgViewer::Viewer viewer(arguments);
+```
+
+- Exactly one may be alive; constructing a second throws `std::logic_error`.
+- `resolveShaderLibs()`, `registerShaderLibs()`, `cachedShader()`, `SharedBRDFLUT::create()`, and
+  `PixelText` throw `std::logic_error` while no Library is alive.
+- Libraries built on osgx subclass it (`class Library: public osgx::Library`), which initializes
+  osgx first and releases the subclass's state first. `Library::instance<T>()` returns the live
+  Library as `T`.
+- Binding slots (`osgx::Bindings`, types `SSBO` and `TextureUnit`): each library declares slot
+  names, optionally with a preferred index (osgx's texture-unit slots prefer the units they used as
+  fixed constants: Material 0-3, Environment 5-7, SDF 10); a slot gets its index on first use, so
+  only features a program uses consume indices. GLSL writes `@<name>@` (e.g.
+  `layout(std430, binding = @osgx::environment@)`), which `resolveShaderLibs()` substitutes.
+  `LibraryOptions::bindings` pins a slot's index by name; `LibraryOptions::reserve` keeps indices
+  free for the application's own buffers. Two pins sharing an index, or a pin naming an undeclared
+  slot, throw.
+- UBO or SSBO: a small block with a fixed layout (a material's factors, an environment's
+  parameters, a bounded light array) is a uniform buffer (std140): GL guarantees at least 36
+  binding points and 12 blocks per shader stage (GLES too). An array whose length varies at
+  runtime (joint palettes, per-glyph or per-layer data) is a shader storage buffer (std430): GL
+  guarantees only 8 binding points, and GLES 3.1 only 4 blocks in a fragment shader (0 in a vertex
+  shader).
+- Python: `lib = osgx.initialize()`, kept referenced until the viewer is done. The Python module's
+  subclass also owns `osgx.gltf`'s async-reader texture cache and registers the `osgx::gltf`
+  catalog.
+
 ## `osgx/Visitors.hpp`
 
 - `LambdaVisitor<Node>` — `NodeVisitor` wrapping `std::function<void(Node&)>`.
@@ -247,7 +283,7 @@ exporter, a hand-authored PNG) - osgx only ever consumes them, never generates t
 - `osgx::SDF::makeTexture(image)` - builds the `Texture2D` a distance field must be sampled from (bilinear, no
   mipmaps, clamped; a single-channel grayscale PNG, which OSG loads as `GL_LUMINANCE`, is relabeled
   `GL_RED`/`GL_R8`). Loading a whole atlas from a glTF manifest: `docs/GLTF.md`, "`osgx_sdf`".
-- `osgx::SDF` - a `StateAttribute` (CAPABILITY member 3, SSBO binding 5, texture unit 10) holding
+- `osgx::SDF` - a `StateAttribute` (CAPABILITY member 3; `osgx::sdf` and `osgx::sdf.texture` slots) holding
   the texture, `sdfType` (`SDFType::SDF`/`SDFType::MSDF`), `pixelRange` (texels, msdfgen's `-pxrange`), and
   `uvRect` `(u0, v0, u1, v1)` (whole-texture space; `v0 > v1` flips the tile). Same design as
   `Material`/`GridSettings`.
@@ -357,8 +393,8 @@ generic `osgx` does not depend on or duplicate its public shader interface.
 `Environment` — distant image-based lighting as one `StateAttribute`, the third lighting attribute
 beside `Material` (surface) and `LightSet` (direct lights). It owns a prefiltered specular cubemap,
 a diffuse irradiance cubemap, and the shared split-sum BRDF LUT, plus orientation, the
-roughness-to-mip mapping, and diffuse/specular intensities in one `std430` SSBO (binding 6).
-`setAttributeAndModes()` binds all of it (textures at units 5/6/7) and enables
+roughness-to-mip mapping, and diffuse/specular intensities in one `std430` SSBO (`osgx::environment`
+slot). `setAttributeAndModes()` binds all of it (textures at the `osgx::environment.*` slots) and enables
 `GL_TEXTURE_CUBE_MAP_SEAMLESS`.
 
 ```cpp

@@ -26,6 +26,7 @@
 #include "osgx/Callbacks.hpp"
 #include "osgx/Core.hpp"
 #include "osgx/Cursor.hpp"
+#include "osgx/Library.hpp"
 #include "osgx/Manipulators.hpp"
 
 OSGX_DISABLE_WARNINGS
@@ -140,6 +141,8 @@ private:
 };
 
 int main(int argc, char** argv) {
+	auto lib = osgx::initialize();
+
 	osgViewer::Viewer viewer;
 
 	bool orbitMode = argc >= 2 && std::string(argv[1]) == "orbit";

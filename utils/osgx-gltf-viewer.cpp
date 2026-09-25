@@ -7,6 +7,7 @@
 // not matter.
 
 #include "osgx/gltf/PBRIBL.hpp"
+#include "osgx/Library.hpp"
 
 #include "osgx/Callbacks.hpp"
 #include "osgx/Core.hpp"
@@ -312,6 +313,7 @@ std::filesystem::path findEnvironmentManifest(std::string_view filename) {
 
 int main(int argc, char** argv) {
 	osg::ArgumentParser args(&argc, argv);
+	auto lib = osgx::initialize(args);
 
 	args.getApplicationUsage()->setCommandLineUsage(
 		std::string(args.getApplicationName()) +

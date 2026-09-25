@@ -2,6 +2,7 @@
 
 #include "osgx/Core.hpp"
 #include "osgx/Debug.hpp"
+#include "osgx/Library.hpp"
 #include "osgx/Visitors.hpp"
 
 OSGX_DISABLE_WARNINGS
@@ -57,6 +58,8 @@ auto createSceneB() {
 }
 
 int main(int argc, char** argv) {
+	auto lib = osgx::initialize();
+
 	auto root = osgx::make_ref<osg::Node>(nullptr);
 
 	if(argc >= 2) root = osgDB::readNodeFile(argv[1]);
@@ -90,6 +93,8 @@ int main(int argc, char** argv) {
 
 #if 0
 int main(int argc, char** argv) {
+	auto lib = osgx::initialize();
+
 	auto plod = new osg::PagedLOD();
 
 	plod->setFileName(0, "cow.osg");
@@ -110,6 +115,8 @@ using lod_min_t = osg::LOD::MinMaxPair::first_type;
 using lod_max_t = osg::LOD::MinMaxPair::second_type;
 
 int main(int argc, char** argv) {
+	auto lib = osgx::initialize();
+
 	auto lod = new osg::LOD();
 
 	lod->addChild(osgDB::readNodeFile("cow.osg"), 0.0, 150.0);

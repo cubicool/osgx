@@ -12,8 +12,6 @@ OSGX_ENABLE_WARNINGS
 namespace osgx_python {
 
 void bind_shadow(py::module_& m) {
-	osgx::registerShadowShaderLibs();
-
 	m.attr("SHADOW_UNIFORMS") = osgx::SHADOW_UNIFORMS;
 	m.attr("SHADOW_FACTOR") = osgx::SHADOW_FACTOR;
 	m.attr("DIRECT_LIGHTING_HOOK_SHADOWED") = osgx::DIRECT_LIGHTING_HOOK_SHADOWED;

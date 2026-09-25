@@ -12,8 +12,6 @@ OSGX_ENABLE_WARNINGS
 namespace osgx_python {
 
 void bind_pbr(py::module_& m) {
-	osgx::registerPBRShaderLibs();
-
 	m.attr("D_GGX") = osgx::D_GGX;
 	m.attr("G_SCHLICK") = osgx::G_SCHLICK;
 	m.attr("G_SMITH") = osgx::G_SMITH;
@@ -23,16 +21,15 @@ void bind_pbr(py::module_& m) {
 	m.attr("TONEMAP_PBR_NEUTRAL") = osgx::TONEMAP_PBR_NEUTRAL;
 	m.attr("TONEMAP_DECL") = osgx::TONEMAP_DECL;
 	m.attr("TONEMAP_HOOK_DEFAULT") = osgx::TONEMAP_HOOK_DEFAULT;
-	m.attr("MATERIAL_BINDING") = osgx::MATERIAL_BINDING;
 	m.attr("MATERIAL_INPUTS") = osgx::MATERIAL_INPUTS;
 	m.attr("GET_MATERIAL") = osgx::GET_MATERIAL;
 	m.attr("GET_EMISSIVE") = osgx::GET_EMISSIVE;
 	m.attr("GET_ALPHA") = osgx::GET_ALPHA;
 	m.attr("GET_SHADING_NORMAL") = osgx::GET_SHADING_NORMAL;
-	m.attr("BASE_COLOR_TEXTURE_UNIT") = osgx::BASE_COLOR_TEXTURE_UNIT;
-	m.attr("NORMAL_TEXTURE_UNIT") = osgx::NORMAL_TEXTURE_UNIT;
-	m.attr("ORM_TEXTURE_UNIT") = osgx::ORM_TEXTURE_UNIT;
-	m.attr("EMISSIVE_TEXTURE_UNIT") = osgx::EMISSIVE_TEXTURE_UNIT;
+	m.attr("BASE_COLOR_UV_CHANNEL") = osgx::BASE_COLOR_UV_CHANNEL;
+	m.attr("NORMAL_UV_CHANNEL") = osgx::NORMAL_UV_CHANNEL;
+	m.attr("ORM_UV_CHANNEL") = osgx::ORM_UV_CHANNEL;
+	m.attr("EMISSIVE_UV_CHANNEL") = osgx::EMISSIVE_UV_CHANNEL;
 
 	// osgx::MaterialFactors/attachMaterialFactors() are gone - collapsed into osgx::Material, a
 	// real osg::StateAttribute (PBR.hpp/PBR.cpp). Bound the same way osgx-callbacks.cpp already

@@ -2,6 +2,7 @@
 
 #include "Array.hpp"
 #include "Core.hpp"
+#include "Library.hpp"
 
 OSGX_DISABLE_WARNINGS
 
@@ -31,9 +32,8 @@ class GridSettings: public osg::StateAttribute {
 public:
 	static constexpr Type GRID_SETTINGS_TYPE = CAPABILITY;
 	static constexpr unsigned int GRID_SETTINGS_MEMBER = 2;
-	// Binding 4 follows Material (0), glTF joints (2), and LightSet (3). The FloatArray backing
-	// store has the exact std430 layout declared by the shader-library blocks in Grid.cpp.
-	static constexpr unsigned int GRID_SETTINGS_BINDING = 4;
+	// The FloatArray backing store has the exact std430 layout declared by the shader-library
+	// blocks in Grid.cpp; its binding is the "osgx::grid" slot (osgx::Bindings).
 
 	enum EdgeMode {
 		EDGE_ASIS = 0,
@@ -85,6 +85,7 @@ private:
 
 	osg::ref_ptr<osgx::FloatArray> _buffer;
 	osg::ref_ptr<osg::ShaderStorageBufferBinding> _binding;
+	mutable std::once_flag _bindingResolved;
 };
 
 // ================================================================================================

@@ -749,12 +749,12 @@ PBRIBLScene PBRIBLScene::create(
 
 	ss->setAttributeAndModes(environment);
 
-	// Shadow: unit 4 - matches the fixed unit the old hand-rolled pyosg-lighting examples always
-	// used for their own shadowMap sampler (0-3 are material, 5/6/7 are osgx::Environment), kept here
-	// purely for continuity, not a hard requirement of anything else in this shader.
+	// Shadow map: the "osgx::gltf::shadowMap" texture unit.
 	if(shadowMap) {
-		ss->setTextureAttributeAndModes(4, shadowMap->depthTexture, osg::StateAttribute::ON);
-		ss->addUniform(new osg::Uniform("osgx_shadowMap", 4));
+		const auto unit = osgx::Library::instance().bindings().get("osgx::gltf::shadowMap");
+
+		ss->setTextureAttributeAndModes(unit, shadowMap->depthTexture, osg::StateAttribute::ON);
+		ss->addUniform(new osg::Uniform("osgx_shadowMap", static_cast<int>(unit)));
 		ss->addUniform(shadowMap->shadowMatrix);
 		ss->addUniform(shadowMap->bias);
 		ss->addUniform(shadowMap->strength);
@@ -980,16 +980,21 @@ PBRIBLLightingScene PBRIBLLightingScene::create(
 	//
 	// GL_DEPTH_TEST OFF also disables depth writes, so no osg::Depth attribute is needed alongside.
 	ss->setMode(GL_DEPTH_TEST, osg::StateAttribute::OFF);
-	ss->setTextureAttributeAndModes(0, gbuffer.albedoTexture, osg::StateAttribute::ON);
-	ss->setTextureAttributeAndModes(1, gbuffer.normalTexture, osg::StateAttribute::ON);
-	ss->setTextureAttributeAndModes(2, gbuffer.materialTexture, osg::StateAttribute::ON);
-	ss->setTextureAttributeAndModes(3, gbuffer.emissiveTexture, osg::StateAttribute::ON);
-	ss->setTextureAttributeAndModes(4, gbuffer.positionTexture, osg::StateAttribute::ON);
-	ss->addUniform(new osg::Uniform("gAlbedo", 0));
-	ss->addUniform(new osg::Uniform("gNormal", 1));
-	ss->addUniform(new osg::Uniform("gMaterial", 2));
-	ss->addUniform(new osg::Uniform("gEmissive", 3));
-	ss->addUniform(new osg::Uniform("gPosition", 4));
+	auto& bindings = osgx::Library::instance().bindings();
+
+	// Binds `texture` at the named texture-unit slot and points `sampler` at it.
+	const auto bindInput = [&](const char* slot, osg::Texture* texture, const char* sampler) {
+		const auto unit = bindings.get(slot);
+
+		ss->setTextureAttributeAndModes(unit, texture, osg::StateAttribute::ON);
+		ss->addUniform(new osg::Uniform(sampler, static_cast<int>(unit)));
+	};
+
+	bindInput("osgx::gltf::lighting.albedo", gbuffer.albedoTexture, "gAlbedo");
+	bindInput("osgx::gltf::lighting.normal", gbuffer.normalTexture, "gNormal");
+	bindInput("osgx::gltf::lighting.material", gbuffer.materialTexture, "gMaterial");
+	bindInput("osgx::gltf::lighting.emissive", gbuffer.emissiveTexture, "gEmissive");
+	bindInput("osgx::gltf::lighting.position", gbuffer.positionTexture, "gPosition");
 
 	// `environment` is optional - a caller whose osgx::Hook::DeferredLighting override doesn't need
 	// environment lighting has no use for a baked/loaded IBL environment, and forcing one would
@@ -1016,14 +1021,12 @@ PBRIBLLightingScene PBRIBLLightingScene::create(
 	if(options.diagnostics) ss->setDefine("OSGX_PBRIBL_DIAGNOSTICS");
 
 	if(options.aoTexture) {
-		ss->setTextureAttributeAndModes(8, options.aoTexture, osg::StateAttribute::ON);
-		ss->addUniform(new osg::Uniform("aoTex", 8));
+		bindInput("osgx::gltf::lighting.ao", options.aoTexture, "aoTex");
 		ss->setDefine("OSGX_PBRIBL_AO");
 	}
 
 	if(options.shadowMap) {
-		ss->setTextureAttributeAndModes(9, options.shadowMap->depthTexture, osg::StateAttribute::ON);
-		ss->addUniform(new osg::Uniform("osgx_shadowMap", 9));
+		bindInput("osgx::gltf::lighting.shadowMap", options.shadowMap->depthTexture, "osgx_shadowMap");
 		ss->addUniform(options.shadowMap->shadowMatrix);
 		ss->addUniform(options.shadowMap->bias);
 		ss->addUniform(options.shadowMap->strength);

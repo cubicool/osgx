@@ -5,6 +5,7 @@
 #include "LambertianBake.hpp"
 #include "Shader.hpp"
 #include "Core.hpp"
+#include "Library.hpp"
 
 OSGX_DISABLE_WARNINGS
 
@@ -39,18 +40,6 @@ namespace osgx {
 // osgx_Material for PBR.
 // ================================================================================================
 
-// Binding point for ENVIRONMENT_INPUTS' osgx_EnvironmentInputs block below. Chosen to avoid both
-// osgx's other buffers (Material 0, joints 2, LightSet 3, Grid 4, SDF 5) and osgSlug's (0, 1, 2),
-// since an osgSlug hook shader can declare both in one program.
-inline constexpr unsigned int ENVIRONMENT_BINDING = 6;
-
-// Texture units Environment::apply() binds its three textures at, matching the `layout(binding)`
-// values in ENVIRONMENT_INPUTS. Reserved: apply() binds them outside osg::State's per-unit texture
-// tracking (see Environment::apply()), so nothing else should use these units via a StateSet.
-inline constexpr int ENVIRONMENT_SPECULAR_TEXTURE_UNIT = 5;
-inline constexpr int ENVIRONMENT_BRDF_LUT_TEXTURE_UNIT = 6;
-inline constexpr int ENVIRONMENT_DIFFUSE_TEXTURE_UNIT = 7;
-
 // The bake convention (GGXPrefilter.cpp/LambertianBake.cpp): world (Z-up) direction W is stored at
 // cube direction (W.x, W.z, -W.y), i.e. lookup = (dot(W, row0), dot(W, row1), dot(W, row2)) with
 // these rows. Environment's uploaded axis rows are these rows rotated by its rotation.
@@ -76,7 +65,7 @@ inline constexpr std::size_t ENVIRONMENT_FLOATS = 16;
 //   float specularIntensity           14
 //   float _pad0                       15
 inline constexpr const char* ENVIRONMENT_INPUTS = R"GLSL(
-layout(std430, binding = 6) readonly buffer osgx_EnvironmentInputs {
+layout(std430, binding = @osgx::environment@) readonly buffer osgx_EnvironmentInputs {
 	vec4 axis[3];
 	float maxSpecularMip;
 	float diffuseIntensity;
@@ -84,9 +73,9 @@ layout(std430, binding = 6) readonly buffer osgx_EnvironmentInputs {
 	float _pad0;
 } osgx_environment;
 
-layout(binding = 5) uniform samplerCube osgx_environmentSpecularMap;
-layout(binding = 6) uniform sampler2D osgx_environmentBRDFLUT;
-layout(binding = 7) uniform samplerCube osgx_environmentDiffuseMap;
+layout(binding = @osgx::environment.specular@) uniform samplerCube osgx_environmentSpecularMap;
+layout(binding = @osgx::environment.brdfLUT@) uniform sampler2D osgx_environmentBRDFLUT;
+layout(binding = @osgx::environment.diffuse@) uniform samplerCube osgx_environmentDiffuseMap;
 )GLSL";
 
 // Material-free environment sampling. `dir`/`N`/`R` are world-space (Z-up), unnormalized is fine
@@ -277,6 +266,11 @@ class Environment: public osg::StateAttribute {
 
 		osg::ref_ptr<osgx::FloatArray> _inputs;
 		osg::ref_ptr<osg::ShaderStorageBufferBinding> _binding;
+		mutable std::once_flag _bindingResolved;
+
+		// The three "osgx::environment.*" texture units (specular, BRDF LUT, diffuse).
+		mutable std::array<unsigned int, 3> _units{};
+		mutable std::once_flag _unitsResolved;
 };
 
 // GLSL `#pragma osgx::environment` catalog registration (ENVIRONMENT_INPUTS, ENVIRONMENT_SAMPLE,

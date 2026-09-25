@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Core.hpp"
+#include "Library.hpp"
 #include "Visitors.hpp"
 #include "Array.hpp"
 #include "Callbacks.hpp"

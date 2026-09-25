@@ -51,7 +51,7 @@ struct osgx_GridSettings {
 	vec4 colorLineStrong;
 };
 
-layout(std430, binding = 4) readonly buffer osgx_GridSettingsBuffer {
+layout(std430, binding = @osgx::grid@) readonly buffer osgx_GridSettingsBuffer {
 	osgx_GridSettings u_grid;
 };
 )GLSL";
@@ -71,7 +71,7 @@ struct osgx_GridSettings {
 	vec4 colorLineStrong;
 };
 
-layout(std430, binding = 4) readonly buffer osgx_GridSettingsBuffer {
+layout(std430, binding = @osgx::grid@) readonly buffer osgx_GridSettingsBuffer {
 	osgx_GridSettings u_grid;
 };
 
@@ -258,8 +258,9 @@ osg::StateAttribute(settings, copyop),
 _buffer(static_cast<osgx::FloatArray*>(copyop(settings._buffer.get()))) {
 	if(!_buffer) throw std::logic_error("GridSettings copy has no backing buffer");
 
+	// Index 0 until apply() resolves the "osgx::grid" slot.
 	_binding = new osg::ShaderStorageBufferBinding(
-		GRID_SETTINGS_BINDING, _buffer, 0, static_cast<GLsizeiptr>(_buffer->getTotalDataSize())
+		0, _buffer, 0, static_cast<GLsizeiptr>(_buffer->getTotalDataSize())
 	);
 }
 
@@ -269,8 +270,9 @@ void GridSettings::_initBuffer() {
 	_buffer = new osgx::FloatArray(static_cast<std::size_t>(GRID_SETTINGS_FLOATS));
 	std::fill(_buffer->begin(), _buffer->end(), 0.0f);
 	_buffer->setBufferObject(new osg::ShaderStorageBufferObject());
+	// Index 0 until apply() resolves the "osgx::grid" slot.
 	_binding = new osg::ShaderStorageBufferBinding(
-		GRID_SETTINGS_BINDING, _buffer, 0, static_cast<GLsizeiptr>(_buffer->getTotalDataSize())
+		0, _buffer, 0, static_cast<GLsizeiptr>(_buffer->getTotalDataSize())
 	);
 
 	setCanvasSize(osg::Vec2(300.0f, 300.0f));
@@ -299,6 +301,8 @@ int GridSettings::compare(const osg::StateAttribute& sa) const {
 }
 
 void GridSettings::apply(osg::State& state) const {
+	resolveBinding(_bindingResolved, _binding.get(), "osgx::grid");
+
 	state.applyAttribute(_binding.get());
 }
 

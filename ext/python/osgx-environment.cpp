@@ -15,15 +15,9 @@ OSGX_ENABLE_WARNINGS
 namespace osgx_python {
 
 void bind_environment(py::module_& m) {
-	osgx::registerEnvironmentShaderLibs();
-
 	m.attr("ENVIRONMENT_INPUTS") = osgx::ENVIRONMENT_INPUTS;
 	m.attr("ENVIRONMENT_SAMPLE") = osgx::ENVIRONMENT_SAMPLE;
 	m.attr("ENVIRONMENT_LIGHTING") = osgx::ENVIRONMENT_LIGHTING;
-	m.attr("ENVIRONMENT_BINDING") = osgx::ENVIRONMENT_BINDING;
-	m.attr("ENVIRONMENT_SPECULAR_TEXTURE_UNIT") = osgx::ENVIRONMENT_SPECULAR_TEXTURE_UNIT;
-	m.attr("ENVIRONMENT_BRDF_LUT_TEXTURE_UNIT") = osgx::ENVIRONMENT_BRDF_LUT_TEXTURE_UNIT;
-	m.attr("ENVIRONMENT_DIFFUSE_TEXTURE_UNIT") = osgx::ENVIRONMENT_DIFFUSE_TEXTURE_UNIT;
 
 	py::class_<osgx::EnvironmentBakeOptions>(
 		m,

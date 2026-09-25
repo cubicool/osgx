@@ -10,10 +10,12 @@ OSGX_DISABLE_WARNINGS
 #include <osg/Referenced>
 #include <osg/observer_ptr>
 #include <osg/ref_ptr>
+#include <osg/BufferIndexBinding>
 
 OSGX_ENABLE_WARNINGS
 
 #include <cstddef>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -52,14 +54,19 @@ struct Skin: public osg::Referenced {
 // AnimationCallback moves the joint transform and this callback picks up whatever that transform
 // currently is; a joint with no animation just has this recompute the same bind-pose matrix every
 // frame, harmlessly. The two callbacks never call into each other.
+//
+// The node's joint-matrix binding is built at load time with index 0 (the loader may run with no
+// osgx::Library); the first update sets it to the "osgx::gltf::joints" slot.
 class SkinPaletteCallback: public osg::NodeCallback {
 public:
-	explicit SkinPaletteCallback(Skin* skin);
+	SkinPaletteCallback(Skin* skin, osg::ShaderStorageBufferBinding* binding);
 
 	void operator()(osg::Node* node, osg::NodeVisitor* nv) override;
 
 private:
 	osg::ref_ptr<Skin> _skin;
+	osg::ref_ptr<osg::ShaderStorageBufferBinding> _binding;
+	std::once_flag _bindingResolved;
 	bool _loggedOnce = false;
 };
 

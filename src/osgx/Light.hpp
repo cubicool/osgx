@@ -3,6 +3,7 @@
 #include "Array.hpp"
 #include "Shader.hpp"
 #include "Core.hpp"
+#include "Library.hpp"
 
 OSGX_DISABLE_WARNINGS
 
@@ -57,11 +58,6 @@ inline constexpr int MAX_LIGHTS = 6;
 // (16 floats = 64 bytes) - the C++-side stride LightSet's setters/getters index into `lights`
 // with. Must match the GLSL struct exactly; see LIGHT_UNIFORMS' own layout comment.
 inline constexpr std::size_t LIGHT_STRUCT_FLOATS = 16;
-
-// Binding point for LIGHT_UNIFORMS' osgx_LightBuffer below. It deliberately differs from
-// osgx::gltf::shader::JOINT_MATRICES_BINDING (2), so a skinned glTF asset lit via
-// osgx::LightSet can bind both at once.
-inline constexpr unsigned int LIGHT_BINDING = 3;
 
 // Per-light Cook-Torrance specular contribution (direct lighting), already multiplied by NdotL --
 // caller multiplies by the light's own radiance (color * intensity/distance^2 or similar) and
@@ -183,9 +179,7 @@ struct osgx_Light {
 	float _pad0;
 };
 
-// binding = 3 here must match LIGHT_BINDING in C++ - same hardcode-and-cross-reference
-// pattern osgx::MATERIAL_INPUTS (PBR.hpp) uses for its own `binding = 0`.
-layout(std430, binding = 3) readonly buffer osgx_LightBuffer {
+layout(std430, binding = @osgx::light@) readonly buffer osgx_LightBuffer {
 	osgx_Light osgx_lights[OSGX_MAX_LIGHTS];
 };
 
@@ -538,10 +532,11 @@ struct LightSet: public osg::StateAttribute {
 
 	private:
 	// Backing store for every light's packed osgx_Light struct (MAX_LIGHTS * LIGHT_STRUCT_FLOATS
-	// floats, std430 layout - see LIGHT_UNIFORMS' struct comment), bound through _binding at
-	// LIGHT_BINDING. It stays private so it cannot be replaced independently of that binding.
+	// floats, std430 layout - see LIGHT_UNIFORMS' struct comment), bound through _binding at the
+	// "osgx::light" slot. It stays private so it cannot be replaced independently of that binding.
 		osg::ref_ptr<osgx::FloatArray> _lights;
 		osg::ref_ptr<osg::ShaderStorageBufferBinding> _binding;
+		mutable std::once_flag _bindingResolved;
 		osg::ref_ptr<osg::Uniform> _lightCount;
 
 		// Validates the LightSet and `index`, then returns the float offset of that light's struct

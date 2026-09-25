@@ -23,21 +23,6 @@ inline constexpr char TANGENT_ATTRIBUTE_NAME[] = "osg_Tangent";
 inline constexpr char JOINT_INDICES_ATTRIBUTE_NAME[] = "osgx_gltf_JointIndices";
 inline constexpr char JOINT_WEIGHTS_ATTRIBUTE_NAME[] = "osgx_gltf_JointWeights";
 
-// Alias, not a separate constant - osgx::MATERIAL_BINDING (PBR.hpp) is now the canonical value,
-// since the buffer it names (MATERIAL_INPUTS' `osgx_gltf_Material` block) has a glTF-independent
-// C++-side builder too (osgx::Material). Keeping the name here means existing code under
-// osgx::gltf::shader:: doesn't need to change, just what it points at.
-inline constexpr unsigned int MATERIAL_BINDING = osgx::MATERIAL_BINDING;
-inline constexpr unsigned int JOINT_MATRICES_BINDING = 2;
-
-// Aliases, not separate constants - osgx::{BASE_COLOR,NORMAL,ORM,EMISSIVE}_TEXTURE_UNIT (PBR.hpp)
-// are now the canonical values, since osgx::Material (also PBR.hpp) binds its four maps at these
-// same units independent of glTF. Same reasoning as MATERIAL_BINDING just above.
-inline constexpr int BASE_COLOR_TEXTURE_UNIT = osgx::BASE_COLOR_TEXTURE_UNIT;
-inline constexpr int NORMAL_TEXTURE_UNIT = osgx::NORMAL_TEXTURE_UNIT;
-inline constexpr int ORM_TEXTURE_UNIT = osgx::ORM_TEXTURE_UNIT;
-inline constexpr int EMISSIVE_TEXTURE_UNIT = osgx::EMISSIVE_TEXTURE_UNIT;
-
 // Material data (factors, maps, emissive, alpha) is a plain osgx::Material, read in GLSL via
 // osgx::MATERIAL_INPUTS/GET_MATERIAL (PBR.hpp). This header covers only what is glTF-specific:
 // tangent/skinning vertex attributes, the joint-matrix binding, and the skinning hooks.
@@ -54,7 +39,7 @@ inline constexpr int EMISSIVE_TEXTURE_UNIT = osgx::EMISSIVE_TEXTURE_UNIT;
 // exercising this) pays for nothing beyond one extra function call. SKINNING_HOOK_LINEAR_BLEND is
 // the real joint-matrix
 // linear blend skin (LBS), reading the exact JOINT_INDICES_ATTRIBUTE/JOINT_WEIGHTS_ATTRIBUTE/
-// JOINT_MATRICES_BINDING wiring the loader (Skin.cpp's SkinPaletteCallback) already populates
+// "osgx::gltf::joints" SSBO wiring the loader (Skin.cpp's SkinPaletteCallback) already populates
 // UNCONDITIONALLY for every skinned primitive, whether or not anything ever reads it - this hook
 // is what proves that data path was already sound; only a consuming vertex shader was missing.
 // Deliberately whole-Program scope, not per-primitive selection - see TODO.md's still-open
@@ -79,7 +64,7 @@ inline constexpr char SKINNING_HOOK_LINEAR_BLEND[] = R"GLSL(
 layout(location = 8) in uvec4 osgx_gltf_JointIndices;
 layout(location = 9) in vec4 osgx_gltf_JointWeights;
 
-layout(std430, binding = 2) readonly buffer osgx_gltf_JointMatrixBuffer {
+layout(std430, binding = @osgx::gltf::joints@) readonly buffer osgx_gltf_JointMatrixBuffer {
 	mat4 osgx_gltf_jointMatrices[];
 };
 

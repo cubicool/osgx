@@ -48,6 +48,7 @@
 #include "osgx/GBuffer.hpp"
 #include "osgx/gltf/PBRIBL.hpp"
 #include "osgx/ImGui.hpp"
+#include "osgx/Library.hpp"
 #include "osgx/PBR.hpp"
 #include "osgx/Shapes.hpp"
 
@@ -288,6 +289,7 @@ void main() {
 
 int main(int argc, char** argv) {
 	osg::ArgumentParser args(&argc, argv);
+	auto lib = osgx::initialize(args);
 
 	args.getApplicationUsage()->setCommandLineUsage(
 		std::string(args.getApplicationName()) +

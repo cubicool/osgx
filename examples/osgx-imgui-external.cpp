@@ -2,6 +2,7 @@
 
 #include "osgx/Core.hpp"
 #include "osgx/ImGui.hpp"
+#include "osgx/Library.hpp"
 
 OSGX_DISABLE_WARNINGS
 
@@ -124,6 +125,8 @@ private:
 }
 
 int main() {
+	auto lib = osgx::initialize();
+
 	osgViewer::Viewer viewer;
 	viewer.setThreadingModel(osgViewer::Viewer::SingleThreaded);
 

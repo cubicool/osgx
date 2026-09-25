@@ -8,6 +8,7 @@
 // mip level, with conventional OpenGL/KTX cubemap face orientation.
 
 #include "osgx/Core.hpp"
+#include "osgx/Library.hpp"
 #include "osgx/Warnings.hpp"
 
 OSGX_DISABLE_WARNINGS
@@ -126,6 +127,8 @@ osg::ref_ptr<osg::TextureCubeMap> makeCubeMap(const osg::Image& panorama, int si
 }
 
 int main(int argc, char* argv[]) {
+	auto lib = osgx::initialize();
+
 	if(argc < 3) {
 		usage(argv[0]);
 

@@ -3,6 +3,7 @@
 #include "Array.hpp"
 #include "Shader.hpp"
 #include "Core.hpp"
+#include "Library.hpp"
 
 OSGX_DISABLE_WARNINGS
 
@@ -14,6 +15,7 @@ OSGX_DISABLE_WARNINGS
 
 OSGX_ENABLE_WARNINGS
 
+#include <array>
 #include <string>
 
 namespace osg {
@@ -120,31 +122,23 @@ struct osgx_Material {
 };
 )GLSL";
 
-// Binding point for the factor buffer osgx::Material (below) builds. Lives here (generic osgx::),
-// not under osgx::gltf - osgx::gltf::shader::MATERIAL_BINDING (Shader.hpp) is now just an alias
-// for this constant, so a caller reading GET_MATERIAL never has to care whether the buffer at this
-// binding was populated by the glTF loader (Material.cpp) or by a hand-authored osgx::Material
-// (see examples/osgx-gbuffer-blueprint.cpp's buildShapeNode() for a non-glTF consumer) - same
-// binding, same buffer shape, either way. See TODO.md's "Generic vs. glTF-specific layering"
-// section for the principle this is following.
-inline constexpr unsigned int MATERIAL_BINDING = 0;
-
-// Texture units osgx::Material's four maps bind at, and osgx::gltf's loader populates directly
-// (Material.cpp) for the same reason MATERIAL_BINDING lives here rather than under osgx::gltf::
-// shader:: - osgx::gltf::shader::BASE_COLOR_TEXTURE_UNIT etc. (Shader.hpp) are now just aliases.
-inline constexpr int BASE_COLOR_TEXTURE_UNIT = 0;
-inline constexpr int NORMAL_TEXTURE_UNIT = 1;
-inline constexpr int ORM_TEXTURE_UNIT = 2;
-inline constexpr int EMISSIVE_TEXTURE_UNIT = 3;
+// Texture-coordinate array index (osg_MultiTexCoordN) each of osgx::Material's four maps reads its
+// UVs from: the glTF loader writes each map's UV set there, and the glTF vertex shader reads it
+// from there. A vertex-layout convention, independent of the texture unit each map binds at (the
+// "osgx::material.*" slots, osgx::Bindings).
+inline constexpr unsigned int BASE_COLOR_UV_CHANNEL = 0;
+inline constexpr unsigned int NORMAL_UV_CHANNEL = 1;
+inline constexpr unsigned int ORM_UV_CHANNEL = 2;
+inline constexpr unsigned int EMISSIVE_UV_CHANNEL = 3;
 
 // GLSL read side of osgx::Material (below): the factor buffer it builds plus its four texture maps.
 // Every material value lives in ONE std430 SSBO - no loose per-material uniforms - and the four
 // samplers carry their own `layout(binding = N)` texture unit, so nothing on the C++ side has to set
 // sampler uniforms either (GLSL forbids layout(binding) on struct members, which is why these are
-// four plain samplers rather than a struct). Every hardcoded number here must match its C++
-// constant above (MATERIAL_BINDING, *_TEXTURE_UNIT) - same hardcode-and-cross-reference pattern
-// LIGHT_UNIFORMS (Light.hpp) uses for its own binding. The glTF loader produces osgx::Material
-// too, so this is the one material interface for both hand-built and glTF-loaded geometry.
+// four plain samplers rather than a struct). The buffer and the four samplers bind at the
+// "osgx::material" and "osgx::material.*" slots (osgx::Bindings). The glTF loader produces
+// osgx::Material too, so this is the one material interface for both hand-built and glTF-loaded
+// geometry.
 //
 // Packed layout (std430; 16 floats / 64 bytes - must match Material::_writeFactors() in PBR.cpp):
 //   vec4  baseColorFactor           floats  0-3
@@ -163,7 +157,7 @@ inline constexpr const char* MATERIAL_INPUTS = R"GLSL(
 #define OSGX_ALPHA_MODE_MASK 1.0
 #define OSGX_ALPHA_MODE_BLEND 2.0
 
-layout(std430, binding = 0) readonly buffer osgx_MaterialInputs {
+layout(std430, binding = @osgx::material@) readonly buffer osgx_MaterialInputs {
 	vec4 baseColorFactor;
 	vec3 emissiveFactor;
 	float roughnessFactor;
@@ -177,10 +171,10 @@ layout(std430, binding = 0) readonly buffer osgx_MaterialInputs {
 	float hasEmissiveMap;
 } osgx_materialInputs;
 
-layout(binding = 0) uniform sampler2D osgx_baseColorMap;
-layout(binding = 1) uniform sampler2D osgx_normalMap;
-layout(binding = 2) uniform sampler2D osgx_ormMap;
-layout(binding = 3) uniform sampler2D osgx_emissiveMap;
+layout(binding = @osgx::material.baseColor@) uniform sampler2D osgx_baseColorMap;
+layout(binding = @osgx::material.normal@) uniform sampler2D osgx_normalMap;
+layout(binding = @osgx::material.orm@) uniform sampler2D osgx_ormMap;
+layout(binding = @osgx::material.emissive@) uniform sampler2D osgx_emissiveMap;
 )GLSL";
 
 // Reads MATERIAL_INPUTS into an osgx_Material (MATERIAL_STRUCT). Requires MATERIAL_INPUTS and
@@ -406,7 +400,7 @@ class Material: public osg::StateAttribute {
 		void setNormalMap(osg::Texture2D* texture);
 		osg::Texture2D* getNormalMap() const { return _normalMap.get(); }
 
-		// glTF's combined occlusion/roughness/metallic texture, bound at ORM_TEXTURE_UNIT.
+		// glTF's combined occlusion/roughness/metallic texture.
 		void setMetallicRoughnessMap(osg::Texture2D* texture);
 		osg::Texture2D* getMetallicRoughnessMap() const { return _metallicRoughnessMap.get(); }
 
@@ -435,6 +429,11 @@ class Material: public osg::StateAttribute {
 
 		osg::ref_ptr<osgx::FloatArray> _buffer;
 		osg::ref_ptr<osg::ShaderStorageBufferBinding> _binding;
+		mutable std::once_flag _bindingResolved;
+
+		// The four "osgx::material.*" texture units (base color, normal, ORM, emissive).
+		mutable std::array<unsigned int, 4> _units{};
+		mutable std::once_flag _unitsResolved;
 };
 
 // All five snippets, concatenated in dependency order (G_SMITH calls osgx_G_Schlick, so

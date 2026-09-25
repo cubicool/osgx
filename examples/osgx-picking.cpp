@@ -24,6 +24,7 @@
 
 #include "osgx/Core.hpp"
 #include "osgx/Cursor.hpp"
+#include "osgx/Library.hpp"
 #include "osgx/Picking.hpp"
 
 #ifdef OSGX_PLATFORM
@@ -95,6 +96,7 @@ osg::ref_ptr<osg::Group> createScene() {
 
 int main(int argc, char** argv) {
 	osg::ArgumentParser args(&argc, argv);
+	auto lib = osgx::initialize(args);
 
 	bool useAsync = args.read("--async");
 	bool pick1x1  = args.read("--pick-1x1");

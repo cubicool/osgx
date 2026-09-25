@@ -2,6 +2,7 @@
 
 #include "osgx/Array.hpp"
 #include "osgx/Core.hpp"
+#include "osgx/Library.hpp"
 
 OSGX_DISABLE_WARNINGS
 
@@ -35,6 +36,8 @@ bool check(bool condition, std::string_view description) {
 }
 
 int main(int argc, char** argv) {
+	auto lib = osgx::initialize();
+
 	auto av3_3 = osgx::Vec3Array({
 		{1_v, 2_v, 3_v},
 		{10_v, 20_v, 30_v},

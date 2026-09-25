@@ -204,6 +204,8 @@ osg::ref_ptr<osg::Geode> makeCube(const osg::Vec3& center, const osg::Vec3& size
 }
 
 int main() {
+	auto lib = osgx::initialize();
+
 	// Three cubes of different footprints/heights, loosely matching osgx-grid's own floor demo
 	// screenshot - close enough to prove multi-caster shadows land in believable places, not a
 	// pixel-exact match. Sizes are (width, depth, height); center.z is size.z()/2 so each cube's

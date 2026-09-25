@@ -12,6 +12,7 @@
 #include "osgx/GBuffer.hpp"
 #include "osgx/IBL.hpp"
 #include "osgx/ImGui.hpp"
+#include "osgx/Library.hpp"
 #include "osgx/Shapes.hpp"
 
 OSGX_DISABLE_WARNINGS
@@ -431,6 +432,8 @@ private:
 
 int main(int argc, char** argv) {
 	osg::ArgumentParser args(&argc, argv);
+	auto lib = osgx::initialize(args);
+
 	const bool useGBuffer = args.argc() > 1 && std::string_view(args[1]) == "gbuffer";
 
 	if(args.argc() > 1 && !useGBuffer) {

@@ -6,6 +6,7 @@
 #include "osgx/Core.hpp"
 #include "osgx/Cursor.hpp"
 #include "osgx/IBL.hpp"
+#include "osgx/Library.hpp"
 #include "osgx/Manipulators.hpp"
 #include "osgx/Projection.hpp"
 #include "osgx/Shader.hpp"
@@ -396,6 +397,8 @@ private:
 }
 
 int main(int argc, char** argv) {
+	auto lib = osgx::initialize();
+
 	std::string modelPath;
 	std::string environmentPath;
 	std::string skyboxPath;

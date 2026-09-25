@@ -30,6 +30,7 @@ namespace pyx = pybind11x;
 
 namespace osgx_python {
 
+void bind_library(py::module_& m);
 void bind_core(py::module_& m);
 void bind_callbacks(py::module_& m);
 void bind_cursor(py::module_& m);

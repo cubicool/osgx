@@ -11,8 +11,6 @@ OSGX_ENABLE_WARNINGS
 namespace osgx_python {
 
 void bind_light(py::module_& m) {
-	osgx::registerLightShaderLibs();
-
 	m.attr("DIRECT_SPECULAR") = osgx::DIRECT_SPECULAR;
 	m.attr("DIRECT_DIFFUSE") = osgx::DIRECT_DIFFUSE;
 	m.attr("POINT_LIGHT_RADIANCE") = osgx::POINT_LIGHT_RADIANCE;

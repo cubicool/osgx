@@ -23,7 +23,7 @@ void bind_sdf(py::module_& m) {
 		"SDF",
 		"A real osg.StateAttribute carrying one baked distance-field texture (single-channel "
 		"SDF or 3-channel MSDF) plus its pixelRange, sdfType, and uvRect, applied via a std430 shader "
-		"storage buffer and a fixed texture unit (SDF_TEXTURE_UNIT). Use with "
+		"storage buffer and a texture unit (the \"osgx::sdf\" and \"osgx::sdf.texture\" binding slots). Use with "
 		"'#pragma osgx::sdf SAMPLING,TEXTURE' and osgx_SDF_Coverage(uv). osgx only CONSUMES "
 		"distance fields - it never generates them."
 	);
@@ -44,7 +44,7 @@ void bind_sdf(py::module_& m) {
 		)
 		.def_property(
 			"texture", &osgx::SDF::getTexture, &osgx::SDF::setTexture,
-			"The baked distance-field texture (osg.Texture2D), bound at SDF_TEXTURE_UNIT."
+			"The baked distance-field texture (osg.Texture2D), bound at the \"osgx::sdf.texture\" slot."
 		)
 		.def_property(
 			"sdfType", &osgx::SDF::getSDFType, &osgx::SDF::setSDFType,
@@ -58,8 +58,6 @@ void bind_sdf(py::module_& m) {
 			"uvRect", &osgx::SDF::getUVRect, &osgx::SDF::setUVRect,
 			"(u0, v0, u1, v1) in whole-texture space selecting the drawn tile; v0 > v1 flips it."
 		)
-		.def_readonly_static("SDF_TEXTURE_UNIT", &osgx::SDF::SDF_TEXTURE_UNIT)
-		.def_readonly_static("SDF_BINDING", &osgx::SDF::SDF_BINDING)
 	;
 }
 

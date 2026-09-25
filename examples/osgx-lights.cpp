@@ -225,6 +225,8 @@ void applyState(const osgx::LightSet& lights, const LightsState& state) {
 }
 
 int main() {
+	auto lib = osgx::initialize();
+
 	auto root = osgx::make_ref<osg::Group>();
 	auto geode = osgx::make_ref<osg::Geode>();
 	// A cube, not an icosahedron - 6 flat, axis-aligned faces make "which side is lit" visually

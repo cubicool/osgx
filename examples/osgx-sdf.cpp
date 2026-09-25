@@ -18,6 +18,7 @@
 // Zoom in and out with the trackball - edges should stay crisp and evenly antialiased at any scale.
 
 #include "osgx/Core.hpp"
+#include "osgx/Library.hpp"
 #include "osgx/SDF.hpp"
 #include "osgx/Shader.hpp"
 #include "osgx/gltf/SDF.hpp"
@@ -155,6 +156,8 @@ osg::ref_ptr<osg::Geode> makeField(
 }
 
 int main(int argc, char** argv) {
+	auto lib = osgx::initialize();
+
 	if(argc < 2) {
 		std::cerr
 			<< "usage: osgx-sdf <atlas.gltf>\n"

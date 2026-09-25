@@ -1,6 +1,7 @@
 // vimrun! ./examples/osgx-pixel-text
 
 #include "osgx/Core.hpp"
+#include "osgx/Library.hpp"
 #include "osgx/PixelText.hpp"
 #include "osgx/Shapes.hpp"
 
@@ -305,6 +306,8 @@ osg::ref_ptr<osg::Camera> makeHudLabel(std::string_view text, float scale=3.0f, 
 }
 
 int main(int, char**) {
+	auto lib = osgx::initialize();
+
 	auto root = osgx::make_ref<osg::Group>();
 	osg::Vec3 dieCenter(6.0f, 0.0f, 0.75f);
 	osg::Vec3 dieSize(1.5f, 1.5f, 1.5f);

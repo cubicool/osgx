@@ -1,6 +1,7 @@
 // vimrun! ./examples/osgx-culling
 
 #include "osgx/Core.hpp"
+#include "osgx/Library.hpp"
 #include "osgx/Visitors.hpp"
 
 OSGX_DISABLE_WARNINGS
@@ -81,6 +82,8 @@ osg::ref_ptr<osg::Node> makeScene() {
 }
 
 int main(int argc, char** argv) {
+	auto lib = osgx::initialize();
+
 	// osgx::debug::FrameByFrameViewer viewer;
 	osgViewer::Viewer viewer;
 

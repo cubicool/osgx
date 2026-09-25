@@ -5,6 +5,7 @@
 // scroll wheel : also adjusts mip level
 // c : toggle flat-cross display
 
+#include "osgx/Library.hpp"
 #include "osgx/Warnings.hpp"
 
 OSGX_DISABLE_WARNINGS
@@ -217,6 +218,8 @@ public:
 // ---------------------------------------------------------------------------
 
 int main(int argc, char* argv[]) {
+	auto lib = osgx::initialize();
+
 	if(argc < 2) {
 		std::cerr
 			<< "Usage: ktx2-skybox <file.ktx2>" << std::endl

@@ -1,3 +1,5 @@
+#include "LibraryState.hpp"
+
 #include "osgx/PixelText.hpp"
 
 OSGX_DISABLE_WARNINGS
@@ -248,14 +250,7 @@ osg::ref_ptr<osg::Image> createCharsetAtlas(int pixelScale=7) {
 	);
 }
 
-// Binding point for PixelText's per-glyph index SSBO. Kept alongside osgx::LIGHT_BINDING (3, in
-// PBR.hpp) and osgx::gltf::shader::JOINT_MATRICES_BINDING (2) to avoid collisions when a label
-// shares a scene with lit/skinned geometry. Purely an implementation detail of this shader, so
-// it stays a file-scope constant rather than a public PixelText member.
-constexpr unsigned int GLYPH_BINDING = 4;
-
-// binding = 4 here must match GLYPH_BINDING above - same hardcode-and-cross-reference pattern
-// osgx::LIGHT_BINDING/Light.hpp's LIGHT_UNIFORMS uses for its own `binding = 3`.
+// The glyph index SSBO is the "osgx::pixelText" slot (osgx::Bindings).
 //
 // No osg_Vertex/osg_MultiTexCoord0 (and correspondingly, PixelText::_build() binds no
 // osg::Vec3Array/Vec2Array at all): the unit quad's four corners are procedural, indexed by
@@ -271,7 +266,7 @@ uniform float u_cellSize;
 uniform float u_advance;
 uniform int u_charsetCount;
 
-layout(std430, binding = 4) readonly buffer osgx_PixelTextGlyphs {
+layout(std430, binding = @osgx::pixelText@) readonly buffer osgx_PixelTextGlyphs {
 	int osgx_glyphIndices[];
 };
 
@@ -396,17 +391,12 @@ osg::ref_ptr<osg::Image> PixelText::createAtlas(
 }
 
 osg::ref_ptr<osg::Texture2D> PixelText::_atlasTexture() {
-	// Safe as a function-local static: this function is declared in PixelText.hpp with no body
-	// and defined exactly once, here, compiled into libosgx (which is always SHARED, never
-	// statically embedded into multiple DSOs - see CMakeLists.txt) - so there is exactly one
-	// definition of this function, and therefore exactly one instance of this static, process-
-	// wide, for every consumer (C++ executables, the Python module, osgdb_* plugins) that all
-	// link against that same libosgx.so. The unsafe version of this pattern is a function-local
-	// static inside a header-defined `inline` function, which silently duplicates across
-	// separately-dlopen()'d DSOs - not what's happening here. Same pattern
-	// osgx::SharedBRDFLUT::create() (IBL.cpp) and Shader.cpp's shader-lib registry already rely
-	// on in production.
-	static osg::ref_ptr<osg::Texture2D> texture = [] {
+	// Owned by the live osgx::Library (LibraryState::pixelTextAtlas), created on first use.
+	auto& texture = detail::libraryState().pixelTextAtlas;
+
+	if(texture) return texture;
+
+	texture = [] {
 		auto tex = make_ref<osg::Texture2D>();
 
 		tex->setImage(createCharsetAtlas());
@@ -472,8 +462,8 @@ void PixelText::_installState() {
 	auto* ss = getOrCreateStateSet();
 	auto program = make_ref<osg::Program>();
 
-	program->addShader(new osg::Shader(osg::Shader::VERTEX, PIXEL_TEXT_VERTEX_SHADER));
-	program->addShader(new osg::Shader(osg::Shader::FRAGMENT, PIXEL_TEXT_FRAGMENT_SHADER));
+	program->addShader(new osg::Shader(osg::Shader::VERTEX, resolveShaderLibs(PIXEL_TEXT_VERTEX_SHADER)));
+	program->addShader(new osg::Shader(osg::Shader::FRAGMENT, resolveShaderLibs(PIXEL_TEXT_FRAGMENT_SHADER)));
 
 	ss->setAttributeAndModes(program, osg::StateAttribute::ON);
 	ss->setMode(GL_BLEND, osg::StateAttribute::ON);
@@ -521,7 +511,7 @@ void PixelText::setText(std::string_view text) {
 	indices->setBufferObject(new osg::ShaderStorageBufferObject());
 
 	getOrCreateStateSet()->setAttributeAndModes(
-		new osg::ShaderStorageBufferBinding(GLYPH_BINDING, indices, 0, 0),
+		new osg::ShaderStorageBufferBinding(Library::instance().bindings().get("osgx::pixelText"), indices, 0, 0),
 		osg::StateAttribute::ON
 	);
 

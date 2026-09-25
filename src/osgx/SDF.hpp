@@ -2,6 +2,7 @@
 
 #include "Array.hpp"
 #include "Core.hpp"
+#include "Library.hpp"
 
 OSGX_DISABLE_WARNINGS
 
@@ -108,8 +109,8 @@ void registerSDFShaderLibs();
 //
 // Follows Material/GridSettings exactly: claims the reserved CAPABILITY Type with its own member
 // number, keeps its parameters in a small std430 buffer rewritten in place by every setter, and
-// apply() is read-only. The texture binds at the fixed SDF_TEXTURE_UNIT, referenced by the
-// shader through `layout(binding=...)` so no osg::Uniform is needed.
+// apply() is read-only. The texture binds at the "osgx::sdf.texture" slot (osgx::Bindings),
+// referenced by the shader through `layout(binding=...)` so no osg::Uniform is needed.
 //
 // uvRect is (u0, v0, u1, v1) in whole-texture space. Because tile-local uv is mapped with a plain
 // mix(), v0 > v1 flips the tile vertically - useful, since OSG flips images on load and
@@ -123,11 +124,6 @@ class SDF: public osg::StateAttribute {
 public:
 	static constexpr Type SDF_TYPE = CAPABILITY;
 	static constexpr unsigned int SDF_MEMBER = 3;
-	// Next free binding after Material (0), glTF joints (2), LightSet (3), and GridSettings (4).
-	static constexpr unsigned int SDF_BINDING = 5;
-	// Fixed, like Material's texture units - see the class comment. Kept clear of Material's 0-3
-	// and the PBR/IBL/shadow samplers (4, 5, 9) so an SDF can coexist with them in one Program.
-	static constexpr int SDF_TEXTURE_UNIT = 10;
 
 	// Named SDFType, not Type: inside this class `Type` already means osg::StateAttribute::Type
 	// (SDF_TYPE below, and getType()'s return), which a nested enum of that name would shadow.
@@ -180,6 +176,10 @@ private:
 
 	osg::ref_ptr<osgx::FloatArray> _buffer;
 	osg::ref_ptr<osg::ShaderStorageBufferBinding> _binding;
+	mutable std::once_flag _bindingResolved;
+
+	mutable unsigned int _unit = 0;
+	mutable std::once_flag _unitResolved;
 };
 
 }

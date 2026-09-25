@@ -2,6 +2,7 @@
 
 #include "osgx/Core.hpp"
 #include "osgx/Grid.hpp"
+#include "osgx/Library.hpp"
 #include "osgx/Projection.hpp"
 #include "osgx/Shapes.hpp"
 #include "osgx/Shader.hpp"
@@ -367,6 +368,8 @@ void addGridRoom(osg::Group* root) {
 }
 
 int main(int argc, char** argv) {
+	auto lib = osgx::initialize();
+
 	bool orthoMode = argc > 1 && std::string(argv[1]) == "ortho";
 	bool floorMode = argc > 1 && std::string(argv[1]) == "floor";
 	bool diceMode = argc > 1 && std::string(argv[1]) == "dice";

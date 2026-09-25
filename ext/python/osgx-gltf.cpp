@@ -1,4 +1,5 @@
 #include "osgx-python.hpp"
+#include "osgx-library.hpp"
 
 // This whole file only compiles (and is only added to the source list, see CMakeLists.txt) when
 // OSGX_BUILD_GLTF is on. It deliberately owns its tinygltf/osgx::gltf includes locally instead of
@@ -705,19 +706,20 @@ osg::ref_ptr<osg::Node> readNodeFile(
 	py::gil_scoped_release release;
 
 	// Same texture-dedup cache ReaderWriterGLTF::readNode() wires up for the normal
-	// osgDB::readNodeFile() path. Without this, the reader's three cache-checking call sites
-	// (occlusion/metallic-roughness bake, base color, normal map) all skip their cache lookup and
-	// silently reload+redecode any texture referenced by more than one material in the
-	// model - measured 4.5x slower (13.5s vs 2.96s) on a real multi-material asset
-	// before this was added.
-	static osgx::gltf::Reader::TextureCache s_asyncTextureCache;
+	// osgDB::readNodeFile() path. Without it, the reader's three cache-checking call sites
+	// (occlusion/metallic-roughness bake, base color, normal map) skip their lookup and reload and
+	// re-decode any texture referenced by more than one material - measured 4.5x slower (13.5s vs
+	// 2.96s) on a real multi-material asset. Owned by the live osgx.Library when it is this module's
+	// own (osgx.initialize()); another module's Library subclass (e.g. osgSlug.initialize()) has no
+	// cache, and the reader then runs without one.
+	auto* library = dynamic_cast<osgx_python::Library*>(&osgx::Library::instance());
 
 	const std::string ext = osgDB::getLowerCaseFileExtension(location);
 	const bool isBinary = ext == "glb";
 
 	osgx::gltf::Reader reader;
 
-	reader.setTextureCache(&s_asyncTextureCache);
+	if(library) reader.setTextureCache(&library->gltfTextureCache);
 
 	osgx::gltf::Reader::ProgressCallback onProgress = [&](const osgx::gltf::Reader::Progress& p) {
 		if(progress) {
@@ -740,8 +742,6 @@ namespace osgx_python {
 // the formerly-separate osgGLTF repo/Python module 2026-07-30. Nested exactly like the C++
 // namespace (osgx::gltf::shader, osgx::gltf::pbribl).
 void bind_gltf(py::module_& m_gltf) {
-	osgx::gltf::pbribl::registerShaderLibs();
-
 	auto m_gltf_sdf = m_gltf.def_submodule(
 		"sdf",
 		"The `osgx_sdf` glTF extension: baked SDF/MSDF tiles, loaded as osgx.SDF attributes. osgx only "
@@ -835,10 +835,6 @@ void bind_gltf(py::module_& m_gltf) {
 		py::str(osgx::gltf::shader::JOINT_INDICES_ATTRIBUTE_NAME);
 	m_gltf_shader.attr("JOINT_WEIGHTS_ATTRIBUTE_NAME") =
 		py::str(osgx::gltf::shader::JOINT_WEIGHTS_ATTRIBUTE_NAME);
-	m_gltf_shader.attr("BASE_COLOR_TEXTURE_UNIT") = osgx::gltf::shader::BASE_COLOR_TEXTURE_UNIT;
-	m_gltf_shader.attr("NORMAL_TEXTURE_UNIT") = osgx::gltf::shader::NORMAL_TEXTURE_UNIT;
-	m_gltf_shader.attr("ORM_TEXTURE_UNIT") = osgx::gltf::shader::ORM_TEXTURE_UNIT;
-	m_gltf_shader.attr("EMISSIVE_TEXTURE_UNIT") = osgx::gltf::shader::EMISSIVE_TEXTURE_UNIT;
 	m_gltf_shader.attr("SKINNING_HOOK_IDENTITY") =
 		py::str(osgx::gltf::shader::SKINNING_HOOK_IDENTITY);
 	m_gltf_shader.attr("SKINNING_HOOK_LINEAR_BLEND") =

@@ -103,23 +103,20 @@ void MaterialBuilder::applyMaterial(
 	// are authored in sRGB gamma space; normal and ORM (occlusion/
 	// roughness/metallic) textures are linear data, not color, and
 	// must never be gamma-decoded.
-	auto bindTexture = [&](int unit, int texIdx, int texCoord, bool sRGB) {
-		if(unit < 0) return;
-
+	// `channel` names the map (its osgx::*_UV_CHANNEL) and is where its UV set goes.
+	auto bindTexture = [&](unsigned int channel, int texIdx, int texCoord, bool sRGB) {
 		osg::Texture2D* tex = _textureLoader.getOrCreateTexture(texIdx, sRGB);
 
 		if(!tex) return;
 
-		const unsigned int textureUnit = static_cast<unsigned int>(unit);
-
-		if(unit == osgx::BASE_COLOR_TEXTURE_UNIT) materialAttr->setBaseColorMap(tex);
-		else if(unit == osgx::NORMAL_TEXTURE_UNIT) materialAttr->setNormalMap(tex);
-		else if(unit == osgx::ORM_TEXTURE_UNIT) materialAttr->setMetallicRoughnessMap(tex);
-		else if(unit == osgx::EMISSIVE_TEXTURE_UNIT) materialAttr->setEmissiveMap(tex);
+		if(channel == osgx::BASE_COLOR_UV_CHANNEL) materialAttr->setBaseColorMap(tex);
+		else if(channel == osgx::NORMAL_UV_CHANNEL) materialAttr->setNormalMap(tex);
+		else if(channel == osgx::ORM_UV_CHANNEL) materialAttr->setMetallicRoughnessMap(tex);
+		else if(channel == osgx::EMISSIVE_UV_CHANNEL) materialAttr->setEmissiveMap(tex);
 
 		auto it = texCoordSets.find(texCoord);
 
-		if(it != texCoordSets.end()) geom->setTexCoordArray(textureUnit, it->second);
+		if(it != texCoordSets.end()) geom->setTexCoordArray(channel, it->second);
 	};
 
 	// base_color_factor is now a fixed-size array, always populated with the spec default
@@ -134,7 +131,7 @@ void MaterialBuilder::applyMaterial(
 	bool haveCoreBaseColor = pbr.base_color_texture.index >= 0;
 
 	if(haveCoreBaseColor) bindTexture(
-		osgx::gltf::shader::BASE_COLOR_TEXTURE_UNIT,
+		osgx::BASE_COLOR_UV_CHANNEL,
 		pbr.base_color_texture.index,
 		pbr.base_color_texture.tex_coord,
 		true
@@ -143,7 +140,7 @@ void MaterialBuilder::applyMaterial(
 	bool haveNormalMap = mat.normal_texture.index >= 0;
 
 	if(haveNormalMap) bindTexture(
-		osgx::gltf::shader::NORMAL_TEXTURE_UNIT,
+		osgx::NORMAL_UV_CHANNEL,
 		mat.normal_texture.index,
 		mat.normal_texture.tex_coord,
 		false
@@ -220,20 +217,20 @@ void MaterialBuilder::applyMaterial(
 		auto occTexCoordIt = texCoordSets.find(mat.occlusion_texture.tex_coord);
 
 		if(occTexCoordIt != texCoordSets.end()) geom->setTexCoordArray(
-			osgx::gltf::shader::ORM_TEXTURE_UNIT,
+			osgx::ORM_UV_CHANNEL,
 			occTexCoordIt->second
 		);
 	}
 
 	else if(pbr.metallic_roughness_texture.index >= 0) bindTexture(
-		osgx::gltf::shader::ORM_TEXTURE_UNIT,
+		osgx::ORM_UV_CHANNEL,
 		pbr.metallic_roughness_texture.index,
 		pbr.metallic_roughness_texture.tex_coord,
 		false
 	);
 
 	if(mat.emissive_texture.index >= 0) bindTexture(
-		osgx::gltf::shader::EMISSIVE_TEXTURE_UNIT,
+		osgx::EMISSIVE_UV_CHANNEL,
 		mat.emissive_texture.index,
 		mat.emissive_texture.tex_coord,
 		true
@@ -298,13 +295,13 @@ void MaterialBuilder::applyMaterial(
 
 			if(skipSpecGlossBake) {
 				if(diffuseIdx >= 0) bindTexture(
-					osgx::gltf::shader::BASE_COLOR_TEXTURE_UNIT,
+					osgx::BASE_COLOR_UV_CHANNEL,
 					diffuseIdx,
 					diffuseTexCoord,
 					true
 				);
 				if(specGlossIdx >= 0) bindTexture(
-					osgx::gltf::shader::ORM_TEXTURE_UNIT,
+					osgx::ORM_UV_CHANNEL,
 					specGlossIdx,
 					specGlossTexCoord,
 					true
@@ -430,11 +427,11 @@ void MaterialBuilder::applyMaterial(
 
 				if(texCoordIt != texCoordSets.end()) {
 					geom->setTexCoordArray(
-						osgx::gltf::shader::BASE_COLOR_TEXTURE_UNIT,
+						osgx::BASE_COLOR_UV_CHANNEL,
 						texCoordIt->second
 					);
 					geom->setTexCoordArray(
-						osgx::gltf::shader::ORM_TEXTURE_UNIT,
+						osgx::ORM_UV_CHANNEL,
 						texCoordIt->second
 					);
 				}

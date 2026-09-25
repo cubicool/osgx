@@ -1,3 +1,5 @@
+#include "LibraryState.hpp"
+
 #include "osgx/IBL.hpp"
 #include "osgx/RTT.hpp"
 
@@ -68,15 +70,9 @@ osg::ref_ptr<osg::Camera> makeBRDFLUTCamera(int lutSize, osg::Texture2D* lut) {
 	return cam;
 }
 
-// This function-local static cache is exactly the same DSO-duplication risk class that made
-// osgx::debug::detail::_accumulators a real bug (see Debug.hpp/Debug.cpp): a function-local
-// static inside a header-defined `inline` function only merges into one instance within a single
-// link unit, not across separately dlopen()'d modules. Defining SharedBRDFLUT::create() exactly
-// once here, compiled into libosgx, means `cache` is genuinely process-wide singleton state for
-// every consumer that links osgx::osgx - the same fix, applied preemptively rather than in
-// response to an observed bug this time.
+// The cache is owned by the live osgx::Library (LibraryState::brdfLUTs).
 SharedBRDFLUT SharedBRDFLUT::create(int lutSize) {
-	static std::map<int, osg::ref_ptr<osg::Texture2D>> cache;
+	auto& cache = detail::libraryState().brdfLUTs;
 
 	if(auto it = cache.find(lutSize); it != cache.end()) return {it->second, nullptr};
 

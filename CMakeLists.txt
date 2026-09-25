@@ -240,6 +240,7 @@ add_library(osgx ${OSGX_LIBRARY_TYPE}
 	src/Grid.cpp
 	src/IBL.cpp
 	src/LambertianBake.cpp
+	src/Library.cpp
 	src/Light.cpp
 	src/Manipulators.cpp
 	src/PBR.cpp
@@ -272,6 +273,7 @@ target_sources(osgx PUBLIC
 	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/GBuffer.hpp>"
 	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/GGXPrefilter.hpp>"
 	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/LambertianBake.hpp>"
+	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/Library.hpp>"
 	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/Light.hpp>"
 	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/Manipulators.hpp>"
 	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/PBR.hpp>"
@@ -581,6 +583,7 @@ if(OSGX_BUILD_PYTHON AND Python3_Development.Module_FOUND)
 	# a relink, a from-scratch build parallelizes across `make -j#`, and pybind11_add_module below
 	# only ever has to compile the thin ext/python/osgx.cpp PYBIND11_MODULE entry point.
 	add_library(osgx_python_bindings STATIC
+		"ext/python/osgx-library.cpp"
 		"ext/python/osgx-core.cpp"
 		"ext/python/osgx-callbacks.cpp"
 		"ext/python/osgx-cursor.cpp"

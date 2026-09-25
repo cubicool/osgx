@@ -19,6 +19,7 @@
 // A model path may be passed like other examples; defaults to a built-in sphere.
 
 #include "osgx/Core.hpp"
+#include "osgx/Library.hpp"
 #include "osgx/Linux.hpp"
 
 #ifdef OSGX_EGL
@@ -61,6 +62,8 @@ osg::ref_ptr<osg::Node> createDefaultScene() {
 }
 
 int main(int argc, char** argv) {
+	auto lib = osgx::initialize();
+
 	bool monitorsOnly = false;
 	bool useEGL = false;
 	bool useGBM = false;

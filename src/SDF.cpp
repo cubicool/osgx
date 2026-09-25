@@ -166,9 +166,9 @@ float osgx_SDF_CoverageFromDistance(float d, float screenPixelRange);
 // `sdfType` is a float (0 = SDF, 1 = MSDF) purely to keep the backing store a single FloatArray, the
 // same trick Material's has*Map flags use.
 constexpr const char* SDF_TEXTURE_SRC = R"GLSL(
-layout(binding = 10) uniform sampler2D osgx_sdfTexture;
+layout(binding = @osgx::sdf.texture@) uniform sampler2D osgx_sdfTexture;
 
-layout(std430, binding = 5) readonly buffer osgx_SDFBuffer {
+layout(std430, binding = @osgx::sdf@) readonly buffer osgx_SDFBuffer {
 	vec4 uvRect;
 	float pixelRange;
 	float sdfType;
@@ -221,8 +221,9 @@ void SDF::_initBuffer() {
 	_buffer = osgx::make_ref<osgx::FloatArray>(static_cast<std::size_t>(8));
 	_buffer->setBufferObject(new osg::ShaderStorageBufferObject());
 
+	// Index 0 until apply() resolves the "osgx::sdf" slot.
 	_binding = new osg::ShaderStorageBufferBinding(
-		SDF_BINDING, _buffer, 0, static_cast<GLsizeiptr>(_buffer->getTotalDataSize())
+		0, _buffer, 0, static_cast<GLsizeiptr>(_buffer->getTotalDataSize())
 	);
 
 	_write();
@@ -251,9 +252,20 @@ int SDF::compare(const osg::StateAttribute& sa) const {
 	return 0;
 }
 
-// Read-only over this object's state - see Material::apply() (PBR.cpp) for why that matters.
+// Read-only over this object's state, and binds its texture directly - see Material::apply()
+// (PBR.cpp) for why both matter.
 void SDF::apply(osg::State& state) const {
-	if(_texture.valid()) state.applyTextureAttribute(SDF_TEXTURE_UNIT, _texture.get());
+	resolveBinding(_bindingResolved, _binding.get(), "osgx::sdf");
+
+	std::call_once(_unitResolved, [this]() {
+		_unit = Library::instance().bindings().get("osgx::sdf.texture");
+	});
+
+	if(_texture.valid()) {
+		state.setActiveTextureUnit(_unit);
+
+		_texture->apply(state);
+	}
 
 	state.applyAttribute(_binding.get());
 }

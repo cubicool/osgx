@@ -32,6 +32,7 @@
 #include "osgx/Gizmos.hpp"
 #include "osgx/IBL.hpp"
 #include "osgx/ImGui.hpp"
+#include "osgx/Library.hpp"
 #include "osgx/PBR.hpp"
 #include "osgx/Shadow.hpp"
 #include "osgx/gltf/PBRIBL.hpp"
@@ -364,6 +365,7 @@ osg::ref_ptr<osg::Camera> makeDebugBlitCamera(osg::Uniform*& channelModeOut) {
 
 int main(int argc, char** argv) {
 	osg::ArgumentParser args(&argc, argv);
+	auto lib = osgx::initialize(args);
 
 	args.getApplicationUsage()->setCommandLineUsage(
 		std::string(args.getApplicationName()) +
