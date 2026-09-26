@@ -13,7 +13,10 @@ OSGX_ENABLE_WARNINGS
 
 #include <X11/Xlib.h>
 
+#include <map>
+#include <mutex>
 #include <utility>
+#include <vector>
 
 namespace osgx::platform {
 
@@ -37,6 +40,71 @@ std::pair<Display*, Window> createEGLDisplayWindow(unsigned int width, unsigned 
 	XStoreName(display, win, "OSG EGL Window");
 
 	return {display, win};
+}
+
+// Headless EGL displays are per-device singletons shared by every pbuffer context on that
+// device, and eglTerminate() is not reference counted: terminating on one context's close would
+// invalidate every other live context. Each acquire is paired with one release; the display is
+// terminated only when its last user releases it.
+std::mutex headlessMutex;
+std::map<EGLDisplay, unsigned int> headlessRefs;
+
+EGLDisplay initializeHeadlessDisplay(EGLint& major, EGLint& minor);
+
+EGLDisplay acquireHeadlessDisplay(EGLint& major, EGLint& minor) {
+	std::lock_guard<std::mutex> lock(headlessMutex);
+
+	EGLDisplay display = initializeHeadlessDisplay(major, minor);
+
+	if(display != EGL_NO_DISPLAY) headlessRefs[display]++;
+
+	return display;
+}
+
+void releaseHeadlessDisplay(EGLDisplay display) {
+	std::lock_guard<std::mutex> lock(headlessMutex);
+
+	auto it = headlessRefs.find(display);
+
+	if(it == headlessRefs.end()) return;
+
+	if(--it->second == 0) {
+		headlessRefs.erase(it);
+
+		eglTerminate(display);
+	}
+}
+
+// Returns an initialized EGL display that needs no X server: the first EGL device (via
+// EGL_EXT_platform_device) that initializes, else EGL_DEFAULT_DISPLAY. eglInitialize() on an
+// already-initialized display is a no-op, so repeated calls return the same live display.
+EGLDisplay initializeHeadlessDisplay(EGLint& major, EGLint& minor) {
+	auto queryDevices = reinterpret_cast<PFNEGLQUERYDEVICESEXTPROC>(
+		eglGetProcAddress("eglQueryDevicesEXT")
+	);
+
+	auto getPlatformDisplay = reinterpret_cast<PFNEGLGETPLATFORMDISPLAYEXTPROC>(
+		eglGetProcAddress("eglGetPlatformDisplayEXT")
+	);
+
+	if(queryDevices && getPlatformDisplay) {
+		EGLDeviceEXT devices[16];
+		EGLint numDevices = 0;
+
+		if(queryDevices(16, devices, &numDevices)) {
+			for(EGLint i = 0; i < numDevices; i++) {
+				EGLDisplay display = getPlatformDisplay(EGL_PLATFORM_DEVICE_EXT, devices[i], nullptr);
+
+				if(display != EGL_NO_DISPLAY && eglInitialize(display, &major, &minor)) return display;
+			}
+		}
+	}
+
+	EGLDisplay display = eglGetDisplay(EGL_DEFAULT_DISPLAY);
+
+	if(display != EGL_NO_DISPLAY && eglInitialize(display, &major, &minor)) return display;
+
+	return EGL_NO_DISPLAY;
 }
 
 class GraphicsWindowEGL: public osgViewer::GraphicsWindow {
@@ -63,33 +131,48 @@ public:
 		}
 
 		_traits->windowDecoration = false;
-		_traits->pbuffer = false;
 
-		auto [display, win] = createEGLDisplayWindow(
-			static_cast<unsigned int>(_traits->width),
-			static_cast<unsigned int>(_traits->height)
-		);
+		// A pbuffer surface is single-buffered; eglSwapBuffers() on it is a no-op.
+		if(_traits->pbuffer) _traits->doubleBuffer = false;
 
-		if(!display) return;
+		if(_traits->pbuffer) {
+			_eglDisplay = acquireHeadlessDisplay(_eglMajor, _eglMinor);
+			_headless = _eglDisplay != EGL_NO_DISPLAY;
 
-		_display = display;
-		_window = win;
-		_wmDeleteWindow = XInternAtom(display, "WM_DELETE_WINDOW", False);
+			if(_eglDisplay == EGL_NO_DISPLAY) {
+				osg::notify(osg::FATAL) << "EGL: no headless display could be initialized" << std::endl;
 
-		XSetWMProtocols(display, win, &_wmDeleteWindow, 1);
-
-		_eglDisplay = eglGetDisplay(reinterpret_cast<EGLNativeDisplayType>(display));
-
-		if(_eglDisplay == EGL_NO_DISPLAY) {
-			osg::notify(osg::FATAL) << "EGL: eglGetDisplay failed" << std::endl;
-
-			return;
+				return;
+			}
 		}
 
-		if(!eglInitialize(_eglDisplay, &_eglMajor, &_eglMinor)) {
-			osg::notify(osg::FATAL) << "EGL: eglInitialize failed" << std::endl;
+		else {
+			auto [display, win] = createEGLDisplayWindow(
+				static_cast<unsigned int>(_traits->width),
+				static_cast<unsigned int>(_traits->height)
+			);
 
-			return;
+			if(!display) return;
+
+			_display = display;
+			_window = win;
+			_wmDeleteWindow = XInternAtom(display, "WM_DELETE_WINDOW", False);
+
+			XSetWMProtocols(display, win, &_wmDeleteWindow, 1);
+
+			_eglDisplay = eglGetDisplay(reinterpret_cast<EGLNativeDisplayType>(display));
+
+			if(_eglDisplay == EGL_NO_DISPLAY) {
+				osg::notify(osg::FATAL) << "EGL: eglGetDisplay failed" << std::endl;
+
+				return;
+			}
+
+			if(!eglInitialize(_eglDisplay, &_eglMajor, &_eglMinor)) {
+				osg::notify(osg::FATAL) << "EGL: eglInitialize failed" << std::endl;
+
+				return;
+			}
 		}
 
 		if(!eglBindAPI(EGL_OPENGL_API)) {
@@ -98,39 +181,91 @@ public:
 			return;
 		}
 
-		const EGLint configAttribs[] = {
-			EGL_SURFACE_TYPE, EGL_WINDOW_BIT,
+		std::vector<EGLint> configAttribs = {
+			EGL_SURFACE_TYPE, _traits->pbuffer ? EGL_PBUFFER_BIT : EGL_WINDOW_BIT,
 			EGL_RENDERABLE_TYPE, EGL_OPENGL_BIT,
 			EGL_RED_SIZE, 8,
 			EGL_GREEN_SIZE, 8,
 			EGL_BLUE_SIZE, 8,
 			EGL_ALPHA_SIZE, 8,
-			EGL_DEPTH_SIZE, 24,
-			EGL_NONE
+			EGL_DEPTH_SIZE, 24
 		};
+
+		if(_traits->sampleBuffers) {
+			configAttribs.push_back(EGL_SAMPLE_BUFFERS);
+			configAttribs.push_back(static_cast<EGLint>(_traits->sampleBuffers));
+		}
+
+		if(_traits->samples) {
+			configAttribs.push_back(EGL_SAMPLES);
+			configAttribs.push_back(static_cast<EGLint>(_traits->samples));
+		}
+
+		configAttribs.push_back(EGL_NONE);
 
 		EGLint numConfigs = 0;
 
-		if(!eglChooseConfig(_eglDisplay, configAttribs, &_eglConfig, 1, &numConfigs) || numConfigs < 1) {
+		if(
+			!eglChooseConfig(_eglDisplay, configAttribs.data(), &_eglConfig, 1, &numConfigs) ||
+			numConfigs < 1
+		) {
 			osg::notify(osg::FATAL) << "EGL: eglChooseConfig failed" << std::endl;
 
 			return;
 		}
 
-		_eglSurface = eglCreateWindowSurface(
+		if(_traits->pbuffer) {
+			const EGLint pbufferAttribs[] = {
+				EGL_WIDTH, _traits->width,
+				EGL_HEIGHT, _traits->height,
+				EGL_NONE
+			};
+
+			_eglSurface = eglCreatePbufferSurface(_eglDisplay, _eglConfig, pbufferAttribs);
+		}
+
+		else _eglSurface = eglCreateWindowSurface(
 			_eglDisplay,
 			_eglConfig,
-			reinterpret_cast<EGLNativeWindowType>(win),
+			reinterpret_cast<EGLNativeWindowType>(_window),
 			nullptr
 		);
 
 		if(_eglSurface == EGL_NO_SURFACE) {
-			osg::notify(osg::FATAL) << "EGL: eglCreateWindowSurface failed" << std::endl;
+			osg::notify(osg::FATAL) << "EGL: surface creation failed" << std::endl;
 
 			return;
 		}
 
-		_eglContext = eglCreateContext(_eglDisplay, _eglConfig, EGL_NO_CONTEXT, nullptr);
+		// Mirrors osgViewer's GLX_ARB_create_context path: the version is always requested (OSG's
+		// default "1.0" yields the driver's highest compatibility context), the profile mask only
+		// for 3.2+, and the flags only when set. EGL_KHR_create_context uses the same flag and
+		// profile bit values as GLX_ARB_create_context, so Traits values pass through unchanged.
+		std::vector<EGLint> contextAttribs;
+
+		unsigned int major = 0;
+		unsigned int minor = 0;
+
+		if(_traits->getContextVersion(major, minor)) {
+			contextAttribs.push_back(EGL_CONTEXT_MAJOR_VERSION);
+			contextAttribs.push_back(static_cast<EGLint>(major));
+			contextAttribs.push_back(EGL_CONTEXT_MINOR_VERSION);
+			contextAttribs.push_back(static_cast<EGLint>(minor));
+
+			if((major > 3 || (major == 3 && minor >= 2)) && _traits->glContextProfileMask) {
+				contextAttribs.push_back(EGL_CONTEXT_OPENGL_PROFILE_MASK);
+				contextAttribs.push_back(static_cast<EGLint>(_traits->glContextProfileMask));
+			}
+		}
+
+		if(_traits->glContextFlags) {
+			contextAttribs.push_back(EGL_CONTEXT_FLAGS_KHR);
+			contextAttribs.push_back(static_cast<EGLint>(_traits->glContextFlags));
+		}
+
+		contextAttribs.push_back(EGL_NONE);
+
+		_eglContext = eglCreateContext(_eglDisplay, _eglConfig, EGL_NO_CONTEXT, contextAttribs.data());
 
 		if(_eglContext == EGL_NO_CONTEXT) {
 			osg::notify(osg::FATAL) << "EGL: eglCreateContext failed" << std::endl;
@@ -157,7 +292,9 @@ public:
 
 		osg::notify(osg::NOTICE)
 			<< "EGL initialized: " << _eglMajor << "." << _eglMinor
-			<< " surface=" << _traits->width << "x" << _traits->height
+			<< " vendor=" << eglQueryString(_eglDisplay, EGL_VENDOR)
+			<< (_traits->pbuffer ? " pbuffer=" : " surface=")
+			<< _traits->width << "x" << _traits->height
 			<< std::endl
 		;
 	}
@@ -212,8 +349,12 @@ public:
 			if(_eglContext != EGL_NO_CONTEXT) eglDestroyContext(_eglDisplay, _eglContext);
 			if(_eglSurface != EGL_NO_SURFACE) eglDestroySurface(_eglDisplay, _eglSurface);
 
-			eglTerminate(_eglDisplay);
+			if(_headless) releaseHeadlessDisplay(_eglDisplay);
+
+			else eglTerminate(_eglDisplay);
 		}
+
+		_headless = false;
 
 		if(_display) {
 			if(_window) XDestroyWindow(_display, _window);
@@ -238,6 +379,7 @@ private:
 	bool _valid = false;
 	bool _initialized = false;
 	bool _realized = false;
+	bool _headless = false;
 
 	Display* _display = nullptr;
 	Window _window = 0;

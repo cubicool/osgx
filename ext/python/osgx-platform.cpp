@@ -100,7 +100,9 @@ void bind_platform(py::module_& m_platform) {
 		&osgx::platform::createEGLWindow,
 		"traits"_a,
 		"Create an X11 window driven by EGL (instead of GLX). Skeleton/proof-of-concept: assign "
-		"the result to `camera.graphicsContext`."
+		"the result to `camera.graphicsContext`. With `traits.pbuffer = True`, renders headless "
+		"into an EGL pbuffer instead (no X11 window or X server needed); framebuffer reads then "
+		"read that pbuffer."
 	);
 #endif
 
