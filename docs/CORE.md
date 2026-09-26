@@ -518,6 +518,13 @@ TODO.md's Shadow section).
     *existing* `ShadowMap` in place (no new camera/FBO/depth-texture allocation), cheap enough to
     call every frame for an interactively-moving light (e.g. an ImGui-dragged direction). `create()`
     remains the right call for a light fixed at scene-build time.
+  - `ShadowMap::createSpot(position, direction, outerConeAngle, sceneBoundCenter, sceneBoundRadius,
+    options={})` — a spot light's map: a **perspective** depth-only camera at the light's position,
+    looking along `direction` (ray travel direction and half-angle in radians, as
+    `LightSet::setSpot()`), covering the outer cone. Near/far bracket the scene bound as seen from
+    the light. Same camera/texture/uniforms/hook as `create()`; perspective depth is non-linear, so
+    a spot map usually wants a smaller `bias` (`osgx-shadow --type spot` uses `0.0005`).
+    `repositionSpot(...)` (same arguments) is its `reposition()`.
 - `DIRECT_LIGHTING_HOOK_SHADOWED` — a drop-in replacement for `Light.hpp`'s
   `DIRECT_LIGHTING_HOOK_DEFAULT`: identical per-light dispatch loop, except the light at
   `osgx_shadowCasterIndex` has its contribution multiplied by `osgx_ShadowFactor()` (world-space PCF

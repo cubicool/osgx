@@ -69,7 +69,7 @@ struct ShadowMapOptions {
 	float strength = 0.7f; // 0 = shadows have no effect, 1 = fully black
 };
 
-// A directional shadow map: owns the PRE_RENDER depth-only camera (`camera` - add it to the
+// A directional (create()) or spot (createSpot()) shadow map: owns the PRE_RENDER depth-only camera (`camera` - add it to the
 // scene graph, e.g. as a sibling of whatever the shadowed model's own parent is, exactly where
 // the old hand-rolled examples added their own `shadow_cam`) plus the uniforms
 // DIRECT_LIGHTING_HOOK_SHADOWED reads every frame. Depth-only: no dummy color attachment
@@ -138,6 +138,32 @@ struct ShadowMap {
 	// recomputed.
 	void reposition(
 		const osg::Vec3& lightDirection,
+		const osg::Vec3& sceneBoundCenter,
+		float sceneBoundRadius,
+		const ShadowMapOptions& options={}
+	);
+
+	// A spot light's shadow map: a PERSPECTIVE depth-only camera at `position` looking along
+	// `direction` (ray travel direction, as LightSet::setSpot()), its field of view covering
+	// `outerConeAngle` (radians, half-angle, as LightSet::setSpot()). Near/far bracket the scene
+	// bound (`sceneBoundRadius * options.margin`) as seen from the light; `options.extent` is not
+	// used. Everything else - `camera`, `depthTexture`, the uniforms, DIRECT_LIGHTING_HOOK_SHADOWED
+	// - is the same as create()'s. `bias` is compared in the map's non-linear depth, so a spot
+	// map usually wants a smaller bias than a directional one.
+	static ShadowMap createSpot(
+		const osg::Vec3& position,
+		const osg::Vec3& direction,
+		float outerConeAngle,
+		const osg::Vec3& sceneBoundCenter,
+		float sceneBoundRadius,
+		const ShadowMapOptions& options={}
+	);
+
+	// reposition()'s counterpart for a createSpot() map.
+	void repositionSpot(
+		const osg::Vec3& position,
+		const osg::Vec3& direction,
+		float outerConeAngle,
 		const osg::Vec3& sceneBoundCenter,
 		float sceneBoundRadius,
 		const ShadowMapOptions& options={}

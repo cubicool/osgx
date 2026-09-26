@@ -145,6 +145,31 @@ void bind_shadow(py::module_& m) {
 			"Cheap enough to call every frame (or on every GUI-slider tick) for an interactively-moving "
 			"light; create() remains correct for a light fixed at scene-build time."
 		)
+		.def_static(
+			"createSpot",
+			&osgx::ShadowMap::createSpot,
+			"position"_a,
+			"direction"_a,
+			"outerConeAngle"_a,
+			"sceneBoundCenter"_a,
+			"sceneBoundRadius"_a,
+			"options"_a=osgx::ShadowMapOptions{},
+			"Builds a spot light's shadow map: a PERSPECTIVE depth camera at `position` looking "
+			"along `direction`, covering `outerConeAngle` (radians, half-angle, as "
+			"LightSet.setSpot()). Near/far bracket the scene bound as seen from the light. A spot "
+			"map usually wants a smaller bias than a directional one (non-linear depth)."
+		)
+		.def(
+			"repositionSpot",
+			&osgx::ShadowMap::repositionSpot,
+			"position"_a,
+			"direction"_a,
+			"outerConeAngle"_a,
+			"sceneBoundCenter"_a,
+			"sceneBoundRadius"_a,
+			"options"_a=osgx::ShadowMapOptions{},
+			"reposition()'s counterpart for a createSpot() map."
+		)
 	;
 }
 

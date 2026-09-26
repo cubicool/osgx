@@ -1,8 +1,10 @@
 // vimrun! ./examples/osgx-shadow
 //
 // A standalone proof that osgx::DIRECT_LIGHTING_HOOK_SHADOWED actually shadows: three
-// osgx::Cube shapes of different sizes/colors sitting on a flat floor quad, lit by one directional
-// osgx::LightSet light, its shadow cast via osgx::ShadowMap::create().
+// osgx::Cube shapes of different sizes/colors sitting on a flat floor quad, lit by one
+// osgx::LightSet light whose shadow is cast via osgx::ShadowMap: `--type directional` (default,
+// ShadowMap::create(), orthographic) or `--type spot` (ShadowMap::createSpot(), perspective from
+// the light's position, covering its cone).
 //
 // Deliberately NOT osgx::PBRScene - no glTF asset, no IBL environment, nothing but the
 // generic osgx::pbr direct-lighting hook contract plus the new shadow one, mirroring
@@ -41,6 +43,7 @@
 
 OSGX_DISABLE_WARNINGS
 
+#include <osg/ArgumentParser>
 #include <osg/Geode>
 #include <osg/Geometry>
 #include <osg/GL>
@@ -57,7 +60,9 @@ OSGX_DISABLE_WARNINGS
 
 OSGX_ENABLE_WARNINGS
 
+#include <algorithm>
 #include <iostream>
+#include <string>
 #include <string_view>
 
 namespace {
@@ -199,8 +204,22 @@ osg::ref_ptr<osg::Geode> makeCube(const osg::Vec3& center, const osg::Vec3& size
 
 }
 
-int main() {
-	auto lib = osgx::initialize();
+int main(int argc, char** argv) {
+	osg::ArgumentParser args(&argc, argv);
+
+	auto lib = osgx::initialize(args);
+
+	std::string type = "directional";
+
+	args.read("--type", type);
+
+	if(type != "directional" && type != "spot") {
+		std::cerr << "osgx-shadow: --type must be 'directional' or 'spot'" << std::endl;
+
+		return 1;
+	}
+
+	const bool spot = type == "spot";
 
 	// Three cubes of different footprints/heights, loosely matching osgx-grid's own floor demo
 	// screenshot - close enough to prove multi-caster shadows land in believable places, not a
@@ -224,7 +243,13 @@ int main() {
 	// ShadowMap::reposition() further down).
 	osg::Vec3 lightDir = osg::Vec3(0.5f, 0.35f, -1.0f);
 	osg::Vec3 lightColor = osg::Vec3(1.0f, 0.96f, 0.88f);
-	float lightIntensity = 3.0f;
+	float lightIntensity = spot ? 40.0f : 3.0f;
+
+	// Spot light (--type spot): above and in front of the cubes, aimed at the scene's center.
+	osg::Vec3 spotPosition(2.2f, -2.0f, 3.4f);
+	osg::Vec3 spotDirection = osg::Vec3(0.0f, 0.0f, 0.3f) - spotPosition;
+	float spotInnerDegrees = 22.0f;
+	float spotOuterDegrees = 32.0f;
 	const osg::Vec3 sceneBoundCenter(0.0f, 0.0f, 0.5f);
 	constexpr float sceneBoundRadius = 2.2f;
 
@@ -259,13 +284,39 @@ int main() {
 
 	mainSS->setAttributeAndModes(lights);
 
-	lights->setDirectional(0, lightDir, lightColor, lightIntensity);
-
 	osgx::ShadowMapOptions shadowOptions;
 
-	auto shadowMap = osgx::ShadowMap::create(
-		lightDir, sceneBoundCenter, sceneBoundRadius, shadowOptions
-	);
+	// Spot maps store perspective (non-linear) depth: a directional map's bias pushes shadows
+	// visibly off their casters there.
+	if(spot) shadowOptions.bias = 0.0005f;
+
+	const auto setSpotLight = [&]() {
+		lights->setSpot(
+			0,
+			spotPosition,
+			spotDirection,
+			lightColor,
+			lightIntensity,
+			osg::DegreesToRadians(spotInnerDegrees),
+			osg::DegreesToRadians(spotOuterDegrees)
+		);
+	};
+
+	if(spot) setSpotLight();
+
+	else lights->setDirectional(0, lightDir, lightColor, lightIntensity);
+
+	auto shadowMap = spot ?
+		osgx::ShadowMap::createSpot(
+			spotPosition,
+			spotDirection,
+			osg::DegreesToRadians(spotOuterDegrees),
+			sceneBoundCenter,
+			sceneBoundRadius,
+			shadowOptions
+		) :
+		osgx::ShadowMap::create(lightDir, sceneBoundCenter, sceneBoundRadius, shadowOptions)
+	;
 
 	// No depth-only Program set here anymore - ShadowMap::create() now installs one
 	// directly on shadowMap.camera's own StateSet (ON|OVERRIDE), which applies automatically to
@@ -296,9 +347,9 @@ int main() {
 	root->addChild(mainGroup.get());
 	root->addChild(gizmos.get());
 
-	std::cout << "osgx-shadow: shadow ON (press 's' to toggle)" << std::endl;
+	std::cout << "osgx-shadow: " << type << " light, shadow ON (press 's' to toggle)" << std::endl;
 
-	auto viewer = osgViewer::Viewer();
+	auto viewer = osgViewer::Viewer(args);
 
 #ifdef OSGX_IMGUI
 	// Dear ImGui's single global context isn't safe to touch from more than one OSG draw thread --
@@ -339,7 +390,45 @@ int main() {
 	// own later draw. See Widget's own constructor comment for this exact scenario.
 	auto* gui = new osgx::imgui::Widget(viewer, gizmos->getOverlay());
 
-	gui->addSection("Directional Light", [
+	if(spot) gui->addSection("Spot Light", [
+		&shadowMap,
+		&spotPosition,
+		&spotDirection,
+		&spotInnerDegrees,
+		&spotOuterDegrees,
+		&lightColor,
+		&lightIntensity,
+		setSpotLight,
+		sceneBoundCenter,
+		shadowOptions
+	] (osg::RenderInfo&) {
+		bool changed = false;
+
+		changed |= ImGui::SliderFloat3("Position", spotPosition.ptr(), -5.0f, 5.0f);
+		changed |= ImGui::SliderFloat3("Direction", spotDirection.ptr(), -1.0f, 1.0f);
+		changed |= ImGui::SliderFloat("Inner Cone (deg)", &spotInnerDegrees, 1.0f, 80.0f);
+		changed |= ImGui::SliderFloat("Outer Cone (deg)", &spotOuterDegrees, 1.0f, 80.0f);
+		changed |= ImGui::ColorEdit3("Color", lightColor.ptr());
+		changed |= ImGui::SliderFloat("Intensity", &lightIntensity, 0.0f, 100.0f);
+
+		spotInnerDegrees = std::min(spotInnerDegrees, spotOuterDegrees);
+
+		// lookAt() (inside repositionSpot()) is degenerate for a zero-length direction.
+		if(changed && spotDirection.length2() > 1e-8f) {
+			setSpotLight();
+
+			shadowMap.repositionSpot(
+				spotPosition,
+				spotDirection,
+				osg::DegreesToRadians(spotOuterDegrees),
+				sceneBoundCenter,
+				sceneBoundRadius,
+				shadowOptions
+			);
+		}
+	}, osgx::imgui::SectionOptions::create(false, true));
+
+	else gui->addSection("Directional Light", [
 		lights,
 		&shadowMap,
 		&lightDir,

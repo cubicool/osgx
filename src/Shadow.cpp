@@ -90,23 +90,59 @@ void computeDirectionalShadowMatrices(
 	lightProj = osg::Matrix::ortho(-extent, extent, -extent, extent, near_, far_);
 }
 
+// Perspective, from the light's own position along its direction: a spot light's rays diverge
+// from a point. The field of view covers the outer cone (plus a little, so the cone's own edge
+// isn't at the texture border); near/far bracket the scene's bound as seen from the light.
+void computeSpotShadowMatrices(
+	const osg::Vec3& position,
+	const osg::Vec3& direction,
+	float outerConeAngle,
+	const osg::Vec3& sceneBoundCenter,
+	float sceneBoundRadius,
+	const ShadowMapOptions& options,
+	osg::Matrixd& lightView,
+	osg::Matrixd& lightProj
+) {
+	osg::Vec3 dir = direction;
+
+	dir.normalize();
+
+	// An up vector not parallel to the direction (see computeDirectionalShadowMatrices()).
+	const osg::Vec3 up = std::abs(dir.y()) < 0.99f ? osg::Vec3(0.0, 1.0, 0.0) : osg::Vec3(1.0, 0.0, 0.0);
+
+	lightView = osg::Matrix::lookAt(position, position + dir, up);
+
+	const double reach = double(sceneBoundRadius) * double(options.margin);
+	const double distance = double((sceneBoundCenter - position).length());
+	const double far_ = distance + reach;
+	const double near_ = std::max(far_ * 0.001, distance - reach);
+	const double fovy = std::min(
+		osg::RadiansToDegrees(2.0 * double(outerConeAngle)) * 1.1,
+		170.0
+	);
+
+	lightProj = osg::Matrix::perspective(fovy, 1.0, near_, far_);
+}
+
 }
 
 bool ShadowMap::valid() const {
 	return camera.valid() && depthTexture.valid() && shadowMatrix.valid();
 }
 
-ShadowMap ShadowMap::create(
-	const osg::Vec3& lightDirection,
-	const osg::Vec3& sceneBoundCenter,
-	float sceneBoundRadius,
-	const ShadowMapOptions& options
+namespace {
+
+// The depth texture, depth-only camera, and uniforms shared by every ShadowMap kind.
+ShadowMap makeShadowMap(
+	const char* name,
+	const ShadowMapOptions& options,
+	const osg::Matrixd& lightView,
+	const osg::Matrixd& lightProj
 ) {
 	ShadowMap result;
 
-	computeDirectionalShadowMatrices(
-		lightDirection, sceneBoundCenter, sceneBoundRadius, options, result.lightView, result.lightProj
-	);
+	result.lightView = lightView;
+	result.lightProj = lightProj;
 
 	result.depthTexture = osgx::make_ref<osg::Texture2D>();
 	result.depthTexture->setTextureSize(options.size, options.size);
@@ -126,9 +162,7 @@ ShadowMap ShadowMap::create(
 	// Locally osgx::RTT-typed (constructor + initializer-list attach()) - but ShadowMap::camera
 	// itself stays osg::ref_ptr<osg::Camera> (see its own declaration) since it's exposed to the
 	// Python bindings and osgx::RTT isn't a registered pybind11 type.
-	auto camera = osgx::make_nref<osgx::RTT>(
-		"osgx_shadow_DirectionalShadowMap", options.size, options.size
-	);
+	auto camera = osgx::make_nref<osgx::RTT>(name, options.size, options.size);
 
 	camera->setClearMask(GL_DEPTH_BUFFER_BIT);
 	camera->setClearDepth(1.0);
@@ -159,6 +193,47 @@ ShadowMap ShadowMap::create(
 	return result;
 }
 
+}
+
+ShadowMap ShadowMap::create(
+	const osg::Vec3& lightDirection,
+	const osg::Vec3& sceneBoundCenter,
+	float sceneBoundRadius,
+	const ShadowMapOptions& options
+) {
+	osg::Matrixd lightView, lightProj;
+
+	computeDirectionalShadowMatrices(
+		lightDirection, sceneBoundCenter, sceneBoundRadius, options, lightView, lightProj
+	);
+
+	return makeShadowMap("osgx_shadow_DirectionalShadowMap", options, lightView, lightProj);
+}
+
+ShadowMap ShadowMap::createSpot(
+	const osg::Vec3& position,
+	const osg::Vec3& direction,
+	float outerConeAngle,
+	const osg::Vec3& sceneBoundCenter,
+	float sceneBoundRadius,
+	const ShadowMapOptions& options
+) {
+	osg::Matrixd lightView, lightProj;
+
+	computeSpotShadowMatrices(
+		position,
+		direction,
+		outerConeAngle,
+		sceneBoundCenter,
+		sceneBoundRadius,
+		options,
+		lightView,
+		lightProj
+	);
+
+	return makeShadowMap("osgx_shadow_SpotShadowMap", options, lightView, lightProj);
+}
+
 void ShadowMap::updateMatrix() {
 	if(!shadowMatrix) return;
 
@@ -178,6 +253,33 @@ void ShadowMap::reposition(
 
 	computeDirectionalShadowMatrices(
 		lightDirection, sceneBoundCenter, sceneBoundRadius, options, lightView, lightProj
+	);
+
+	camera->setViewMatrix(lightView);
+	camera->setProjectionMatrix(lightProj);
+
+	updateMatrix();
+}
+
+void ShadowMap::repositionSpot(
+	const osg::Vec3& position,
+	const osg::Vec3& direction,
+	float outerConeAngle,
+	const osg::Vec3& sceneBoundCenter,
+	float sceneBoundRadius,
+	const ShadowMapOptions& options
+) {
+	if(!camera) return;
+
+	computeSpotShadowMatrices(
+		position,
+		direction,
+		outerConeAngle,
+		sceneBoundCenter,
+		sceneBoundRadius,
+		options,
+		lightView,
+		lightProj
 	);
 
 	camera->setViewMatrix(lightView);
