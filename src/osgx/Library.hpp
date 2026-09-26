@@ -71,6 +71,16 @@ class Bindings {
 		// name.
 		unsigned int get(std::string_view name);
 
+		struct SlotInfo {
+			Type type;
+			std::string name;
+			// Unset until the slot's first get().
+			std::optional<unsigned int> index;
+		};
+
+		// Every declared slot, in declaration order. Does not assign indices or close declarations.
+		std::vector<SlotInfo> slots();
+
 	private:
 		friend class Library;
 
@@ -92,11 +102,14 @@ class Bindings {
 
 struct LibraryOptions {
 	// Binding index overrides by slot name, e.g. {{"osgx::environment", 9}}.
-	std::map<std::string, unsigned int> bindings;
+	std::map<std::string, unsigned int> bindings = {};
 
 	// Indices never assigned automatically, per type - e.g. {{Bindings::Type::SSBO, {0, 1, 2, 3}}}
 	// for an application whose own shaders use SSBO bindings 0-3. An override may still name one.
-	std::map<Bindings::Type, std::vector<unsigned int>> reserve;
+	std::map<Bindings::Type, std::vector<unsigned int>> reserve = {};
+
+	// Adds indices [0, count) of `type` to `reserve`, so osgx assigns that type from `count` up.
+	LibraryOptions& reserveBelow(Bindings::Type type, unsigned int count);
 };
 
 // Sets `binding`'s index to the named slot's, the first time it is called for `flag`. For

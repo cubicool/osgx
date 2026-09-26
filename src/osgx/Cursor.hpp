@@ -135,11 +135,10 @@ private:
 // Convenience factory: builds a CursorCallback that pushes state's live position and in-window
 // flag into `uniform` every update traversal, as osg::Vec3(x, y, inWindow ? 1.0 : 0.0) in the same
 // view/event coordinate space as CursorState::x()/y() - `uniform` must be FLOAT_VEC3. No new class
-// here, and deliberately not a StateAttribute: osgx::LightSet::apply() (see PBR.cpp) already tried
-// pushing a uniform live from inside a StateAttribute via OSG's Program-targeted uniform-push
-// machinery (applyShaderCompositionUniform()/getLastAppliedProgramObject()) for osgx_lightCount,
-// and both broke the moment any sibling Program elsewhere in the same frame used
-// StateAttribute::OVERRIDE (confirmed live 2026-09-03 - see PBR.hpp's own history comment).
+// here, and deliberately not a StateAttribute: a uniform pushed from inside a StateAttribute's
+// apply() through OSG's Program-targeted machinery (applyShaderCompositionUniform()/
+// getLastAppliedProgramObject()) is lost whenever a sibling Program in the same frame uses
+// StateAttribute::OVERRIDE.
 // A plain Uniform refreshed by an ordinary update callback goes through OSG's normal per-StateSet
 // uniform stack instead and never shares that failure mode, so that's what this builds - just a
 // named CursorCallback construction, not a new mechanism.

@@ -64,8 +64,9 @@ struct PBRGBuffer {
 	bool valid() const;
 
 	// Writes material only - no lighting, not even the emissive add (emissive is stored for the
-	// lighting pass). `node` becomes the geometry pass's child.
-	static PBRGBuffer create(osg::Node* node, int width, int height);
+	// lighting pass). `node` becomes the geometry pass's child. `hooks` may substitute the
+	// Hook::Skinning shader (e.g. SKINNING_HOOK_LINEAR_BLEND); the default is the identity.
+	static PBRGBuffer create(osg::Node* node, int width, int height, const HookList& hooks={});
 };
 
 // Lighting-pass inputs, each independent and optional:

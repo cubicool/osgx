@@ -47,7 +47,9 @@
 #include "osgx/Core.hpp"
 #include "osgx/GBuffer.hpp"
 #include "osgx/gltf/Environment.hpp"
+#include "osgx/gltf/SimplePlayer.hpp"
 #include "osgx/PBRDeferred.hpp"
+#include "osgx/Skinning.hpp"
 #include "osgx/ImGui.hpp"
 #include "osgx/Library.hpp"
 #include "osgx/PBR.hpp"
@@ -300,6 +302,9 @@ int main(int argc, char** argv) {
 		"--samples <count>", "Request this many default-framebuffer MSAA samples (default: 4)"
 	);
 	args.getApplicationUsage()->addCommandLineOption(
+		"--animation", "Play the model's animation (default: hold the first frame)"
+	);
+	args.getApplicationUsage()->addCommandLineOption(
 		"--shape <name>",
 		"Use a bare osgx::Polyhedron instead of loading <model.gltf> - one of: cube, tetrahedron, "
 		"octahedron, icosahedron, dodecahedron, d10. Proves this deferred pipeline against a "
@@ -332,6 +337,7 @@ int main(int argc, char** argv) {
 	float translucency = 0.25f;
 	std::string shapeName;
 
+	const bool animation = args.read("--animation");
 	args.read("--samples", samples);
 	args.read("--fresnel-power", fresnelPower);
 	args.read("--contour-density", contourDensity);
@@ -411,7 +417,17 @@ int main(int argc, char** argv) {
 	const osg::Vec3 baseColor(0.15f, 0.65f, 1.0f);
 	const osg::Vec3 edgeColor(0.35f, 0.95f, 1.0f);
 
-	auto gbuffer = osgx::PBRGBuffer::create(model, WIDTH, HEIGHT);
+	// Animated models hold their first frame unless --animation is given.
+	if(!animation) osgx::gltf::SimplePlayer(model.get()).setPlaying(false);
+
+	osgx::HookList hooks;
+
+	if(osgx::hasJointWeights(model.get())) hooks.push_back({
+		osgx::Hook::Skinning,
+		new osg::Shader(osg::Shader::VERTEX, osgx::resolveShaderLibs(osgx::SKINNING_HOOK_LINEAR_BLEND))
+	});
+
+	auto gbuffer = osgx::PBRGBuffer::create(model, WIDTH, HEIGHT, hooks);
 
 	if(!gbuffer.valid()) {
 		std::cerr << "Failed to build the G-buffer geometry pass" << std::endl;

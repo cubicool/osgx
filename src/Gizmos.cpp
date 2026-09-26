@@ -256,9 +256,7 @@ osg::ref_ptr<osg::Camera> buildDirectionalOverlay(const osgx::LightSet& lights, 
 
 			geom2->removePrimitiveSet(0, geom2->getNumPrimitiveSets());
 
-			int count = std::clamp(_lights->getCount(), 0, osgx::MAX_LIGHTS);
-
-			for(int i = 0; i < count; i++) {
+			for(int i = 0; i < osgx::MAX_LIGHTS; i++) {
 				auto index = static_cast<std::size_t>(i);
 
 				if(!_lights->getEnabled(index)) continue;
@@ -387,14 +385,12 @@ void LightMarkers::rebuild(const osgx::LightSet& lights, float minMarkerRadius, 
 		addChild(geode);
 	}
 
-	int count = std::clamp(lights.getCount(), 0, osgx::MAX_LIGHTS);
-
 	_geometry->removePrimitiveSet(0, _geometry->getNumPrimitiveSets());
 
 	auto* verts = static_cast<osgx::Vec3Array*>(_geometry->getVertexArray());
 	auto* colors = static_cast<osgx::Vec3Array*>(_geometry->getVertexAttribArray(1));
 
-	for(int i = 0; i < count; i++) {
+	for(int i = 0; i < osgx::MAX_LIGHTS; i++) {
 		auto index = static_cast<std::size_t>(i);
 
 		if(!lights.getEnabled(index)) continue;

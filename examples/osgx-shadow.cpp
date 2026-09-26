@@ -259,7 +259,6 @@ int main() {
 
 	mainSS->setAttributeAndModes(lights);
 
-	lights->setCount(1);
 	lights->setDirectional(0, lightDir, lightColor, lightIntensity);
 
 	osgx::ShadowMapOptions shadowOptions;

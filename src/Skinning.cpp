@@ -3,10 +3,12 @@
 #include "osgx/Library.hpp"
 #include "osgx/Shader.hpp"
 #include "osgx/Skinning.hpp"
+#include "osgx/Visitors.hpp"
 
 OSGX_DISABLE_WARNINGS
 
 #include <osg/BufferObject>
+#include <osg/Geometry>
 
 OSGX_ENABLE_WARNINGS
 
@@ -51,6 +53,20 @@ void bindMeshAttributes(osg::Program& program) {
 	program.addBindAttribLocation(TANGENT_ATTRIBUTE_NAME, TANGENT_ATTRIBUTE);
 	program.addBindAttribLocation(JOINT_INDICES_ATTRIBUTE_NAME, JOINT_INDICES_ATTRIBUTE);
 	program.addBindAttribLocation(JOINT_WEIGHTS_ATTRIBUTE_NAME, JOINT_WEIGHTS_ATTRIBUTE);
+}
+
+bool hasJointWeights(osg::Node* node) {
+	if(!node) return false;
+
+	bool found = false;
+
+	LambdaVisitor<osg::Geometry> visitor([&found](osg::Geometry& geometry) {
+		if(geometry.getVertexAttribArray(JOINT_WEIGHTS_ATTRIBUTE)) found = true;
+	});
+
+	node->accept(visitor);
+
+	return found;
 }
 
 Skin::Skin(

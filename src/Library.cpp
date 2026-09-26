@@ -109,6 +109,25 @@ unsigned int Bindings::get(std::string_view name) {
 	return index;
 }
 
+LibraryOptions& LibraryOptions::reserveBelow(Bindings::Type type, unsigned int count) {
+	auto& indices = reserve[type];
+
+	for(unsigned int i = 0; i < count; i++) indices.push_back(i);
+
+	return *this;
+}
+
+std::vector<Bindings::SlotInfo> Bindings::slots() {
+	std::lock_guard<std::mutex> lock(_mutex);
+	std::vector<SlotInfo> infos;
+
+	infos.reserve(_slots.size());
+
+	for(const auto& slot : _slots) infos.push_back({slot.type, slot.name, slot.index});
+
+	return infos;
+}
+
 void Bindings::_close() {
 	if(_closed) return;
 

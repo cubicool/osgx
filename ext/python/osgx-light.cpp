@@ -11,16 +11,12 @@ OSGX_ENABLE_WARNINGS
 namespace osgx_python {
 
 void bind_light(py::module_& m) {
-	m.attr("DIRECT_SPECULAR") = osgx::DIRECT_SPECULAR;
-	m.attr("DIRECT_DIFFUSE") = osgx::DIRECT_DIFFUSE;
 	m.attr("POINT_LIGHT_RADIANCE") = osgx::POINT_LIGHT_RADIANCE;
 	m.attr("LIGHT_UNIFORMS") = osgx::LIGHT_UNIFORMS;
-	m.attr("DIRECT_LIGHT") = osgx::DIRECT_LIGHT;
 	m.attr("DIRECTIONAL_LIGHT_RADIANCE") = osgx::DIRECTIONAL_LIGHT_RADIANCE;
 	m.attr("SPOT_LIGHT_RADIANCE") = osgx::SPOT_LIGHT_RADIANCE;
 	m.attr("LIGHT_SAMPLE") = osgx::LIGHT_SAMPLE;
 	m.attr("SPHERE_LIGHT_SPECULAR") = osgx::SPHERE_LIGHT_SPECULAR;
-	m.attr("DIRECT_LIGHT_SPHERE") = osgx::DIRECT_LIGHT_SPHERE;
 	m.attr("MAX_LIGHTS") = osgx::MAX_LIGHTS;
 	m.attr("LIGHT_STRUCT_FLOATS") = osgx::LIGHT_STRUCT_FLOATS;
 	m.attr("DIRECT_LIGHTING_DECL") = osgx::DIRECT_LIGHTING_DECL;
@@ -132,16 +128,6 @@ void bind_light(py::module_& m) {
 			"Configures light `index` as a spot light and enables it. Cone angles are in radians "
 			"(KHR_lights_punctual convention); `sourceRadius` > 0 widens its specular highlight, "
 			"same as setPoint()."
-		)
-		.def_property(
-			"count",
-			&osgx::LightSet::getCount,
-			[](const osgx::LightSet& lights, int count) {
-				if(count < 0) throw std::out_of_range("LightSet count out of range");
-
-				lights.setCount(static_cast<std::size_t>(count));
-			},
-			"How many of MAX_LIGHTS light slots the shader loop actually iterates."
 		)
 		.def(
 			"setEnabled", &osgx::LightSet::setEnabled, "index"_a, "enabled"_a,

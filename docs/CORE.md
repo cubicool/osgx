@@ -53,10 +53,14 @@ osgViewer::Viewer viewer(arguments);
   only features a program uses consume indices. GLSL writes `@<name>@` (e.g.
   `layout(std140, binding = @osgx::environment@)`), which `resolveShaderLibs()` substitutes.
   `LibraryOptions::bindings` pins a slot's index by name; `LibraryOptions::reserve` keeps indices
-  free for the application's own buffers. Two pins sharing an index, or a pin naming an undeclared
-  slot, throw.
-- Python: `lib = osgx.initialize()`, kept referenced until the viewer is done. The Python module's
-  subclass also owns `osgx.gltf`'s async-reader texture cache.
+  free for the application's own buffers (`reserveBelow(type, count)` reserves `[0, count)`, so
+  osgx assigns that type from `count` up). Two pins sharing an index, or a pin naming an undeclared
+  slot, throw. `Bindings::slots()` lists every declared slot with its index once assigned.
+  `examples/osgx-library.cpp` shows all three for an application with its own shaders (a declared
+  `app::globals` slot, a reserved hard-coded SSBO 0, a pinned `osgx::material`).
+- Python: `lib = osgx.initialize(bindings=..., reserve=...)`, kept referenced until the viewer is
+  done; `lib.binding(name)`, `lib.declare(type, name, preferred=None)`, `lib.slots()`. The Python
+  module's subclass also owns `osgx.gltf`'s async-reader texture cache.
 
 ### Buffer blocks and samplers
 
@@ -377,6 +381,10 @@ key only, unrelated to the C++ namespace; see [Namespaces](#namespaces) below).
 - GLSL snippets — GGX distribution, Schlick Fresnel, Smith geometry — plain function-body
   snippets, concatenated into a consuming fragment shader via `resolveShaderLibs()`, not full
   shaders of their own.
+- Per-light BRDF response — `DIRECT_SPECULAR` (Cook-Torrance), `DIRECT_DIFFUSE` (Lambert),
+  `DIRECT_LIGHT` (both, against an `osgx_Material`) and `DIRECT_LIGHT_SPHERE` (sphere-light
+  specular widening; also needs `Light.hpp`'s `SPHERE_LIGHT_SPECULAR`). They take a light
+  direction and radiance, not a `LightSet`, so any light source can drive them.
 - `Material` — a `StateAttribute` carrying PBR material factors (base color/roughness/metallic/
   occlusion/emissive factor/alpha mode + cutoff) and up to four texture maps, applied via ONE
   `std140` uniform block - no per-material uniforms, and no sampler uniforms to set.
@@ -393,18 +401,26 @@ includes both, same as always via the `osgx.hpp` umbrella.
 ## `osgx/Light.hpp`
 
 Typed direct lights (Point/Directional/Spot, plus a Sphere variant via nonzero `sourceRadius` -
-not a fourth type), and the per-light "direct" GLSL math (`DIRECT_LIGHT`/`DIRECT_LIGHTING_*`) that
-consumes them - a separate domain from `PBR.hpp`'s `Material`/BRDF snippets that happened to live
-in the same file by history, not by dependency. Its snippets are the `"osgx::light"` catalog,
-distinct from `"osgx::pbr"` - a consumer using both writes two
-`#pragma` lines, e.g. `#pragma osgx::pbr MATERIAL_STRUCT` + `#pragma osgx::light DIRECT_LIGHTING_DECL`.
+not a fourth type) and their Material-free GLSL: radiance per type, `LIGHT_SAMPLE`,
+`SPHERE_LIGHT_SPECULAR`, and the `osgx_DirectLighting()` contract (`DIRECT_LIGHTING_*`). Its
+snippets are the `"osgx::light"` catalog; the BRDF response to a light is `PBR.hpp`'s. The full
+default direct-lighting hook pulls three lines, in this order:
+
+```glsl
+#pragma osgx::pbr MATERIAL_STRUCT, D_GGX, G_SCHLICK, G_SMITH, F_SCHLICK
+#pragma osgx::light POINT_LIGHT_RADIANCE, LIGHT_UNIFORMS, DIRECTIONAL_LIGHT_RADIANCE, SPOT_LIGHT_RADIANCE, LIGHT_SAMPLE, SPHERE_LIGHT_SPECULAR
+#pragma osgx::pbr DIRECT_SPECULAR, DIRECT_DIFFUSE, DIRECT_LIGHT, DIRECT_LIGHT_SPHERE
+```
+
+A consumer that only calls `osgx_DirectLighting()` needs just `#pragma osgx::pbr MATERIAL_STRUCT`
++ `#pragma osgx::light DIRECT_LIGHTING_DECL`.
 
 Vocabulary note: this codebase calls the group "direct" lights, not glTF's "punctual" - glTF's
 `KHR_lights_punctual` is explicitly size-zero, and the Sphere variant (nonzero `sourceRadius`) is
 not, so "punctual" would misdescribe it. "Direct" instead answers the question that actually
 matters here: computed explicitly per-light, as opposed to baked/prefiltered ambient/IBL.
 
-- `LightSet` — a `StateAttribute` owning a `std140`-uniform-block-backed array of typed direct lights (`LightType::Point`/`Directional`/`Spot`; a sphere light is a `Point`/`Spot` with non-zero `sourceRadius`, not a fourth type) Construct it, then attach it through `StateSet::setAttributeAndModes()` (size `MAX_LIGHTS`, zero-initialized, everything off until `setPoint()`/`setDirectional()`/`setSpot()`, each of which enables its slot). Its `apply()` binds the block's buffer only. Shaders loop the compile-time `OSGX_MAX_LIGHTS` bound and skip slots whose `enabled` flag is 0; `setEnabled()` toggles a configured light without changing its packed data. The GLSL-side `osgx_lightCount` uniform is never pushed (see `DIRECT_LIGHTING_HOOK_DEFAULT`'s history comment); `setCount()`/`getCount()` are CPU-side only - `setCount(n)` disables slots `>= n`, and `LightGizmos` only draws slots below the count. Typed setters/getters (`getType()`, `getPosIntensity()`, `getColor()`, `getSourceRadius()`, `getDirection()`, `getSpotAngles()`, …) replace the old parallel-`osg::Uniform`-array contract.
+- `LightSet` — a `StateAttribute` owning a `std140`-uniform-block-backed array of typed direct lights (`LightType::Point`/`Directional`/`Spot`; a sphere light is a `Point`/`Spot` with non-zero `sourceRadius`, not a fourth type) Construct it, then attach it through `StateSet::setAttributeAndModes()` (size `MAX_LIGHTS`, zero-initialized, everything off until `setPoint()`/`setDirectional()`/`setSpot()`, each of which enables its slot). Its `apply()` binds the block's buffer only. Shaders loop the compile-time `OSGX_MAX_LIGHTS` bound and skip slots whose `enabled` flag is 0; `setEnabled()` toggles a configured light without changing its packed data. `LightGizmos` draws every enabled slot. Typed setters/getters (`getType()`, `getPosIntensity()`, `getColor()`, `getSourceRadius()`, `getDirection()`, `getSpotAngles()`, …) replace the old parallel-`osg::Uniform`-array contract.
 - `LIGHT_SAMPLE` (`osgx_SampleLight(osgx_Light, worldPos)` → `osgx_LightSample{L, radiance, toLight, sourceRadius}`) — the Material-free per-light evaluation: picks the right `*_LIGHT_RADIANCE` function for the light's type and returns the incoming light, nothing about surface response. The seam between lights and materials: `DIRECT_LIGHTING_HOOK_DEFAULT` (and `Shadow.hpp`'s shadowed variant) consume it for PBR, and a Lambert/toon/NPR shader can consume it directly with no `osgx_Material` in scope - list `LIGHT_UNIFORMS, POINT_LIGHT_RADIANCE, DIRECTIONAL_LIGHT_RADIANCE, SPOT_LIGHT_RADIANCE, LIGHT_SAMPLE` on one `#pragma osgx::light` line.
 - `OrbitLightRig` — the animated counterpart: an `osg::NodeCallback` that writes orbiting position/intensity into a `LightSet` every update traversal (for the subset of lights that should move; a `LightSet` can be shared between a static rig and an orbiting one).
 

@@ -26,8 +26,7 @@ def test_light_set_attaches_a_complete_default_light_set():
 	ss.attributes.append(lights)
 
 	assert lights.valid()
-	assert lights.count == 0
-	assert not lights.getEnabled(0)
+	assert not any(lights.getEnabled(i) for i in range(osgx.MAX_LIGHTS))
 
 	# The Python StateSet attribute proxy exposes member 0 only, while LightSet deliberately uses
 	# member 1. append() still takes the real C++ setAttributeAndModes() path and confirms the
@@ -41,7 +40,6 @@ def test_light_set_attaches_a_complete_default_light_set():
 def test_light_set_typed_setters_and_getters_round_trip():
 	lights = osgx.LightSet()
 
-	lights.count = 3
 	lights.setPoint(0, osg.Vec3(1.0, 2.0, 3.0), osg.Vec3(0.2, 0.4, 0.6), 7.0, 0.5)
 	lights.setDirectional(1, osg.Vec3(0.0, 0.0, -1.0), osg.Vec3(0.8, 0.7, 0.6), 4.0)
 	lights.setSpot(
@@ -55,7 +53,6 @@ def test_light_set_typed_setters_and_getters_round_trip():
 		0.75,
 	)
 
-	assert lights.count == 3
 	assert lights.getType(0) == osgx.LightType.Point
 	assert lights.getEnabled(0)
 	assert lights.getPosIntensity(0) == osg.Vec4(1.0, 2.0, 3.0, 7.0)
@@ -80,14 +77,8 @@ def test_light_set_typed_setters_and_getters_round_trip():
 	assert not lights.getEnabled(1)
 
 
-def test_light_set_rejects_out_of_range_count_and_index():
+def test_light_set_rejects_out_of_range_index():
 	lights = osgx.LightSet()
-
-	with pytest.raises(IndexError):
-		lights.count = -1
-
-	with pytest.raises(IndexError):
-		lights.count = osgx.MAX_LIGHTS + 1
 
 	with pytest.raises(IndexError):
 		lights.setPosition(osgx.MAX_LIGHTS, osg.Vec3(), 1.0)

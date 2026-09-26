@@ -36,7 +36,9 @@
 #include "osgx/PBR.hpp"
 #include "osgx/Shadow.hpp"
 #include "osgx/gltf/Environment.hpp"
+#include "osgx/gltf/SimplePlayer.hpp"
 #include "osgx/PBRDeferred.hpp"
+#include "osgx/Skinning.hpp"
 
 OSGX_DISABLE_WARNINGS
 
@@ -384,10 +386,14 @@ int main(int argc, char** argv) {
 	args.getApplicationUsage()->addCommandLineOption(
 		"--samples <count>", "Request this many default-framebuffer MSAA samples (default: 4)"
 	);
+	args.getApplicationUsage()->addCommandLineOption(
+		"--animation", "Play the model's animation (default: hold the first frame)"
+	);
 
 	std::string hdrPath, envPath;
 	int samples = 4;
 
+	const bool animation = args.read("--animation");
 	const bool haveHdr = args.read("--hdr", hdrPath);
 	const bool haveEnv = args.read("--env", envPath);
 
@@ -465,7 +471,17 @@ int main(int argc, char** argv) {
 		return 1;
 	}
 
-	auto gbuffer = osgx::PBRGBuffer::create(model, WIDTH, HEIGHT);
+	// Animated models hold their first frame unless --animation is given.
+	if(!animation) osgx::gltf::SimplePlayer(model.get()).setPlaying(false);
+
+	osgx::HookList hooks;
+
+	if(osgx::hasJointWeights(model.get())) hooks.push_back({
+		osgx::Hook::Skinning,
+		new osg::Shader(osg::Shader::VERTEX, osgx::resolveShaderLibs(osgx::SKINNING_HOOK_LINEAR_BLEND))
+	});
+
+	auto gbuffer = osgx::PBRGBuffer::create(model, WIDTH, HEIGHT, hooks);
 
 	if(!gbuffer.valid()) {
 		std::cerr << "Failed to build the G-buffer geometry pass" << std::endl;
@@ -570,7 +586,6 @@ int main(int argc, char** argv) {
 	lightingSS->setAttributeAndModes(lights);
 
 	// Intensity ~3.0 (not 2.0) - also matching 11-sketchfab.py's own tuned key-light magnitude.
-	lights->setCount(1);
 	lights->setDirectional(0, lightDir, lightColor, lightIntensity);
 
 	// minMarkerRadius/spotConeLength stay at their unit-scene-scale library defaults --

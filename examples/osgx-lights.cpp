@@ -198,7 +198,6 @@ struct LightsState {
 };
 
 void applyState(const osgx::LightSet& lights, const LightsState& state) {
-	lights.setCount(4);
 	lights.setDirectional(0, state.directionalDirection, state.directionalColor, state.directionalIntensity);
 	lights.setEnabled(0, state.directionalEnabled);
 	lights.setPoint(1, state.pointPosition, state.pointColor, state.pointIntensity);

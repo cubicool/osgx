@@ -202,15 +202,15 @@ inline constexpr const char* DIRECT_LIGHTING_HOOK_SHADOWED = R"GLSL(
 const float PI = 3.14159265359;
 
 #pragma osgx::pbr MATERIAL_STRUCT, D_GGX, G_SCHLICK, G_SMITH, F_SCHLICK
-#pragma osgx::light DIRECT_SPECULAR, DIRECT_DIFFUSE, POINT_LIGHT_RADIANCE, LIGHT_UNIFORMS, DIRECT_LIGHT, DIRECTIONAL_LIGHT_RADIANCE, SPOT_LIGHT_RADIANCE, LIGHT_SAMPLE, SPHERE_LIGHT_SPECULAR, DIRECT_LIGHT_SPHERE
+#pragma osgx::light POINT_LIGHT_RADIANCE, LIGHT_UNIFORMS, DIRECTIONAL_LIGHT_RADIANCE, SPOT_LIGHT_RADIANCE, LIGHT_SAMPLE, SPHERE_LIGHT_SPECULAR
+#pragma osgx::pbr DIRECT_SPECULAR, DIRECT_DIFFUSE, DIRECT_LIGHT, DIRECT_LIGHT_SPHERE
 #pragma osgx::shadow SHADOW_UNIFORMS, SHADOW_FACTOR
 
 vec3 osgx_DirectLighting(vec3 N, vec3 V, vec3 worldPos, osgx_Material mat) {
 	vec3 color = vec3(0.0);
 	float shadow = osgx_ShadowFactor(worldPos);
 
-	// See Light.hpp's DIRECT_LIGHTING_HOOK_DEFAULT for why this loops the compile-time
-	// OSGX_MAX_LIGHTS bound gated by `enabled`, not the formerly-pushed osgx_lightCount uniform.
+	// Every slot, gated by its `enabled` flag (as DIRECT_LIGHTING_HOOK_DEFAULT in Light.hpp).
 	for(int i = 0; i < OSGX_MAX_LIGHTS; i++) {
 		osgx_Light light = osgx_lights[i];
 

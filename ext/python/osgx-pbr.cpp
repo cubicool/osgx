@@ -19,6 +19,10 @@ void bind_pbr(py::module_& m) {
 	m.attr("G_SMITH") = osgx::G_SMITH;
 	m.attr("F_SCHLICK") = osgx::F_SCHLICK;
 	m.attr("F_SCHLICK_ROUGHNESS") = osgx::F_SCHLICK_ROUGHNESS;
+	m.attr("DIRECT_SPECULAR") = osgx::DIRECT_SPECULAR;
+	m.attr("DIRECT_DIFFUSE") = osgx::DIRECT_DIFFUSE;
+	m.attr("DIRECT_LIGHT") = osgx::DIRECT_LIGHT;
+	m.attr("DIRECT_LIGHT_SPHERE") = osgx::DIRECT_LIGHT_SPHERE;
 	m.attr("F_MULTISCATTER") = osgx::F_MULTISCATTER;
 	m.attr("TONEMAP_PBR_NEUTRAL") = osgx::TONEMAP_PBR_NEUTRAL;
 	m.attr("TONEMAP_DECL") = osgx::TONEMAP_DECL;
@@ -281,13 +285,23 @@ void bind_pbr(py::module_& m) {
 		)
 		.def_static(
 			"create",
-			&osgx::PBRGBuffer::create,
+			[](osg::Node* node, int width, int height, py::object hooks) {
+				return osgx::PBRGBuffer::create(
+					node,
+					width,
+					height,
+					pyx::unpack_one_or_many<osgx::HookList::value_type>(hooks)
+				);
+			},
 			"node"_a,
 			"width"_a,
 			"height"_a,
+			"hooks"_a=py::dict(),
 			"Deferred-split geometry pass: writes material only (albedo/view-space normal/ORM/"
 			"emissive + depth) to a PBRGBuffer, no lighting. Feed the result to "
-			"PBRLightingPass.create()."
+			"PBRLightingPass.create(). `hooks` may substitute osgx.Hook.Skinning (a VERTEX shader "
+			"defining osgx_ApplySkin(), e.g. osgx.SKINNING_HOOK_LINEAR_BLEND wrapped in "
+			"osgx.resolveShaderLibs())."
 		)
 	;
 

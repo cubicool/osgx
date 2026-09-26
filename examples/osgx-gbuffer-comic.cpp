@@ -113,7 +113,9 @@
 #include "osgx/Core.hpp"
 #include "osgx/GBuffer.hpp"
 #include "osgx/gltf/Environment.hpp"
+#include "osgx/gltf/SimplePlayer.hpp"
 #include "osgx/PBRDeferred.hpp"
+#include "osgx/Skinning.hpp"
 #include "osgx/ImGui.hpp"
 #include "osgx/Library.hpp"
 
@@ -565,6 +567,9 @@ int main(int argc, char** argv) {
 		"--samples <count>", "Request this many default-framebuffer MSAA samples (default: 4)"
 	);
 	args.getApplicationUsage()->addCommandLineOption(
+		"--animation", "Play the model's animation (default: hold the first frame)"
+	);
+	args.getApplicationUsage()->addCommandLineOption(
 		"--hatch-density <multiplier>",
 		"Scales the hatch line frequency (default: 6.0). The auto-derived default (from the "
 		"loaded model's own bounding radius) should look reasonable on any model size without "
@@ -592,6 +597,7 @@ int main(int argc, char** argv) {
 	float hatchDarken = 0.55f;
 	float aoMask = 0.5f;
 
+	const bool animation = args.read("--animation");
 	args.read("--samples", samples);
 	args.read("--hatch-density", hatchDensity);
 	args.read("--hatch-thickness", hatchThickness);
@@ -653,7 +659,17 @@ int main(int argc, char** argv) {
 	// value, normalize(vec3(1, 1, 2)).
 	osg::Vec3 sunDirection(0.4082483f, 0.4082483f, 0.8164966f);
 
-	auto gbuffer = osgx::PBRGBuffer::create(model, WIDTH, HEIGHT);
+	// Animated models hold their first frame unless --animation is given.
+	if(!animation) osgx::gltf::SimplePlayer(model.get()).setPlaying(false);
+
+	osgx::HookList hooks;
+
+	if(osgx::hasJointWeights(model.get())) hooks.push_back({
+		osgx::Hook::Skinning,
+		new osg::Shader(osg::Shader::VERTEX, osgx::resolveShaderLibs(osgx::SKINNING_HOOK_LINEAR_BLEND))
+	});
+
+	auto gbuffer = osgx::PBRGBuffer::create(model, WIDTH, HEIGHT, hooks);
 
 	if(!gbuffer.valid()) {
 		std::cerr << "Failed to build the G-buffer geometry pass" << std::endl;

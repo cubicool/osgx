@@ -238,7 +238,7 @@ bool PBRGBuffer::valid() const {
 	;
 }
 
-PBRGBuffer PBRGBuffer::create(osg::Node* node, int width, int height) {
+PBRGBuffer PBRGBuffer::create(osg::Node* node, int width, int height, const HookList& hooks) {
 	PBRGBuffer result;
 
 	if(!node) return result;
@@ -255,16 +255,13 @@ PBRGBuffer PBRGBuffer::create(osg::Node* node, int width, int height) {
 	vertexShader->setName(prog->getName() + ".vertex");
 	prog->addShader(vertexShader);
 
-	// PBR_VERTEX_SHADER calls osgx_ApplySkin(); this pass has no `hooks` parameter yet (see
-	// TODO.md), so it always links the identity definition - a skinned model's joints still move,
-	// but the G-buffer mesh does not deform.
-	auto* skinningShader = new osg::Shader(
-		osg::Shader::VERTEX,
-		resolveShaderLibs(osgx::SKINNING_HOOK_IDENTITY)
-	);
-
-	skinningShader->setName(prog->getName() + ".skinningHook");
-	prog->addShader(skinningShader);
+	// PBR_VERTEX_SHADER calls osgx_ApplySkin().
+	osgx::applyHooks(prog, hooks, {
+		{osgx::Hook::Skinning, new osg::Shader(
+			osg::Shader::VERTEX,
+			resolveShaderLibs(osgx::SKINNING_HOOK_IDENTITY)
+		)}
+	});
 
 	auto* fragmentShader = new osg::Shader(
 		osg::Shader::FRAGMENT,

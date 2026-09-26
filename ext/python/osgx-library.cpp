@@ -22,6 +22,22 @@ void bind_library(py::module_& m) {
 		.value("TextureUnit", osgx::Bindings::Type::TextureUnit)
 	;
 
+	py::class_<osgx::Bindings::SlotInfo>(bindingsClass, "SlotInfo", "One declared binding slot.")
+		.def_readonly("type", &osgx::Bindings::SlotInfo::type, "The slot's Bindings.Type.")
+		.def_readonly("name", &osgx::Bindings::SlotInfo::name, "The slot's name.")
+		.def_readonly(
+			"index",
+			&osgx::Bindings::SlotInfo::index,
+			"The slot's index, or None until its first lookup."
+		)
+		.def("__repr__", [](const osgx::Bindings::SlotInfo& self) {
+			return
+				"<SlotInfo " + self.name + " " +
+				(self.index ? std::to_string(*self.index) : std::string("unassigned")) + ">"
+			;
+		})
+	;
+
 	py::class_<Library, std::unique_ptr<Library>>(
 		m,
 		"Library",
@@ -38,6 +54,28 @@ void bind_library(py::module_& m) {
 			"The index of the named binding slot (e.g. \"osgx::environment\"). The first lookup "
 			"freezes the slot table."
 		)
+		.def(
+			"declare",
+			[](
+				Library& self,
+				osgx::Bindings::Type type,
+				const std::string& name,
+				std::optional<unsigned int> preferred
+			) {
+				self.bindings().declare(type, name, preferred);
+			},
+			"type"_a,
+			"name"_a,
+			"preferred"_a=py::none(),
+			"Declares an application binding slot, usable as @name@ in GLSL passed through "
+			"osgx.resolveShaderLibs(). Raises after the first binding() lookup or for a name "
+			"already declared."
+		)
+		.def(
+			"slots",
+			[](Library& self) { return self.bindings().slots(); },
+			"Every declared slot (Bindings.SlotInfo), in declaration order. Assigns nothing."
+		)
 	;
 
 	m.def(
@@ -52,7 +90,7 @@ void bind_library(py::module_& m) {
 		"reserve"_a = std::map<osgx::Bindings::Type, std::vector<unsigned int>>(),
 		"Creates the osgx.Library. `bindings` pins slot indices by name, e.g. "
 		"{\"osgx::environment\": 9}; `reserve` lists indices never assigned automatically, e.g. "
-		"{osgx.Bindings.Type.SSBO: [0, 1, 2, 3]}. Raises if a Library is already alive, if two "
+		"{osgx.Bindings.Type.SSBO: [0, 1, 2, 3]} or {osgx.Bindings.Type.SSBO: range(4)}. Raises if a Library is already alive, if two "
 		"pinned slots of one type share an index, or if a pin names an undeclared slot."
 	);
 }

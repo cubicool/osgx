@@ -24,6 +24,15 @@ void bind_skinning(py::module_& m) {
 		"(TANGENT_ATTRIBUTE, JOINT_INDICES_ATTRIBUTE, JOINT_WEIGHTS_ATTRIBUTE) on `program`."
 	);
 
+	m.def(
+		"hasJointWeights",
+		&osgx::hasJointWeights,
+		"node"_a,
+		"True if any osg.Geometry under `node` has a JOINT_WEIGHTS_ATTRIBUTE array. Use "
+		"SKINNING_HOOK_LINEAR_BLEND only when this is true: a vertex with no joint arrays is "
+		"deformed by an arbitrary joint matrix."
+	);
+
 	py::class_<osgx::Skin, osg::ref_ptr<osgx::Skin>>(
 		m,
 		"Skin",

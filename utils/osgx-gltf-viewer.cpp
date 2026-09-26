@@ -15,7 +15,6 @@
 #include "osgx/Core.hpp"
 #include "osgx/IBL.hpp"
 #include "osgx/Skinning.hpp"
-#include "osgx/Visitors.hpp"
 #include "osgx/Warnings.hpp"
 
 #ifdef OSGX_IMGUI
@@ -474,18 +473,7 @@ int main(int argc, char** argv) {
 		return 1;
 	}
 
-	// Linear blend skinning replaces the identity hook for the whole model, so it is used only when
-	// some geometry carries joint weights: a vertex with no joint arrays reads GL's default
-	// attribute values and would be deformed by an arbitrary joint matrix.
-	bool skinned = false;
-
-	if(animation) {
-		osgx::LambdaVisitor<osg::Geometry> findJointWeights([&skinned](osg::Geometry& geometry) {
-			if(geometry.getVertexAttribArray(osgx::JOINT_WEIGHTS_ATTRIBUTE)) skinned = true;
-		});
-
-		findJointWeights(model.get());
-	}
+	const bool skinned = animation && osgx::hasJointWeights(model.get());
 
 	osgx::HookList hooks;
 

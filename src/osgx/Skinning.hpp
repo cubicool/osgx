@@ -88,6 +88,12 @@ osgx_SkinnedVertex osgx_ApplySkin(vec4 position, vec3 normal, vec3 tangent) {
 // their attribute locations on `program`.
 void bindMeshAttributes(osg::Program& program);
 
+// True if any osg::Geometry under `node` has a JOINT_WEIGHTS_ATTRIBUTE array. Linear blend skinning
+// applies to a whole Program, and a vertex with no joint arrays reads GL's default attribute values
+// (and is deformed by an arbitrary joint matrix), so use SKINNING_HOOK_LINEAR_BLEND only when this
+// is true.
+bool hasJointWeights(osg::Node* node);
+
 // ================================================================================================
 // A skeleton's joint palette source: the joint transforms, in palette order, and one inverse bind
 // matrix per joint. Palette entry i is
