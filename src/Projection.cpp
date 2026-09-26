@@ -8,6 +8,8 @@
 OSGX_DISABLE_WARNINGS
 
 #include <osg/Matrixd>
+#include <osg/RenderInfo>
+#include <osg/State>
 
 OSGX_ENABLE_WARNINGS
 
@@ -57,12 +59,22 @@ float osgx_LinearizeDepth(float depth, mat4 projectionMatrix) {
 }
 )GLSL";
 
+
+constexpr const char* PROJECTION_VIEW_POSITION_SRC = R"GLSL(
+vec3 osgx_ViewPositionFromDepth(vec2 uv, float depth, mat4 inverseProjection) {
+	vec4 view = inverseProjection * vec4(vec3(uv, depth) * 2.0 - 1.0, 1.0);
+
+	return view.xyz / view.w;
+}
+)GLSL";
+
 }
 
 void registerProjectionShaderLibs() {
 	static constexpr ShaderLib libs[] = {
 		{"UNPROJECT", "osgx_Unproject", PROJECTION_UNPROJECT_SRC},
-		{"DEPTH", "osgx_LinearizeDepth", PROJECTION_DEPTH_SRC}
+		{"DEPTH", "osgx_LinearizeDepth", PROJECTION_DEPTH_SRC},
+		{"VIEW_POSITION", "osgx_ViewPositionFromDepth", PROJECTION_VIEW_POSITION_SRC}
 	};
 
 	registerShaderLibs("osgx::projection", libs);
@@ -125,11 +137,63 @@ bool unprojectToPlane(
 }
 
 osg::Vec3d unprojectPoint(const osg::Camera* camera, double ndcX, double ndcY, double ndcDepth) {
+	return unprojectPoint(
+		camera->getViewMatrix(),
+		camera->getProjectionMatrix(),
+		ndcX,
+		ndcY,
+		ndcDepth
+	);
+}
+
+osg::Vec3d unprojectPoint(
+	const osg::Matrixd& view,
+	const osg::Matrixd& projection,
+	double ndcX,
+	double ndcY,
+	double ndcDepth
+) {
 	osg::Matrixd invViewProj;
 
-	invViewProj.invert(camera->getViewMatrix() * camera->getProjectionMatrix());
+	invViewProj.invert(view * projection);
 
 	return osg::Vec3d(ndcX, ndcY, ndcDepth) * invViewProj;
+}
+
+DepthProjectionCallback::DepthProjectionCallback(const std::string& name):
+_projection(new osg::Uniform(osg::Uniform::FLOAT_MAT4, name)),
+_projectionInverse(new osg::Uniform(osg::Uniform::FLOAT_MAT4, name + "Inverse")) {
+	_projection->set(osg::Matrixf::identity());
+	_projectionInverse->set(osg::Matrixf::identity());
+	_projection->setDataVariance(osg::Object::DYNAMIC);
+	_projectionInverse->setDataVariance(osg::Object::DYNAMIC);
+}
+
+osg::Uniform* DepthProjectionCallback::getProjection() const {
+	return _projection.get();
+}
+
+osg::Uniform* DepthProjectionCallback::getProjectionInverse() const {
+	return _projectionInverse.get();
+}
+
+osg::Matrixd DepthProjectionCallback::getProjectionMatrix() const {
+	std::lock_guard<std::mutex> lock(_mutex);
+
+	return _projectionMatrix;
+}
+
+void DepthProjectionCallback::operator()(osg::RenderInfo& renderInfo) const {
+	const osg::Matrixd& projection = renderInfo.getState()->getProjectionMatrix();
+
+	{
+		std::lock_guard<std::mutex> lock(_mutex);
+
+		_projectionMatrix = projection;
+	}
+
+	_projection->set(osg::Matrixf(projection));
+	_projectionInverse->set(osg::Matrixf(osg::Matrixd::inverse(projection)));
 }
 
 }

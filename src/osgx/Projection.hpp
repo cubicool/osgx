@@ -6,11 +6,15 @@ OSGX_DISABLE_WARNINGS
 
 #include <osg/Camera>
 #include <osg/Plane>
+#include <osg/Uniform>
 #include <osg/Vec2>
 #include <osg/Vec3>
 #include <osg/Viewport>
 
 OSGX_ENABLE_WARNINGS
+
+#include <mutex>
+#include <string>
 
 namespace osgx {
 
@@ -82,8 +86,49 @@ bool unprojectToPlane(
 // which is exactly this call - no plane, no ray, just the one point.
 osg::Vec3d unprojectPoint(const osg::Camera* camera, double ndcX, double ndcY, double ndcDepth);
 
-// The `#pragma osgx::projection` catalog (UNPROJECT, DEPTH) is registered by osgx::Library and
-// expanded by resolveShaderLibs() (Shader.hpp).
+// The same, through explicit view/projection matrices - e.g. a camera's getViewMatrix() and the
+// DepthProjectionCallback::getProjectionMatrix() its depth was actually written with.
+osg::Vec3d unprojectPoint(
+	const osg::Matrixd& view,
+	const osg::Matrixd& projection,
+	double ndcX,
+	double ndcY,
+	double ndcDepth
+);
+
+// Records the projection matrix a camera actually draws with into two FLOAT_MAT4 uniforms, for a
+// later pass that samples that camera's depth: `name` (the projection) and `name` + "Inverse".
+// Install it as the depth-producing camera's post-draw callback. OSG clamps each camera's near/far
+// privately during cull, so neither that camera's getProjectionMatrix() nor OSG's automatic
+// osg_ProjectionMatrix in the consuming pass (its own camera's) is the matrix the depth was
+// written with; the matrix osg::State holds right after the producing camera draws is. The
+// consuming pass adds getProjection()/getProjectionInverse() to its StateSet and passes them to
+// osgx_LinearizeDepth()/osgx_ViewPositionFromDepth() below.
+class DepthProjectionCallback: public osg::Camera::DrawCallback {
+public:
+	explicit DepthProjectionCallback(const std::string& name="osgx_depthProjection");
+
+	osg::Uniform* getProjection() const;
+	osg::Uniform* getProjectionInverse() const;
+
+	// The most recently captured projection, for CPU-side use (e.g. unprojectPoint() on a depth
+	// value read back from the same camera). Identity until the camera first draws. Thread-safe.
+	osg::Matrixd getProjectionMatrix() const;
+
+	void operator()(osg::RenderInfo& renderInfo) const override;
+
+protected:
+	~DepthProjectionCallback() override = default;
+
+private:
+	osg::ref_ptr<osg::Uniform> _projection;
+	osg::ref_ptr<osg::Uniform> _projectionInverse;
+	mutable osg::Matrixd _projectionMatrix;
+	mutable std::mutex _mutex;
+};
+
+// The `#pragma osgx::projection` catalog (UNPROJECT, DEPTH, VIEW_POSITION) is registered by
+// osgx::Library and expanded by resolveShaderLibs() (Shader.hpp).
 //
 // UNPROJECT publishes `vec3 osgx_Unproject(vec2 ndc, float depth)`, matching this file's own
 // unprojectRay() math exactly (inverse(osg_ProjectionMatrix) * ndc, then osg_ViewMatrixInverse),
@@ -97,6 +142,11 @@ osg::Vec3d unprojectPoint(const osg::Camera* camera, double ndcX, double ndcY, d
 // and keep in sync - extracted from OpenSceneGraph.py/examples/pyosg-rtt.py's and
 // pyosg-mrt.py's own identical, previously-duplicated `linearizeDepth(d, near, far)`.
 //
+// VIEW_POSITION publishes `vec3 osgx_ViewPositionFromDepth(vec2 uv, float depth,
+// mat4 inverseProjection)` - a [0, 1] texture coordinate plus its raw depth-buffer sample ->
+// view-space position, through the inverse of the projection that wrote the depth (e.g.
+// DepthProjectionCallback::getProjectionInverse()).
+//
 // projectionMatrix is a REQUIRED parameter, deliberately not read ambiently from OSG's own
 // automatic `osg_ProjectionMatrix` uniform the way osgx_Unproject() above does: that ambient
 // value is only ever the CURRENTLY DRAWING camera's own projection, which is correct when
@@ -104,12 +154,6 @@ osg::Vec3d unprojectPoint(const osg::Camera* camera, double ndcX, double ndcY, d
 // depth sample came from a DIFFERENT camera - exactly pyosg-rtt.py/pyosg-mrt.py's own real
 // shape (a G-buffer geometry pass's real perspective projection, sampled later by a separate
 // ABSOLUTE_RF composite/HUD pass whose own osg_ProjectionMatrix is identity, not the G-buffer
-// camera's). That mismatch is also why those two files' own invProjectionMatrix/znear/zfar
-// uniforms need a preDrawCallback bridging the ORIGINAL camera's live matrix into the composite
-// pass's StateSet every frame in the first place (same shape as osgx-gbuffer.cpp's own
-// UpdateLightingPassCallback) - passing projectionMatrix explicitly here doesn't remove that
-// bridge (it can't be removed: OSG's automatic per-camera uniforms have no way to carry a
-// DIFFERENT camera's matrix across passes), it just makes the one bridged uniform this function
-// actually needs unambiguous at the call site instead of silently assumed.
+// camera's). DepthProjectionCallback above supplies the producing camera's matrix.
 
 }

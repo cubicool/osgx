@@ -195,3 +195,34 @@ def test_projection_catalog_expands_depth_pragma():
 	assert "osgx_LinearizeDepth" in resolved
 	assert "mat4 projectionMatrix" in resolved
 	assert "uniform mat4 osg_ProjectionMatrix" not in resolved
+
+def test_projection_catalog_expands_view_position_pragma():
+	resolved = osgx.resolveShaderLibs("#pragma osgx::projection VIEW_POSITION\n")
+
+	assert "osgx_ViewPositionFromDepth" in resolved
+	assert "mat4 inverseProjection" in resolved
+
+def test_depth_projection_callback_uniforms():
+	callback = osgx.DepthProjectionCallback()
+
+	assert isinstance(callback, osg.Camera.DrawCallback)
+	assert callback.projection.name == "osgx_depthProjection"
+	assert callback.projectionInverse.name == "osgx_depthProjectionInverse"
+	assert callback.projection.type == osg.Uniform.Type.FLOAT_MAT4
+
+	named = osgx.DepthProjectionCallback("gbufferProjection")
+
+	assert named.projection.name == "gbufferProjection"
+	assert named.projectionInverse.name == "gbufferProjectionInverse"
+
+def test_unproject_point_matrix_overload_matches_camera_overload():
+	cam = make_camera()
+	a = osgx.unprojectPoint(cam, 0.3, -0.4, 0.25)
+	b = osgx.unprojectPoint(cam.viewMatrix, cam.projectionMatrix, 0.3, -0.4, 0.25)
+
+	assert abs(a.x - b.x) < 1e-9
+	assert abs(a.y - b.y) < 1e-9
+	assert abs(a.z - b.z) < 1e-9
+
+def test_depth_projection_callback_matrix_defaults_to_identity():
+	assert osgx.DepthProjectionCallback().projectionMatrix == osg.Matrixd.identity()

@@ -237,28 +237,29 @@ fovy/aspect reconstruction.
   its signature exactly (unlike `unprojectRay()`, which only ever exposes the near/far pair
   together). Motivated by the `osgx-aoe` example's Mode 2: reading a G-buffer depth sample back
   to the CPU at the cursor's pixel and turning that `(x, y, depth)` triple into a world point.
+- `DepthProjectionCallback(name="osgx_depthProjection")` — a `Camera::DrawCallback` that records
+  the projection a camera actually drew with into two `FLOAT_MAT4` uniforms, `name` and
+  `name + "Inverse"`, for a later pass that samples that camera's depth. Install it as the
+  depth-producing camera's post-draw callback and add `getProjection()`/`getProjectionInverse()`
+  to the consuming pass's StateSet. OSG clamps each camera's near/far privately during cull, so
+  neither the producing camera's `getProjectionMatrix()` nor the consuming pass's own
+  `osg_ProjectionMatrix` is the matrix the depth was written with; the one `osg::State` holds
+  right after the producing camera draws is.
 - The `osgx::projection` shader-library catalog (a catalog tag, not a C++ namespace — see
-  [Namespaces](#namespaces); registered by `osgx::Library`) has two entries:
+  [Namespaces](#namespaces); registered by `osgx::Library`) has three entries:
   - `#pragma osgx::projection UNPROJECT` → `vec3 osgx_Unproject(vec2 ndc, float depth)`, matching
-    `unprojectRay()`'s own math exactly. Extracted from a GLSL function `examples/osgx-grid.cpp`
-    and `examples/osgx-turntable.cpp` used to duplicate verbatim; both now use the shared
-    `#pragma` instead.
+    `unprojectRay()`'s own math exactly, through the drawing camera's own `osg_ProjectionMatrix`/
+    `osg_ViewMatrixInverse`.
   - `#pragma osgx::projection DEPTH` → `float osgx_LinearizeDepth(float depth, mat4
     projectionMatrix)` (depth-buffer sample → distance from the camera along the view axis),
-    deriving near/far implicitly from `projectionMatrix`'s own entries instead of a separate
-    `znear`/`zfar` uniform pair the caller must decompose by hand and keep in sync. Extracted
-    from `OpenSceneGraph.py/examples/pyosg-rtt.py`'s and `pyosg-mrt.py`'s own identical,
-    previously-duplicated `linearizeDepth(d, near, far)`. `projectionMatrix` is a REQUIRED
-    parameter, deliberately not read from the ambient `osg_ProjectionMatrix` uniform the way
-    `osgx_Unproject()` does: that ambient value is only ever the currently-drawing camera's own
-    projection, correct inline in the same pass that produced the depth, but silently wrong the
-    moment the depth sample came from a DIFFERENT camera — exactly the G-buffer-geometry-pass →
-    separate-composite-pass shape both files actually use, which is also why their own
-    `invProjectionMatrix`/`znear`/`zfar` uniforms need a `preDrawCallback` bridging the
-    original camera's live matrix into the composite pass every frame in the first place (same
-    shape as this repo's own `UpdateLightingPassCallback` in `examples/osgx-gbuffer.cpp`) — that
-    bridge can't be eliminated (OSG's automatic per-camera uniforms have no way to carry a
-    different camera's matrix across passes), only made unambiguous at the call site.
+    deriving near/far from `projectionMatrix`'s own entries.
+  - `#pragma osgx::projection VIEW_POSITION` → `vec3 osgx_ViewPositionFromDepth(vec2 uv, float
+    depth, mat4 inverseProjection)` ([0, 1] texture coordinate + raw depth sample → view-space
+    position).
+
+  `DEPTH` and `VIEW_POSITION` take the matrix as a parameter because the depth usually comes from
+  a different camera than the one drawing the consuming pass; pass them
+  `DepthProjectionCallback`'s uniforms.
 
 ## `osgx/SDF.hpp`
 

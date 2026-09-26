@@ -12,6 +12,38 @@ namespace osgx_python {
 // two "solves for a point" functions take a bool+out-Vec3d& shape in C++ (ordinary OSG idiom) but
 // return std::optional<osg::Vec3d> here instead - Python has no reference out-parameters.
 void bind_projection(py::module_& m) {
+	py::class_<
+		osgx::DepthProjectionCallback,
+		osg::Camera::DrawCallback,
+		osg::ref_ptr<osgx::DepthProjectionCallback>
+	>(
+		m,
+		"DepthProjectionCallback",
+		"Records the projection matrix a camera actually draws with into two mat4 uniforms, "
+		"`name` and `name` + \"Inverse\", for a later pass that samples that camera's depth "
+		"(osgx_LinearizeDepth()/osgx_ViewPositionFromDepth(), #pragma osgx::projection DEPTH, "
+		"VIEW_POSITION). Install it as the depth-producing camera's postDrawCallback and add "
+		"projection/projectionInverse to the consuming pass's StateSet."
+	)
+		.def(py::init<const std::string&>(), "name"_a="osgx_depthProjection")
+		.def_property_readonly(
+			"projection",
+			&osgx::DepthProjectionCallback::getProjection,
+			"The FLOAT_MAT4 projection uniform."
+		)
+		.def_property_readonly(
+			"projectionInverse",
+			&osgx::DepthProjectionCallback::getProjectionInverse,
+			"The FLOAT_MAT4 inverse-projection uniform."
+		)
+		.def_property_readonly(
+			"projectionMatrix",
+			&osgx::DepthProjectionCallback::getProjectionMatrix,
+			"The most recently captured projection (identity until the camera first draws), for "
+			"CPU-side use such as unprojectPoint(view, projection, ...)."
+		)
+	;
+
 	py::class_<osgx::Ray>(
 		m,
 		"Ray",
@@ -91,7 +123,7 @@ void bind_projection(py::module_& m) {
 
 	m.def(
 		"unprojectPoint",
-		&osgx::unprojectPoint,
+		py::overload_cast<const osg::Camera*, double, double, double>(&osgx::unprojectPoint),
 		"camera"_a,
 		"ndcX"_a,
 		"ndcY"_a,
@@ -100,6 +132,20 @@ void bind_projection(py::module_& m) {
 		"osgx_Unproject(vec2 ndc, float depth), mirroring its signature exactly. Unlike "
 		"unprojectRay() (near/far pair only), this takes one specific depth - e.g. a "
 		"depth-buffer sample read back at the cursor's pixel."
+	);
+
+	m.def(
+		"unprojectPoint",
+		py::overload_cast<const osg::Matrixd&, const osg::Matrixd&, double, double, double>(
+			&osgx::unprojectPoint
+		),
+		"view"_a,
+		"projection"_a,
+		"ndcX"_a,
+		"ndcY"_a,
+		"ndcDepth"_a,
+		"The same, through explicit view/projection matrices - e.g. a camera's viewMatrix and "
+		"the DepthProjectionCallback.projectionMatrix its depth was actually written with."
 	);
 
 }
