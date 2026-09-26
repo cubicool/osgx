@@ -273,11 +273,17 @@ public:
 			return;
 		}
 
+		// Verifies the context is usable, then releases it: a context is only current between the
+		// viewer's makeCurrent()/releaseContext() calls. Left current, it stays bound to this
+		// thread until the first frame, and a GLX context rendering on the same thread meanwhile
+		// segfaults.
 		if(!eglMakeCurrent(_eglDisplay, _eglSurface, _eglSurface, _eglContext)) {
 			osg::notify(osg::FATAL) << "EGL: initial eglMakeCurrent failed" << std::endl;
 
 			return;
 		}
+
+		eglMakeCurrent(_eglDisplay, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
 
 		osg::ref_ptr<osg::State> state = new osg::State();
 
@@ -346,6 +352,12 @@ public:
 
 	void closeImplementation() override {
 		if(_eglDisplay != EGL_NO_DISPLAY) {
+			// eglDestroyContext() on a current context only defers its destruction; release it
+			// first, but only if it is this window's own context that is current.
+			if(_eglContext != EGL_NO_CONTEXT && eglGetCurrentContext() == _eglContext) {
+				eglMakeCurrent(_eglDisplay, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
+			}
+
 			if(_eglContext != EGL_NO_CONTEXT) eglDestroyContext(_eglDisplay, _eglContext);
 			if(_eglSurface != EGL_NO_SURFACE) eglDestroySurface(_eglDisplay, _eglSurface);
 
