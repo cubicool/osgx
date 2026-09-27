@@ -1,9 +1,11 @@
 #include "osgx-python.hpp"
+#include "osgx/CaptureCubeMap.hpp"
 #include "osgx/Shadow.hpp"
 
 OSGX_DISABLE_WARNINGS
 
 #include <osg/Camera>
+#include <osg/Group>
 #include <osg/Texture2D>
 #include <osg/Uniform>
 
@@ -15,6 +17,9 @@ void bind_shadow(py::module_& m) {
 	m.attr("SHADOW_UNIFORMS") = osgx::SHADOW_UNIFORMS;
 	m.attr("SHADOW_FACTOR") = osgx::SHADOW_FACTOR;
 	m.attr("DIRECT_LIGHTING_HOOK_SHADOWED") = osgx::DIRECT_LIGHTING_HOOK_SHADOWED;
+	m.attr("SHADOW_UNIFORMS_POINT") = osgx::SHADOW_UNIFORMS_POINT;
+	m.attr("SHADOW_FACTOR_POINT") = osgx::SHADOW_FACTOR_POINT;
+	m.attr("DIRECT_LIGHTING_HOOK_SHADOWED_POINT") = osgx::DIRECT_LIGHTING_HOOK_SHADOWED_POINT;
 
 	// Python-side convenience mirroring osgx.pbr.makeDirectLightingHookShader() - assembles
 	// DIRECT_LIGHTING_HOOK_SHADOWED as a standalone FRAGMENT osg::Shader, ready to add()/append()
@@ -36,6 +41,26 @@ void bind_shadow(py::module_& m) {
 		"Builds the osgx_DirectLighting() CONTRACT's shadowed-definition FRAGMENT shader object - "
 		"same contract as osgx.pbr.makeDirectLightingHookShader(), but the light at "
 		"osgx_shadowCasterIndex is multiplied by osgx_ShadowFactor()."
+	);
+
+	// The point-light counterpart - identical shape, DIRECT_LIGHTING_HOOK_SHADOWED_POINT instead
+	// (cube-map distance lookup via osgx_ShadowFactorPoint() rather than a 2D shadowMatrix).
+	m.def(
+		"makeShadowedPointDirectLightingHookShader",
+		[]() {
+			auto* shader = new osg::Shader(
+				osg::Shader::FRAGMENT,
+				osgx::resolveShaderLibs(std::string(osgx::DIRECT_LIGHTING_HOOK_SHADOWED_POINT))
+			);
+
+			shader->setName("directLightingHook");
+
+			return osg::ref_ptr<osg::Shader>(shader);
+		},
+		"Builds the osgx_DirectLighting() CONTRACT's point-light-shadowed-definition FRAGMENT "
+		"shader object - same contract as makeDirectLightingHookShader(), but the light at "
+		"osgx_shadowCasterIndex is multiplied by osgx_ShadowFactorPoint() (a distance cube-map "
+		"lookup, for a ShadowMap.createPoint() map)."
 	);
 
 	py::class_<osgx::ShadowMapOptions>(
@@ -75,9 +100,12 @@ void bind_shadow(py::module_& m) {
 	py::class_<osgx::ShadowMap>(
 		m,
 		"ShadowMap",
-		"A directional shadow map: owns the PRE_RENDER depth-only orthographic camera plus the "
-		"uniforms DIRECT_LIGHTING_HOOK_SHADOWED reads every frame. World-space, not eye-space - "
-		"shadowMatrix is just lightProj * lightView, with no per-frame main-camera dependency."
+		"A directional (create()), spot (createSpot()), or point (createPoint()) light's shadow "
+		"map. Directional/spot own a single PRE_RENDER depth-only camera plus the uniforms "
+		"DIRECT_LIGHTING_HOOK_SHADOWED reads every frame (world-space, not eye-space - shadowMatrix "
+		"is just lightProj * lightView, no per-frame main-camera dependency); point owns an "
+		"omnidirectional distance CaptureCubeMapScene instead (see cubeCapture/casters/"
+		"lightPosition), read by DIRECT_LIGHTING_HOOK_SHADOWED_POINT."
 	)
 		.def(py::init<>(), "Constructs an empty ShadowMap with no camera/textures set; see ShadowMap.create().")
 		.def_readwrite(
@@ -113,6 +141,22 @@ void bind_shadow(py::module_& m) {
 		.def_readwrite(
 			"lightProj", &osgx::ShadowMap::lightProj,
 			"The shadow camera's projection matrix, as last computed by create()/reposition()."
+		)
+		.def_readwrite(
+			"cubeCapture", &osgx::ShadowMap::cubeCapture,
+			"Point-light-only (see createPoint()) - the six-camera distance-cube capture rig. "
+			"Invalid/unused for a directional or spot map."
+		)
+		.def_readwrite(
+			"casters", &osgx::ShadowMap::casters,
+			"Point-light-only (see createPoint()) - createPoint()'s counterpart to adding children "
+			"directly to `camera` for the other two kinds: add point-shadow-casting geometry here "
+			"instead. None for a directional or spot map."
+		)
+		.def_readwrite(
+			"lightPosition", &osgx::ShadowMap::lightPosition,
+			"Point-light-only (see createPoint()) - world-space light position uniform "
+			"osgx_ShadowFactorPoint() reads. None for a directional or spot map."
 		)
 		.def("valid", &osgx::ShadowMap::valid, "True if camera and depthTexture were successfully built.")
 		.def_static(
@@ -169,6 +213,34 @@ void bind_shadow(py::module_& m) {
 			"sceneBoundRadius"_a,
 			"options"_a=osgx::ShadowMapOptions{},
 			"reposition()'s counterpart for a createSpot() map."
+		)
+		.def_static(
+			"createPoint",
+			&osgx::ShadowMap::createPoint,
+			"position"_a,
+			"sceneBoundCenter"_a,
+			"sceneBoundRadius"_a,
+			"cubeSize"_a=256,
+			"options"_a=osgx::ShadowMapOptions{},
+			"Builds a point light's shadow map: an omnidirectional distance CUBE MAP (six "
+			"perspective views written by a distance-only Program) instead of a single 2D depth "
+			"camera - a point light needs visibility in every direction. `cubeSize` is separate "
+			"from ShadowMapOptions.size (unused here) since it's six real-time cameras, not one - "
+			"start small (256, the default) and raise it once a demo's actually running. "
+			"options.extent is unused (no ortho box); options.margin sizes the far plane the same "
+			"way createSpot() does. Add point-shadow-casting geometry to the returned ShadowMap's "
+			"`casters` group (not `camera`, which is None for a point map)."
+		)
+		.def(
+			"repositionPoint",
+			&osgx::ShadowMap::repositionPoint,
+			"position"_a,
+			"sceneBoundCenter"_a,
+			"sceneBoundRadius"_a,
+			"options"_a=osgx::ShadowMapOptions{},
+			"reposition()/repositionSpot()'s counterpart for a createPoint() map - re-aims the six "
+			"capture cameras at a new position and refreshes their shared far plane/clear value for "
+			"the new distance to the scene."
 		)
 	;
 }

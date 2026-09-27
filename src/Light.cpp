@@ -43,6 +43,28 @@ void OrbitLightRig::operator()(osg::Node* node, osg::NodeVisitor* nv) {
 	traverse(node, nv);
 }
 
+void FlickerLightRig::operator()(osg::Node* node, osg::NodeVisitor* nv) {
+	if(!lights) throw std::logic_error("FlickerLightRig has no LightSet");
+
+	const float t = nv->getFrameStamp() ? float(nv->getFrameStamp()->getSimulationTime()) : 0.0f;
+	const float phase = t * speed;
+
+	// Three sines at incommensurate frequencies/phases - never repeats on a human timescale, reads
+	// as organic flicker rather than a metronome. Weights sum to 1 so `amplitude` stays a true
+	// +/- fraction of baseIntensity regardless of how many terms this grows later.
+	const float wave =
+		0.5f * std::sin(phase * 5.6f) +
+		0.3f * std::sin(phase * 11.3f + 1.7f) +
+		0.2f * std::sin(phase * 19.1f + 4.2f);
+
+	const osg::Vec4 posIntensity = lights->getPosIntensity(index);
+	const osg::Vec3 position(posIntensity.x(), posIntensity.y(), posIntensity.z());
+
+	lights->setPosition(index, position, std::max(0.0f, baseIntensity * (1.0f + amplitude * wave)));
+
+	traverse(node, nv);
+}
+
 namespace detail {
 
 // Float offsets into one packed osgx_Light struct (LIGHT_STRUCT_FLOATS=16 floats/64 bytes) --

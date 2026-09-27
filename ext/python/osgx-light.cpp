@@ -174,6 +174,27 @@ void bind_light(py::module_& m) {
 		.def_readwrite("intensity", &osgx::OrbitLightRig::intensity, "Global intensity scale applied on top of each Orbit's own intensity.")
 		.def_readwrite("orbits", &osgx::OrbitLightRig::orbits, "The list of Orbit parameters, one per animated light.")
 	;
+
+	py::class_<
+		osgx::FlickerLightRig,
+		osg::NodeCallback,
+		osg::ref_ptr<osgx::FlickerLightRig>
+	>(
+		m,
+		"FlickerLightRig",
+		"Animates one light's INTENSITY with a torch/campfire-style flicker - layered sine waves at "
+		"incommensurate frequencies/phases, written via LightSet.setPosition() (position is read "
+		"back first and passed through unchanged, so this composes cleanly with a light something "
+		"else is also driving). `index` must already be configured via setPoint()/setSpot()/"
+		"setDirectional() - this callback only ever touches intensity."
+	)
+		.def(py::init<>(), "Constructs a rig with default amplitude/speed; set `lights` before use.")
+		.def_readwrite("lights", &osgx::FlickerLightRig::lights, "The LightSet this rig animates.")
+		.def_readwrite("index", &osgx::FlickerLightRig::index, "Which osgx_lights[] index to flicker.")
+		.def_readwrite("baseIntensity", &osgx::FlickerLightRig::baseIntensity, "The steady-state intensity the flicker oscillates around.")
+		.def_readwrite("amplitude", &osgx::FlickerLightRig::amplitude, "+/- fraction of baseIntensity the flicker swings.")
+		.def_readwrite("speed", &osgx::FlickerLightRig::speed, "Overall flicker rate multiplier.")
+	;
 }
 
 }

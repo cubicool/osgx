@@ -598,6 +598,7 @@ if(OSGX_BUILD_PYTHON AND Python3_Development.Module_FOUND)
 		"ext/python/osgx-rtt.cpp"
 		"ext/python/osgx-pbr.cpp"
 		"ext/python/osgx-light.cpp"
+		"ext/python/osgx-capturecubemap.cpp"
 		"ext/python/osgx-shadow.cpp"
 		"ext/python/osgx-gbuffer.cpp"
 		"ext/python/osgx-ibl.cpp"

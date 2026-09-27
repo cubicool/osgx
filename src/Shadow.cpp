@@ -55,6 +55,51 @@ osg::ref_ptr<osg::Program> makeDepthOnlyProgram() {
 	return program;
 }
 
+// Distance-only Program for ShadowMap::createPoint()'s six-camera cube capture (installed via
+// CaptureCubeMapOptions::overrideProgram). Unlike DEPTH_ONLY_*_SHADER above (which relies purely
+// on hardware NDC depth, never read back), this writes an explicit LINEAR distance to a
+// single-channel color output - a point light's shadow test (SHADOW_FACTOR_POINT, Shadow.hpp)
+// compares real distances in a cube, not projected NDC depth. Each capture camera's own eye IS the
+// light (CaptureCubeMapScene positions all six there), so "distance to light" is just the
+// fragment's own view-space distance from the origin - no separate light-position uniform needed
+// here at all, only when SAMPLING the result later.
+constexpr const char DISTANCE_ONLY_VERTEX_SHADER[] = R"GLSL(
+#version 460 core
+
+in vec4 osg_Vertex;
+
+uniform mat4 osg_ModelViewMatrix;
+uniform mat4 osg_ModelViewProjectionMatrix;
+
+out vec3 vViewPos;
+
+void main() {
+	vViewPos = (osg_ModelViewMatrix * osg_Vertex).xyz;
+	gl_Position = osg_ModelViewProjectionMatrix * osg_Vertex;
+}
+)GLSL";
+
+constexpr const char DISTANCE_ONLY_FRAGMENT_SHADER[] = R"GLSL(
+#version 460 core
+
+in vec3 vViewPos;
+
+out float fragDistance;
+
+void main() {
+	fragDistance = length(vViewPos);
+}
+)GLSL";
+
+osg::ref_ptr<osg::Program> makeDistanceOnlyProgram() {
+	auto program = osgx::make_nref<osg::Program>("osgx_shadow_DistanceOnly");
+
+	program->addShader(new osg::Shader(osg::Shader::VERTEX, DISTANCE_ONLY_VERTEX_SHADER));
+	program->addShader(new osg::Shader(osg::Shader::FRAGMENT, DISTANCE_ONLY_FRAGMENT_SHADER));
+
+	return program;
+}
+
 // Shared by ShadowMap::create()/ShadowMap::reposition() - the only difference
 // between "create" and "reposition" is whether a new camera/texture gets allocated around this
 // math, not the math itself.
@@ -127,7 +172,9 @@ void computeSpotShadowMatrices(
 }
 
 bool ShadowMap::valid() const {
-	return camera.valid() && depthTexture.valid() && shadowMatrix.valid();
+	if(camera.valid() && depthTexture.valid() && shadowMatrix.valid()) return true;
+
+	return cubeCapture.radianceTexture.valid() && lightPosition.valid();
 }
 
 namespace {
@@ -288,10 +335,82 @@ void ShadowMap::repositionSpot(
 	updateMatrix();
 }
 
+ShadowMap ShadowMap::createPoint(
+	const osg::Vec3& position,
+	const osg::Vec3& sceneBoundCenter,
+	float sceneBoundRadius,
+	int cubeSize,
+	const ShadowMapOptions& options
+) {
+	ShadowMap result;
+
+	const double reach = double(sceneBoundRadius) * double(options.margin);
+	const double farPlane = double((sceneBoundCenter - position).length()) + reach;
+
+	result.casters = osgx::make_nref<osg::Group>("osgx_shadow_PointCasters");
+
+	CaptureCubeMapOptions cubeOptions;
+
+	cubeOptions.cubeSize = std::max(cubeSize, 1);
+	// 0.05 fixed, not derived like createSpot()'s near_ - unlike a hardware NDC depth buffer, the
+	// stored value here is a real linear distance (DISTANCE_ONLY_FRAGMENT_SHADER above), so it
+	// carries none of the near:far precision-compression risk ShadowMapOptions::margin's own
+	// comment describes; this near plane only needs to keep the depth TEST correct, not preserve
+	// storage precision.
+	cubeOptions.nearPlane = 0.05;
+	cubeOptions.farPlane = farPlane;
+	cubeOptions.format = CaptureCubeMapFormat::Distance;
+	cubeOptions.overrideProgram = makeDistanceOnlyProgram();
+	cubeOptions.continuous = true;
+	// Clears every non-geometry texel to well past the far plane, so an unoccluded direction's
+	// comparison in osgx_ShadowFactorPoint() always reads as "no occluder" - the cube-map
+	// equivalent of the 2D depth map's cleared-to-1.0 (far) background.
+	cubeOptions.clearColor = osg::Vec4(float(farPlane) * 2.0f, 0.0f, 0.0f, 1.0f);
+
+	result.cubeCapture = CaptureCubeMapScene::create(
+		result.casters.get(), osg::Vec3d(position), cubeOptions
+	);
+
+	result.bias = new osg::Uniform("osgx_shadowBias", options.bias);
+	result.strength = new osg::Uniform("osgx_shadowStrength", options.strength);
+	result.casterIndex = new osg::Uniform("osgx_shadowCasterIndex", 0);
+	result.lightPosition = new osg::Uniform("osgx_shadowLightPos", position);
+
+	return result;
+}
+
+void ShadowMap::repositionPoint(
+	const osg::Vec3& position,
+	const osg::Vec3& sceneBoundCenter,
+	float sceneBoundRadius,
+	const ShadowMapOptions& options
+) {
+	if(!cubeCapture.recapture(osg::Vec3d(position))) return;
+
+	// recapture() only re-aims the six cameras' VIEW matrices (a moved light) - the far plane/clear
+	// value also need refreshing here, unlike the 2D map kinds: createPoint()'s far plane was sized
+	// for the ORIGINAL position, and a light now moved closer to (or past) the scene than that
+	// bound would silently clip real casters out of the capture otherwise.
+	const double reach = double(sceneBoundRadius) * double(options.margin);
+	const double farPlane = double((sceneBoundCenter - position).length()) + reach;
+	const osg::Vec4 clearColor(float(farPlane) * 2.0f, 0.0f, 0.0f, 1.0f);
+
+	for(auto& faceCamera: cubeCapture.cameras) {
+		if(!faceCamera) continue;
+
+		faceCamera->setProjectionMatrixAsPerspective(90.0, 1.0, 0.05, farPlane);
+		faceCamera->setClearColor(clearColor);
+	}
+
+	if(lightPosition) lightPosition->set(position);
+}
+
 void registerShadowShaderLibs() {
 	static const osgx::ShaderLib libs[] = {
 		{"SHADOW_UNIFORMS", "osgx_shadowMap", SHADOW_UNIFORMS},
 		{"SHADOW_FACTOR", "osgx_ShadowFactor", SHADOW_FACTOR},
+		{"SHADOW_UNIFORMS_POINT", "osgx_shadowCubeMap", SHADOW_UNIFORMS_POINT},
+		{"SHADOW_FACTOR_POINT", "osgx_ShadowFactorPoint", SHADOW_FACTOR_POINT},
 	};
 
 	::osgx::registerShaderLibs("osgx::shadow", libs);

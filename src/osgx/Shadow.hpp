@@ -1,5 +1,6 @@
 #pragma once
 
+#include "CaptureCubeMap.hpp"
 #include "Core.hpp"
 #include "RTT.hpp"
 #include "Shader.hpp"
@@ -7,6 +8,7 @@
 OSGX_DISABLE_WARNINGS
 
 #include <osg/Camera>
+#include <osg/Group>
 #include <osg/Matrixd>
 #include <osg/Texture2D>
 #include <osg/Uniform>
@@ -93,6 +95,17 @@ struct ShadowMap {
 
 	osg::Matrixd lightView, lightProj;
 
+	// Point-light-only (see createPoint()) - null/invalid for a directional or spot map, whose
+	// `camera`/`depthTexture`/`shadowMatrix` above are the ones populated instead. A point light
+	// needs visibility in every direction, not one 2D frustum's worth, so it's built on
+	// CaptureCubeMapScene's six-camera distance-cube capture (CaptureCubeMap.hpp) rather than a
+	// single osgx::RTT camera. `casters` is createPoint()'s counterpart to adding children
+	// directly to `camera` for the other two kinds - there's no single camera here for a caller to
+	// hang casting geometry off of, so all six cameras share this one Group instead.
+	CaptureCubeMapScene cubeCapture;
+	osg::ref_ptr<osg::Group> casters;
+	osg::ref_ptr<osg::Uniform> lightPosition;
+
 	bool valid() const;
 
 	// Builds `camera` - an ORTHOGRAPHIC depth-only camera, the physically-correct frustum shape
@@ -168,6 +181,32 @@ struct ShadowMap {
 		float sceneBoundRadius,
 		const ShadowMapOptions& options={}
 	);
+
+	// A point light's shadow: an omnidirectional distance CUBE MAP (CaptureCubeMapScene, six
+	// perspective views written by a distance-only Program) instead of a single 2D depth camera -
+	// see this struct's own header comment for why a point light specifically needs this.
+	// `cubeSize` is separate from ShadowMapOptions::size (which this ignores) since it's six
+	// real-time cameras, not one - start small (256, the default) and raise it once the demo's
+	// actually running. `options.extent` is unused (no ortho box); `options.margin` sizes the far
+	// plane the same way createSpot() does.
+	static ShadowMap createPoint(
+		const osg::Vec3& position,
+		const osg::Vec3& sceneBoundCenter,
+		float sceneBoundRadius,
+		int cubeSize=256,
+		const ShadowMapOptions& options={}
+	);
+
+	// reposition()/repositionSpot()'s counterpart for a createPoint() map - re-aims the six capture
+	// cameras at a new position and refreshes their shared far plane/clear value for the new
+	// distance to the scene (unlike the 2D map kinds, a point map's far plane has to track the
+	// light directly - see this method's own .cpp comment).
+	void repositionPoint(
+		const osg::Vec3& position,
+		const osg::Vec3& sceneBoundCenter,
+		float sceneBoundRadius,
+		const ShadowMapOptions& options={}
+	);
 };
 
 // GLSL uniform declarations osgx_ShadowFactor() (SHADOW_FACTOR below) and
@@ -237,6 +276,80 @@ vec3 osgx_DirectLighting(vec3 N, vec3 V, vec3 worldPos, osgx_Material mat) {
 	float shadow = osgx_ShadowFactor(worldPos);
 
 	// Every slot, gated by its `enabled` flag (as DIRECT_LIGHTING_HOOK_DEFAULT in Light.hpp).
+	for(int i = 0; i < OSGX_MAX_LIGHTS; i++) {
+		osgx_Light light = osgx_lights[i];
+
+		if(light.enabled == 0) continue;
+
+		osgx_LightSample s = osgx_SampleLight(light, worldPos);
+		vec3 contribution;
+
+		if(s.sourceRadius > 0.0) {
+			contribution = osgx_DirectLightSphere(N, V, s.L, s.toLight, s.radiance, mat, s.sourceRadius);
+		}
+
+		else {
+			contribution = osgx_DirectLight(N, V, s.L, s.radiance, mat);
+		}
+
+		color += contribution * ((i == osgx_shadowCasterIndex) ? shadow : 1.0);
+	}
+
+	return color;
+}
+)GLSL";
+
+// GLSL uniform declarations osgx_ShadowFactorPoint() (SHADOW_FACTOR_POINT below) and
+// DIRECT_LIGHTING_HOOK_SHADOWED_POINT both assume are already in scope - the point-light
+// counterpart to SHADOW_UNIFORMS above. `osgx_shadowLightPos` is world-space, needed here (unlike
+// the 2D map kinds) since there's no single shadowMatrix to fold the light's position into - the
+// cube lookup direction and the compared distance both have to be rebuilt from it per fragment.
+inline constexpr const char* SHADOW_UNIFORMS_POINT = R"GLSL(
+uniform samplerCube osgx_shadowCubeMap;
+uniform vec3 osgx_shadowLightPos;
+uniform float osgx_shadowBias;
+uniform float osgx_shadowStrength;
+uniform int osgx_shadowCasterIndex;
+)GLSL";
+
+// Cube-map distance-compare shadow test - the point-light counterpart to SHADOW_FACTOR. No
+// projection/uv math needed the way the 2D map kinds need: the lookup direction IS
+// worldPos - osgx_shadowLightPos, and the value stored at that direction IS the real linear
+// distance from the light to whatever ShadowMap::createPoint()'s distance-only Program saw there
+// (see its own comment in Shadow.cpp for why no separate light-position uniform was needed to
+// WRITE that cube in the first place). Single-tap, no PCF yet (SHADOW_FACTOR's 3x3 doesn't
+// translate directly to a cube's non-uniform texel spacing) - a starting point, not a final form.
+// Requires SHADOW_UNIFORMS_POINT already in scope.
+inline constexpr const char* SHADOW_FACTOR_POINT = R"GLSL(
+float osgx_ShadowFactorPoint(vec3 worldPos) {
+	vec3 toFragment = worldPos - osgx_shadowLightPos;
+	float dist = length(toFragment);
+	float stored = texture(osgx_shadowCubeMap, toFragment).r;
+
+	return (dist - osgx_shadowBias > stored) ? (1.0 - osgx_shadowStrength) : 1.0;
+}
+)GLSL";
+
+// DIRECT_LIGHTING_HOOK_SHADOWED's point-light counterpart - identical apart from which shadow
+// catalog entries it splices and which shadow-factor function it calls. A sibling hook rather than
+// a branch inside DIRECT_LIGHTING_HOOK_SHADOWED itself, matching the existing "one shadowed light,
+// one hook" contract (see this file's own header comment on the still-open casterIndex/
+// one-shadowed-light-per-hook limitation) - a caller shadowing a point light adds THIS hook object
+// instead, same hook-swap mechanism as the other two.
+inline constexpr const char* DIRECT_LIGHTING_HOOK_SHADOWED_POINT = R"GLSL(
+#version 460 core
+
+const float PI = 3.14159265359;
+
+#pragma osgx::pbr MATERIAL_STRUCT, D_GGX, G_SCHLICK, G_SMITH, F_SCHLICK
+#pragma osgx::light POINT_LIGHT_RADIANCE, LIGHT_UNIFORMS, DIRECTIONAL_LIGHT_RADIANCE, SPOT_LIGHT_RADIANCE, LIGHT_SAMPLE, SPHERE_LIGHT_SPECULAR
+#pragma osgx::pbr DIRECT_SPECULAR, DIRECT_DIFFUSE, DIRECT_LIGHT, DIRECT_LIGHT_SPHERE
+#pragma osgx::shadow SHADOW_UNIFORMS_POINT, SHADOW_FACTOR_POINT
+
+vec3 osgx_DirectLighting(vec3 N, vec3 V, vec3 worldPos, osgx_Material mat) {
+	vec3 color = vec3(0.0);
+	float shadow = osgx_ShadowFactorPoint(worldPos);
+
 	for(int i = 0; i < OSGX_MAX_LIGHTS; i++) {
 		osgx_Light light = osgx_lights[i];
 

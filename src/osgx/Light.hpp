@@ -440,6 +440,25 @@ struct OrbitLightRig: public osg::NodeCallback {
 	void operator()(osg::Node* node, osg::NodeVisitor* nv) override;
 };
 
+// Animates ONE light's INTENSITY with a torch/campfire-style flicker - layered sine waves at
+// incommensurate frequencies/phases (reads as organic, non-repeating flicker without pulling in a
+// real noise function), written via LightSet::setPosition() - the only setter that touches
+// intensity alone. Position is read back via getPosIntensity() first and passed through unchanged,
+// so this composes cleanly with a light something else (an ImGui panel, OrbitLightRig) is also
+// driving - just keep `baseIntensity` updated to whatever that other driver's own intensity should
+// average out to; the flicker takes over from there. `index` must already be configured via
+// setPoint()/setSpot()/setDirectional() (for color/type/cone/etc - this callback only ever touches
+// intensity). Install as the update callback on whichever node the lit shape hangs from.
+struct FlickerLightRig: public osg::NodeCallback {
+	osg::ref_ptr<LightSet> lights;
+	std::size_t index = 0;
+	float baseIntensity = 1.0f; // the steady-state intensity the flicker oscillates around
+	float amplitude = 0.35f; // +/- fraction of baseIntensity the flicker swings
+	float speed = 1.0f; // overall flicker rate multiplier
+
+	void operator()(osg::Node* node, osg::NodeVisitor* nv) override;
+};
+
 // The `#pragma osgx::light` catalog is registered by osgx::Library and expanded by
 // resolveShaderLibs() (Shader.hpp). It is a separate catalog from "osgx::pbr", matching the header
 // split.

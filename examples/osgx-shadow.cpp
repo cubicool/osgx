@@ -1,10 +1,21 @@
 // vimrun! ./examples/osgx-shadow
 //
-// A standalone proof that osgx::DIRECT_LIGHTING_HOOK_SHADOWED actually shadows: three
+// A standalone proof that osgx::DIRECT_LIGHTING_HOOK_SHADOWED(_POINT) actually shadows: three
 // osgx::Cube shapes of different sizes/colors sitting on a flat floor quad, lit by one
 // osgx::LightSet light whose shadow is cast via osgx::ShadowMap: `--type directional` (default,
-// ShadowMap::create(), orthographic) or `--type spot` (ShadowMap::createSpot(), perspective from
-// the light's position, covering its cone).
+// ShadowMap::create(), orthographic), `--type spot` (ShadowMap::createSpot(), perspective from the
+// light's position, covering its cone), or `--type point` (ShadowMap::createPoint(), an
+// omnidirectional distance cube map - six real-time cameras instead of one, since a point light
+// needs visibility in every direction; starts at a 256 cube size, see ShadowMap::createPoint()'s
+// own comment for why).
+//
+// `--fan` (spot only for now): a single spinning triangular blade sitting in the light's own path,
+// an animated-shadow demo built entirely on existing machinery - see FanSpinCallback below.
+//
+// `--flicker` (any --type): a torch/campfire-style intensity flicker plus (spot/point only) a
+// small position wobble that also re-aims the shadow camera(s), so the FLOOR-RECEIVED shadow
+// visibly moves too - see FlickerWobbleCallback below for why this stays example-local for now
+// rather than an osgx::Light.hpp primitive.
 //
 // Deliberately NOT osgx::PBRScene - no glTF asset, no IBL environment, nothing but the
 // generic osgx::pbr direct-lighting hook contract plus the new shadow one, mirroring
@@ -48,6 +59,7 @@ OSGX_DISABLE_WARNINGS
 #include <osg/Geometry>
 #include <osg/GL>
 #include <osg/Group>
+#include <osg/MatrixTransform>
 #include <osg/Program>
 #include <osg/Shader>
 #include <osg/StateSet>
@@ -61,6 +73,7 @@ OSGX_DISABLE_WARNINGS
 OSGX_ENABLE_WARNINGS
 
 #include <algorithm>
+#include <functional>
 #include <iostream>
 #include <string>
 #include <string_view>
@@ -140,16 +153,19 @@ void main() {
 }
 )GLSL";
 
-// `shadowed` selects DIRECT_LIGHTING_HOOK_SHADOWED vs. plain DIRECT_LIGHTING_HOOK_DEFAULT - the
-// 's'-key toggle in main() rebuilds the Program via this same function, swapping only that one
-// shader object.
-osg::ref_ptr<osg::Program> makeProgram(bool shadowed) {
+// `shadowed` selects DIRECT_LIGHTING_HOOK_SHADOWED(_POINT) vs. plain DIRECT_LIGHTING_HOOK_DEFAULT -
+// the 's'-key toggle in main() rebuilds the Program via this same function, swapping only that one
+// shader object. `pointShadow` picks the cube-map-sampling sibling hook for --type point; ignored
+// when !shadowed.
+osg::ref_ptr<osg::Program> makeProgram(bool shadowed, bool pointShadow) {
 	auto program = osgx::make_nref<osg::Program>(
 		shadowed ? "osgx_shadow_demo_shadowed" : "osgx_shadow_demo_unshadowed"
 	);
 	auto fragmentSrc = osgx::resolveShaderLibs(std::string(FRAGMENT_SHADER));
 	auto hookSrc = osgx::resolveShaderLibs(std::string(
-		shadowed ? osgx::DIRECT_LIGHTING_HOOK_SHADOWED : osgx::DIRECT_LIGHTING_HOOK_DEFAULT
+		!shadowed ? osgx::DIRECT_LIGHTING_HOOK_DEFAULT :
+		pointShadow ? osgx::DIRECT_LIGHTING_HOOK_SHADOWED_POINT :
+		osgx::DIRECT_LIGHTING_HOOK_SHADOWED
 	));
 
 	program->addShader(new osg::Shader(osg::Shader::VERTEX, std::string(VERTEX_SHADER)));
@@ -202,6 +218,135 @@ osg::ref_ptr<osg::Geode> makeCube(const osg::Vec3& center, const osg::Vec3& size
 	return geode;
 }
 
+// A single flat triangular "fan blade" for the --fan demo below - local space, flat in the XY
+// plane, apex pointing +Y, pivot at the local origin so FanSpinCallback can spin it in place.
+// Same attribute layout as makeFloor/osgx::Cube (position=0, normal=1) - renders through the
+// identical shared Program, no separate shader needed.
+osg::ref_ptr<osg::Geode> makeFanBlade() {
+	auto positions = osgx::make_ref<osg::Vec3Array>();
+
+	positions->push_back(osg::Vec3(0.0f, 0.0f, 0.0f));
+	positions->push_back(osg::Vec3(0.5f, 1.6f, 0.0f));
+	positions->push_back(osg::Vec3(-0.5f, 1.2f, 0.0f));
+
+	auto normals = osgx::make_ref<osg::Vec3Array>();
+
+	normals->push_back(osg::Vec3(0.0f, 0.0f, 1.0f));
+
+	auto geometry = osgx::make_ref<osg::Geometry>();
+
+	geometry->setVertexArray(positions.get());
+	geometry->setNormalArray(normals.get(), osg::Array::BIND_OVERALL);
+	geometry->setVertexAttribArray(0, positions.get(), osg::Array::BIND_PER_VERTEX);
+	geometry->setVertexAttribArray(1, normals.get(), osg::Array::BIND_OVERALL);
+	geometry->addPrimitiveSet(new osg::DrawArrays(GL_TRIANGLES, 0, 3));
+
+	auto geode = osgx::make_ref<osg::Geode>();
+
+	geode->addDrawable(geometry.get());
+
+	return geode;
+}
+
+// Keeps the --fan blade sitting in the spot light's own path and spinning - a cheap "gobo"
+// (rotating occluder between light and scene) that proves the shadow system reacts to a moving
+// caster in real time, no PointLight cube-map work needed. Reads *position/*direction live
+// (pointers into main()'s spotPosition/spotDirection) so it tracks the ImGui sliders too.
+struct FanSpinCallback: osg::NodeCallback {
+	const osg::Vec3* position;
+	const osg::Vec3* direction;
+	float anchorDistance;
+
+	FanSpinCallback(const osg::Vec3* position_, const osg::Vec3* direction_, float anchorDistance_):
+	position(position_),
+	direction(direction_),
+	anchorDistance(anchorDistance_) {
+	}
+
+	void operator()(osg::Node* node, osg::NodeVisitor* nv) override {
+		auto* transform = static_cast<osg::MatrixTransform*>(node);
+		const float t = nv->getFrameStamp() ? float(nv->getFrameStamp()->getSimulationTime()) : 0.0f;
+		osg::Vec3 dir = *direction;
+
+		dir.normalize();
+
+		const osg::Vec3 anchor = *position + dir * anchorDistance;
+		// Spin around the blade's OWN normal first (local space), then align that spun normal to
+		// point back toward the light (-dir) - the opposite order (aligning first) would spin
+		// around the WORLD-space dir axis instead, which only coincides with the blade's own
+		// normal once it's already aligned, i.e. one frame late.
+		const osg::Quat spin(t * 2.0, osg::Vec3(0.0f, 0.0f, 1.0f));
+		osg::Quat face;
+
+		face.makeRotate(osg::Vec3(0.0f, 0.0f, 1.0f), -dir);
+
+		transform->setMatrix(osg::Matrix::rotate(spin * face) * osg::Matrix::translate(anchor));
+
+		traverse(node, nv);
+	}
+};
+
+// --flicker (this file's own experiment, deliberately NOT osgx::FlickerLightRig - see this file's
+// header comment): torch/campfire intensity flicker PLUS a small position wobble that also
+// re-aims the ShadowMap's own camera(s), so the FLOOR-RECEIVED shadow visibly moves too, not just
+// the lit faces' shading. osgx::FlickerLightRig can't do this on its own - it only ever touches
+// the LightSet (for shading), and has no reason to know osgx::ShadowMap exists; that composition
+// belongs here, at the application level, same as every other reposition() call in this file.
+// `setLight`/`reposition` are supplied per light type in main() (setPoint/setSpot vs.
+// repositionPoint/repositionSpot); directional supplies `setLight` only (no position to wobble
+// against, so `reposition` stays unset and `wobbleAmount` has no visible effect for it).
+struct FlickerWobbleCallback: osg::NodeCallback {
+	osg::Vec3 basePosition;
+	float baseIntensity = 1.0f;
+	float intensityAmplitude = 0.4f;
+	float intensitySpeed = 3.0f;
+	float wobbleAmount = 0.0f; // world units - 0 reproduces plain intensity-only flicker
+	float wobbleSpeed = 4.0f;
+
+	std::function<void(const osg::Vec3&, float)> setLight; // (position, intensity)
+	std::function<void(const osg::Vec3&)> reposition; // shadowMap.reposition{Spot,Point}(position, ...)
+
+	void operator()(osg::Node* node, osg::NodeVisitor* nv) override {
+		const float t = nv->getFrameStamp() ? float(nv->getFrameStamp()->getSimulationTime()) : 0.0f;
+
+		// Same layered-sine shape as osgx::FlickerLightRig (see its own comment for why three
+		// incommensurate terms) - duplicated here rather than reused since this callback also owns
+		// the (osgx-unaware) shadow-repositioning half of the effect.
+		const float iPhase = t * intensitySpeed;
+		const float wave =
+			0.5f * std::sin(iPhase * 5.6f) +
+			0.3f * std::sin(iPhase * 11.3f + 1.7f) +
+			0.2f * std::sin(iPhase * 19.1f + 4.2f);
+		const float intensity = std::max(0.0f, baseIntensity * (1.0f + intensityAmplitude * wave));
+
+		osg::Vec3 position = basePosition;
+		bool wobbled = false;
+
+		if(wobbleAmount > 0.0f) {
+			const float wPhase = t * wobbleSpeed;
+
+			// Different frequencies/phases per axis (and from the intensity wave above) so the
+			// wobble doesn't visibly correlate with the brightness pulse or move along one line.
+			position += osg::Vec3(
+				std::sin(wPhase * 3.1f),
+				std::sin(wPhase * 2.7f + 2.1f),
+				std::sin(wPhase * 3.9f + 4.4f)
+			) * wobbleAmount;
+
+			wobbled = true;
+		}
+
+		if(setLight) setLight(position, intensity);
+
+		// Only re-aim the shadow camera(s) when there's an actual wobble to apply - at
+		// wobbleAmount=0, `position == basePosition` every frame, so this would just recompute
+		// identical matrices for no visible effect.
+		if(wobbled && reposition) reposition(position);
+
+		traverse(node, nv);
+	}
+};
+
 }
 
 int main(int argc, char** argv) {
@@ -213,13 +358,23 @@ int main(int argc, char** argv) {
 
 	args.read("--type", type);
 
-	if(type != "directional" && type != "spot") {
-		std::cerr << "osgx-shadow: --type must be 'directional' or 'spot'" << std::endl;
+	if(type != "directional" && type != "spot" && type != "point") {
+		std::cerr << "osgx-shadow: --type must be 'directional', 'spot', or 'point'" << std::endl;
 
 		return 1;
 	}
 
 	const bool spot = type == "spot";
+	const bool point = type == "point";
+	const bool fan = args.read("--fan");
+
+	if(fan && !spot) {
+		std::cerr << "osgx-shadow: --fan currently requires --type spot" << std::endl;
+
+		return 1;
+	}
+
+	const bool flicker = args.read("--flicker");
 
 	// Three cubes of different footprints/heights, loosely matching osgx-grid's own floor demo
 	// screenshot - close enough to prove multi-caster shadows land in believable places, not a
@@ -243,13 +398,18 @@ int main(int argc, char** argv) {
 	// ShadowMap::reposition() further down).
 	osg::Vec3 lightDir = osg::Vec3(0.5f, 0.35f, -1.0f);
 	osg::Vec3 lightColor = osg::Vec3(1.0f, 0.96f, 0.88f);
-	float lightIntensity = spot ? 40.0f : 3.0f;
+	float lightIntensity = spot ? 40.0f : (point ? 20.0f : 3.0f);
 
 	// Spot light (--type spot): above and in front of the cubes, aimed at the scene's center.
 	osg::Vec3 spotPosition(2.2f, -2.0f, 3.4f);
 	osg::Vec3 spotDirection = osg::Vec3(0.0f, 0.0f, 0.3f) - spotPosition;
 	float spotInnerDegrees = 22.0f;
 	float spotOuterDegrees = 32.0f;
+
+	// Point light (--type point): no direction, no cone - just a position, close enough among the
+	// cubes that its inverse-square falloff and 90 degree-per-face cube coverage both stay visible.
+	osg::Vec3 pointPosition(1.2f, -1.5f, 1.8f);
+
 	const osg::Vec3 sceneBoundCenter(0.0f, 0.0f, 0.5f);
 	constexpr float sceneBoundRadius = 2.2f;
 
@@ -304,38 +464,157 @@ int main(int argc, char** argv) {
 
 	if(spot) setSpotLight();
 
+	else if(point) lights->setPoint(0, pointPosition, lightColor, lightIntensity);
+
 	else lights->setDirectional(0, lightDir, lightColor, lightIntensity);
 
-	auto shadowMap = spot ?
-		osgx::ShadowMap::createSpot(
+	osgx::ShadowMap shadowMap;
+
+	// Point maps start small (256) - six real-time cameras, not one; see ShadowMap::createPoint()'s
+	// own comment. Tweak up once the demo's actually running.
+	if(spot) {
+		shadowMap = osgx::ShadowMap::createSpot(
 			spotPosition,
 			spotDirection,
 			osg::DegreesToRadians(spotOuterDegrees),
 			sceneBoundCenter,
 			sceneBoundRadius,
 			shadowOptions
-		) :
-		osgx::ShadowMap::create(lightDir, sceneBoundCenter, sceneBoundRadius, shadowOptions)
-	;
+		);
+	}
 
-	// No depth-only Program set here anymore - ShadowMap::create() now installs one
+	else if(point) {
+		shadowMap = osgx::ShadowMap::createPoint(
+			pointPosition, sceneBoundCenter, sceneBoundRadius, 256, shadowOptions
+		);
+	}
+
+	else shadowMap = osgx::ShadowMap::create(lightDir, sceneBoundCenter, sceneBoundRadius, shadowOptions);
+
+	// No depth-only Program set here anymore - ShadowMap::create()/createSpot() now install one
 	// directly on shadowMap.camera's own StateSet (ON|OVERRIDE), which applies automatically to
-	// any subgraph added as its child. `casters` used to need its own explicit workaround; it
-	// doesn't anymore, and neither does any other osgx::shadow caller.
-	shadowMap.camera->addChild(casters.get());
+	// any subgraph added as its child (createPoint()'s six cameras get their own distance-only
+	// Program the same way, via CaptureCubeMapOptions::overrideProgram). `casters` used to need its
+	// own explicit workaround; it doesn't anymore, and neither does any other osgx::shadow caller.
+	// Point maps have no single camera to hang casters off of - shadowMap.casters is createPoint()'s
+	// counterpart, shared by all six capture cameras (see ShadowMap's own header comment).
+	if(point) shadowMap.casters->addChild(casters.get());
+
+	else shadowMap.camera->addChild(casters.get());
+
+	// --flicker: torch/campfire intensity flicker (all types) plus, for spot/point, a position
+	// wobble that also re-aims shadowMap's own camera(s) every frame - see FlickerWobbleCallback's
+	// own comment for why this composition lives here instead of a generic osgx::Light.hpp
+	// primitive. `mainGroup` (not `root`) as the attach point, matching where the LightSet itself
+	// lives (mainSS); free of any other update callback regardless of --type/--fan (FanSpinCallback
+	// lives on its own MatrixTransform).
+	osg::ref_ptr<FlickerWobbleCallback> flickerRig;
+
+	if(flicker) {
+		flickerRig = osgx::make_ref<FlickerWobbleCallback>();
+		flickerRig->baseIntensity = lightIntensity;
+
+		if(spot) {
+			flickerRig->basePosition = spotPosition;
+
+			flickerRig->setLight = [
+				lights, &lightColor, &spotDirection, &spotInnerDegrees, &spotOuterDegrees
+			] (const osg::Vec3& pos, float intensity) {
+				lights->setSpot(
+					0,
+					pos,
+					spotDirection,
+					lightColor,
+					intensity,
+					osg::DegreesToRadians(spotInnerDegrees),
+					osg::DegreesToRadians(spotOuterDegrees)
+				);
+			};
+
+			flickerRig->reposition = [
+				&shadowMap,
+				&spotDirection,
+				&spotOuterDegrees,
+				sceneBoundCenter,
+				shadowOptions
+			] (const osg::Vec3& pos) {
+				shadowMap.repositionSpot(
+					pos,
+					spotDirection,
+					osg::DegreesToRadians(spotOuterDegrees),
+					sceneBoundCenter,
+					sceneBoundRadius,
+					shadowOptions
+				);
+			};
+		}
+
+		else if(point) {
+			flickerRig->basePosition = pointPosition;
+
+			flickerRig->setLight = [lights, &lightColor] (const osg::Vec3& pos, float intensity) {
+				lights->setPoint(0, pos, lightColor, intensity);
+			};
+
+			flickerRig->reposition = [&shadowMap, sceneBoundCenter, shadowOptions] (
+				const osg::Vec3& pos
+			) {
+				shadowMap.repositionPoint(pos, sceneBoundCenter, sceneBoundRadius, shadowOptions);
+			};
+		}
+
+		else {
+			// No position to wobble against - reposition stays unset, wobbleAmount has no effect.
+			flickerRig->setLight = [lights, &lightDir, &lightColor] (const osg::Vec3&, float intensity) {
+				lights->setDirectional(0, lightDir, lightColor, intensity);
+			};
+		}
+
+		mainGroup->setUpdateCallback(flickerRig.get());
+	}
+
+	// --fan: a single spinning triangular blade sitting in the light's own path, partially
+	// blocking it - a cheap animated-shadow demo (see this file's own FanSpinCallback comment).
+	// Shares ONE MatrixTransform between the caster pass (shadowMap.camera) and the visible scene
+	// (mainGroup) - OSG nodes support multiple parents, so this stays a single spinning instance
+	// instead of two independently-updated copies.
+	if(fan) {
+		auto fanTransform = osgx::make_ref<osg::MatrixTransform>();
+		auto blade = makeFanBlade();
+
+		blade->getOrCreateStateSet()->addUniform(new osg::Uniform("albedo", osg::Vec3(0.55f, 0.55f, 0.60f)));
+		fanTransform->addChild(blade.get());
+		fanTransform->setUpdateCallback(new FanSpinCallback(&spotPosition, &spotDirection, 1.6f));
+
+		shadowMap.camera->addChild(fanTransform.get());
+		mainGroup->addChild(fanTransform.get());
+	}
 
 	// Shadow texture unit 0 - this demo has no other textures. `shadowMap`'s own bias/strength/
 	// casterIndex uniforms are added as-is (their defaults already match ShadowMapOptions above).
-	mainSS->setTextureAttributeAndModes(0, shadowMap.depthTexture.get(), osg::StateAttribute::ON);
-	mainSS->addUniform(new osg::Uniform("osgx_shadowMap", 0));
-	mainSS->addUniform(shadowMap.shadowMatrix.get());
+	// A point map has no shadowMatrix (SHADOW_FACTOR_POINT rebuilds direction/distance straight
+	// from osgx_shadowLightPos instead - see Shadow.hpp) but does need that light-position uniform.
+	if(point) {
+		mainSS->setTextureAttributeAndModes(
+			0, shadowMap.cubeCapture.radianceTexture.get(), osg::StateAttribute::ON
+		);
+		mainSS->addUniform(new osg::Uniform("osgx_shadowCubeMap", 0));
+		mainSS->addUniform(shadowMap.lightPosition.get());
+	}
+
+	else {
+		mainSS->setTextureAttributeAndModes(0, shadowMap.depthTexture.get(), osg::StateAttribute::ON);
+		mainSS->addUniform(new osg::Uniform("osgx_shadowMap", 0));
+		mainSS->addUniform(shadowMap.shadowMatrix.get());
+	}
+
 	mainSS->addUniform(shadowMap.bias.get());
 	mainSS->addUniform(shadowMap.strength.get());
 	mainSS->addUniform(shadowMap.casterIndex.get());
 
 	bool shadowed = true;
 
-	mainSS->setAttributeAndModes(makeProgram(shadowed).get(), osg::StateAttribute::ON);
+	mainSS->setAttributeAndModes(makeProgram(shadowed, point).get(), osg::StateAttribute::ON);
 
 	// minMarkerRadius/spotConeLength stay at their unit-scene-scale library defaults - this
 	// scene's own cubes/floor are already close to unit scale, unlike osgx-lights.cpp's object.
@@ -343,7 +622,12 @@ int main(int argc, char** argv) {
 	// shadow camera/gizmo overlay's own unrelated bounds.
 	auto gizmos = osgx::make_ref<osgx::LightGizmos>(*lights, mainGroup.get());
 
-	root->addChild(shadowMap.camera.get());
+	// Point maps have no single camera (see the `casters` attach point above) - their six capture
+	// cameras live under shadowMap.cubeCapture.root instead.
+	if(point) root->addChild(shadowMap.cubeCapture.root.get());
+
+	else root->addChild(shadowMap.camera.get());
+
 	root->addChild(mainGroup.get());
 	root->addChild(gizmos.get());
 
@@ -358,10 +642,10 @@ int main(int argc, char** argv) {
 	viewer.setThreadingModel(osgViewer::Viewer::SingleThreaded);
 #endif
 
-	viewer.addEventHandler(new osgx::LambdaKeyHandler('s', [mainSS, &shadowed](auto&, auto&) {
+	viewer.addEventHandler(new osgx::LambdaKeyHandler('s', [mainSS, &shadowed, point](auto&, auto&) {
 		shadowed = !shadowed;
 
-		mainSS->setAttributeAndModes(makeProgram(shadowed).get(), osg::StateAttribute::ON);
+		mainSS->setAttributeAndModes(makeProgram(shadowed, point).get(), osg::StateAttribute::ON);
 
 		std::cout << "osgx-shadow: shadow " << (shadowed ? "ON" : "OFF") << std::endl;
 
@@ -399,6 +683,7 @@ int main(int argc, char** argv) {
 		&lightColor,
 		&lightIntensity,
 		setSpotLight,
+		flickerRig,
 		sceneBoundCenter,
 		shadowOptions
 	] (osg::RenderInfo&) {
@@ -410,6 +695,10 @@ int main(int argc, char** argv) {
 		changed |= ImGui::SliderFloat("Outer Cone (deg)", &spotOuterDegrees, 1.0f, 80.0f);
 		changed |= ImGui::ColorEdit3("Color", lightColor.ptr());
 		changed |= ImGui::SliderFloat("Intensity", &lightIntensity, 0.0f, 100.0f);
+
+		// Live every frame, not gated by `changed` - flickerRig reads wobbleAmount directly, no
+		// separate commit step needed (see FlickerWobbleCallback's own comment).
+		if(flickerRig) ImGui::SliderFloat("Flicker Wobble", &flickerRig->wobbleAmount, 0.0f, 1.0f);
 
 		spotInnerDegrees = std::min(spotInnerDegrees, spotOuterDegrees);
 
@@ -425,6 +714,41 @@ int main(int argc, char** argv) {
 				sceneBoundRadius,
 				shadowOptions
 			);
+
+			if(flickerRig) {
+				flickerRig->baseIntensity = lightIntensity;
+				flickerRig->basePosition = spotPosition;
+			}
+		}
+	}, osgx::imgui::SectionOptions::create(false, true));
+
+	else if(point) gui->addSection("Point Light", [
+		lights,
+		&shadowMap,
+		&pointPosition,
+		&lightColor,
+		&lightIntensity,
+		flickerRig,
+		sceneBoundCenter,
+		shadowOptions
+	] (osg::RenderInfo&) {
+		bool changed = false;
+
+		changed |= ImGui::SliderFloat3("Position", pointPosition.ptr(), -5.0f, 5.0f);
+		changed |= ImGui::ColorEdit3("Color", lightColor.ptr());
+		changed |= ImGui::SliderFloat("Intensity", &lightIntensity, 0.0f, 100.0f);
+
+		if(flickerRig) ImGui::SliderFloat("Flicker Wobble", &flickerRig->wobbleAmount, 0.0f, 1.0f);
+
+		if(changed) {
+			lights->setPoint(0, pointPosition, lightColor, lightIntensity);
+
+			shadowMap.repositionPoint(pointPosition, sceneBoundCenter, sceneBoundRadius, shadowOptions);
+
+			if(flickerRig) {
+				flickerRig->baseIntensity = lightIntensity;
+				flickerRig->basePosition = pointPosition;
+			}
 		}
 	}, osgx::imgui::SectionOptions::create(false, true));
 
@@ -434,6 +758,7 @@ int main(int argc, char** argv) {
 		&lightDir,
 		&lightColor,
 		&lightIntensity,
+		flickerRig,
 		sceneBoundCenter,
 		shadowOptions
 	] (osg::RenderInfo&) {
@@ -444,6 +769,8 @@ int main(int argc, char** argv) {
 		changed |= ImGui::SliderFloat("Intensity", &lightIntensity, 0.0f, 10.0f);
 
 		if(changed) {
+			if(flickerRig) flickerRig->baseIntensity = lightIntensity;
+
 			// A dragged slider can pass through (0,0,0) - lookAt() (inside
 			// ShadowMap::reposition()) is degenerate for a zero-length direction, so
 			// hold the last valid direction instead of feeding it one.

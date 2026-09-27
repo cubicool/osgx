@@ -13,6 +13,12 @@ OSGX_ENABLE_WARNINGS
 #ifndef GL_RGB16F
 #  define GL_RGB16F 0x881B
 #endif
+#ifndef GL_R32F
+#  define GL_R32F 0x822E
+#endif
+#ifndef GL_RED
+#  define GL_RED 0x1903
+#endif
 #ifndef GL_COLOR_BUFFER_BIT
 #  define GL_COLOR_BUFFER_BIT 0x00004000
 #endif
@@ -32,12 +38,12 @@ struct FaceOrientation {
 // These directions/up vectors reproduce OpenGL's six cubemap-face orientations. They agree with
 // cubeFaceDirection() and a samplerCube's conventional lookup basis.
 const FaceOrientation FACE_ORIENTATIONS[] = {
-	{{ 1.0,  0.0,  0.0}, { 0.0, -1.0,  0.0}}, // +X
-	{{-1.0,  0.0,  0.0}, { 0.0, -1.0,  0.0}}, // -X
-	{{ 0.0,  1.0,  0.0}, { 0.0,  0.0,  1.0}}, // +Y
-	{{ 0.0, -1.0,  0.0}, { 0.0,  0.0, -1.0}}, // -Y
-	{{ 0.0,  0.0,  1.0}, { 0.0, -1.0,  0.0}}, // +Z
-	{{ 0.0,  0.0, -1.0}, { 0.0, -1.0,  0.0}}  // -Z
+	{{ 1.0, 0.0, 0.0}, { 0.0, -1.0, 0.0}}, // +X
+	{{-1.0, 0.0, 0.0}, { 0.0, -1.0, 0.0}}, // -X
+	{{ 0.0, 1.0, 0.0}, { 0.0, 0.0, 1.0}}, // +Y
+	{{ 0.0, -1.0, 0.0}, { 0.0, 0.0, -1.0}}, // -Y
+	{{ 0.0, 0.0, 1.0}, { 0.0, -1.0, 0.0}}, // +Z
+	{{ 0.0, 0.0, -1.0}, { 0.0, -1.0, 0.0}} // -Z
 };
 
 void setCaptureView(osg::Camera& camera, const osg::Vec3d& position, unsigned int face) {
@@ -68,9 +74,13 @@ CaptureCubeMapScene CaptureCubeMapScene::create(
 	auto root = new osg::Group();
 	auto completion = new BakeCompletion();
 
+	const bool distance = options.format == CaptureCubeMapFormat::Distance;
+
 	texture->setDataVariance(osg::Object::DYNAMIC);
 	texture->setTextureSize(cubeSize, cubeSize);
-	texture->setInternalFormat(GL_RGB16F);
+	texture->setInternalFormat(distance ? GL_R32F : GL_RGB16F);
+	texture->setSourceFormat(distance ? GL_RED : GL_RGB);
+	texture->setSourceType(GL_FLOAT);
 	texture->setFilter(osg::Texture::MIN_FILTER, osg::Texture::LINEAR);
 	texture->setFilter(osg::Texture::MAG_FILTER, osg::Texture::LINEAR);
 	texture->setWrap(osg::Texture::WRAP_S, osg::Texture::CLAMP_TO_EDGE);
@@ -80,7 +90,9 @@ CaptureCubeMapScene CaptureCubeMapScene::create(
 
 	for(unsigned int face = 0; face < scene.cameras.size(); face++) {
 		auto camera = osgx::make_nref<osgx::RTT>(
-			"osgx_CaptureCubeMap_f" + std::to_string(face), cubeSize, cubeSize
+			"osgx_CaptureCubeMap_f" + std::to_string(face),
+			cubeSize,
+			cubeSize
 		);
 
 		camera->setRenderOrder(osg::Camera::PRE_RENDER, static_cast<int>(face));
@@ -89,13 +101,26 @@ CaptureCubeMapScene CaptureCubeMapScene::create(
 		camera->setProjectionMatrixAsPerspective(90.0, 1.0, nearPlane, farPlane);
 		camera->setComputeNearFarMode(osg::Camera::DO_NOT_COMPUTE_NEAR_FAR);
 		camera->attach(osg::Camera::COLOR_BUFFER0, texture, 0, face, false);
-		camera->setUpdateCallback(new RunOnceCallback(false));
+
+		// continuous=true skips RunOnceCallback entirely - the camera just renders every frame
+		// like any ordinary PRE_RENDER camera (see CaptureCubeMapOptions::continuous).
+		if(!options.continuous) camera->setUpdateCallback(new RunOnceCallback(false));
+
+		if(options.overrideProgram.valid()) {
+			camera->getOrCreateStateSet()->setAttributeAndModes(
+				options.overrideProgram,
+				osg::StateAttribute::ON | osg::StateAttribute::OVERRIDE
+			);
+		}
+
 		setCaptureView(*camera, position, face);
+
 		camera->addChild(capturedNode);
 
 		if(face == scene.cameras.size() - 1) camera->setPostDrawCallback(completion);
 
 		scene.cameras[face] = camera;
+
 		root->addChild(camera);
 	}
 
