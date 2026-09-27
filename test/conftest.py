@@ -5,6 +5,7 @@ sys.path.append("BUILD-g++-13.3.0-NOASAN")
 sys.path.append("BUILD-clang++-18.1.3-NOASAN")
 
 os.putenv("OSG_THREADING", "SingleThreaded")
+os.environ.setdefault("OSG_NOTIFY_LEVEL", "WARN")
 
 import osgx
 import pytest

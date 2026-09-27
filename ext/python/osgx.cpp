@@ -32,6 +32,13 @@ PYBIND11_MODULE(osgx, m) {
 	osgx_python::bind_environment(m);
 	osgx_python::bind_aura(m);
 
+	auto m_headless = m.def_submodule(
+		"headless",
+		"osgx::headless - offscreen pbuffer creation and deterministic fixed-frame capture"
+	);
+
+	osgx_python::bind_headless(m_headless);
+
 	auto m_debug = m.def_submodule("debug", "osgx::debug - GL_KHR_debug integration + GPU/CPU profiler");
 
 	osgx_python::bind_debug(m_debug);

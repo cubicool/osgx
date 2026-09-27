@@ -91,6 +91,10 @@ at the top level, OFF when embedded). They used to live in a separate `osgGLTF` 
 folded directly into this tree since they were never meaningfully independent of `osgx::core`/
 `osgx::osgx` to begin with. See [docs/GLTF.md](docs/GLTF.md).
 
+`osgx::headless` is part of `osgx::osgx`, with no optional dependency beyond the platform backend:
+it creates native or EGL pbuffers, runs a viewer for a fixed frame count, and captures the final
+frame. See [docs/HEADLESS.md](docs/HEADLESS.md).
+
 # `osgx.hpp` — public headers
 
 `osgx.hpp` is the umbrella header for the always-available utility layer. It keeps common setup
@@ -104,6 +108,8 @@ by concern:
 - `osgx/Callbacks.hpp` — callback-group and lambda-callback adapters.
 - `osgx/Picking.hpp` — object-ID picking cameras, readback, and hover/click handlers.
 - `osgx/Manipulators.hpp` — `Ortho2DManipulator`, `OrbitAxisManipulator`, and `MultiCameraManipulator`.
+- `osgx/Headless.hpp` — offscreen native/EGL pbuffer creation, command-line parsing, and fixed-frame
+  viewer capture.
 - `osgx/CameraIntents.hpp` — `Viewpoint`, `FlyToCallback`, and `ShakeCallback`, driven by real
   `osgAnimation::Motion`/`CompositeMotion` (patrol legs, arrival latch, procedural shake).
 - `osgx/Grid.hpp` — procedurally generated, antialiased grid overlay/ground-plane geometry.
@@ -151,6 +157,8 @@ Per-subsystem deep dives live in [`docs/`](docs/):
   profiler, and `FrameByFrameViewer`.
 - [`osgx::imgui`](docs/IMGUI.md) — the Dear ImGui overlay.
 - [`osgx::platform`](docs/PLATFORM.md) — X11/XRandr and the EGL/GBM `GraphicsWindow` factories.
+- [`osgx::headless`](docs/HEADLESS.md) — portable fixed-frame offscreen rendering and capture, with
+  EGL selected automatically when available.
 - [`osgx::gltf`](docs/GLTF.md) — the loader, its shader interface, the optional PBR/IBL renderer,
   and the environment-baking tool.
 

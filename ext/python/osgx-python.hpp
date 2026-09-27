@@ -46,6 +46,7 @@ void bind_debug(py::module_& m_debug);
 void bind_picking(py::module_& m);
 void bind_shapes(py::module_& m);
 void bind_gizmos(py::module_& m);
+void bind_headless(py::module_& m_headless);
 void bind_pixel_text(py::module_& m);
 void bind_projection(py::module_& m);
 void bind_sdf(py::module_& m);

@@ -19,6 +19,7 @@
 #include "GBuffer.hpp"
 #include "Aura.hpp"
 #include "Gizmos.hpp"
+#include "Headless.hpp"
 #include "IBL.hpp"
 #include "CaptureCubeMap.hpp"
 #include "GGXPrefilter.hpp"

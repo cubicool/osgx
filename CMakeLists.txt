@@ -237,6 +237,7 @@ add_library(osgx ${OSGX_LIBRARY_TYPE}
 	src/GBuffer.cpp
 	src/GGXPrefilter.cpp
 	src/Gizmos.cpp
+	src/Headless.cpp
 	src/Grid.cpp
 	src/IBL.cpp
 	src/LambertianBake.cpp
@@ -268,6 +269,7 @@ target_sources(osgx PUBLIC
 	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/osgx.hpp>"
 	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/Aura.hpp>"
 	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/Gizmos.hpp>"
+	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/Headless.hpp>"
 	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/Grid.hpp>"
 	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/IBL.hpp>"
 	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/CaptureCubeMap.hpp>"
@@ -604,6 +606,7 @@ if(OSGX_BUILD_PYTHON AND Python3_Development.Module_FOUND)
 		"ext/python/osgx-picking.cpp"
 		"ext/python/osgx-shapes.cpp"
 		"ext/python/osgx-gizmos.cpp"
+		"ext/python/osgx-headless.cpp"
 		"ext/python/osgx-pixel-text.cpp"
 		"ext/python/osgx-projection.cpp"
 		"ext/python/osgx-sdf.cpp"
