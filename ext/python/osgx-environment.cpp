@@ -19,37 +19,37 @@ void bind_environment(py::module_& m) {
 	m.attr("ENVIRONMENT_SAMPLE") = osgx::ENVIRONMENT_SAMPLE;
 	m.attr("ENVIRONMENT_LIGHTING") = osgx::ENVIRONMENT_LIGHTING;
 
-	py::class_<osgx::EnvironmentBakeOptions>(
+	auto environment = py::class_<osgx::Environment, osg::StateAttribute, osg::ref_ptr<osgx::Environment>>(
 		m,
-		"EnvironmentBakeOptions",
+		"Environment",
+		"Distant image-based lighting as one osg.StateAttribute: a prefiltered specular cubemap, a "
+		"diffuse irradiance cubemap, and the split-sum BRDF LUT, plus orientation, roughness-to-mip "
+		"mapping, and intensities in one std140 uniform block."
+	);
+
+	py::class_<osgx::Environment::BakeOptions>(
+		environment,
+		"BakeOptions",
 		"Options for Environment's bake-from-HDR constructor: the specular (GGX prefilter) and "
 		"diffuse (Lambertian) bakes, plus the shared BRDF LUT size."
 	)
 		.def(py::init<>(), "Constructs default options (specular.prefilterSize=256, lutSize=1024).")
-		.def_readwrite("specular", &osgx::EnvironmentBakeOptions::specular, "GGXPrefilterOptions for the specular bake.")
-		.def_readwrite("diffuse", &osgx::EnvironmentBakeOptions::diffuse, "LambertianBakeOptions for the diffuse bake.")
-		.def_readwrite("lutSize", &osgx::EnvironmentBakeOptions::lutSize, "BRDF LUT resolution (shared per size, process-wide).")
+		.def_readwrite("specular", &osgx::Environment::BakeOptions::specular, "GGXPrefilter.Options for the specular bake.")
+		.def_readwrite("diffuse", &osgx::Environment::BakeOptions::diffuse, "LambertianBake.Options for the diffuse bake.")
+		.def_readwrite("lutSize", &osgx::Environment::BakeOptions::lutSize, "BRDF LUT resolution (shared per size, process-wide).")
 		.def_readwrite(
-			"bakeSpecular", &osgx::EnvironmentBakeOptions::bakeSpecular,
+			"bakeSpecular", &osgx::Environment::BakeOptions::bakeSpecular,
 			"False skips the GGX specular bake; the specular map is a 1x1 placeholder until "
 			"Environment.specularMap is assigned (e.g. a live-rebaked probe)."
 		)
 	;
 
-	py::class_<osgx::Environment, osg::StateAttribute, osg::ref_ptr<osgx::Environment>>(
-		m,
-		"Environment",
-		"Distant image-based lighting as one osg.StateAttribute: a prefiltered specular cubemap, a "
-		"diffuse irradiance cubemap, and the split-sum BRDF LUT, plus orientation, roughness-to-mip "
-		"mapping, and intensities in one std140 uniform block. Attaching it binds all of that and enables "
-		"seamless cubemap filtering. Read in GLSL via `#pragma osgx::environment ENVIRONMENT_INPUTS, "
-		"ENVIRONMENT_SAMPLE[, ENVIRONMENT_LIGHTING]`."
-	)
+	environment
 		.def(py::init<>(), "Constructs an empty Environment (no textures).")
 		.def(
-			py::init<osg::Image*, const osgx::EnvironmentBakeOptions&>(),
+			py::init<osg::Image*, const osgx::Environment::BakeOptions&>(),
 			"image"_a,
-			"options"_a = osgx::EnvironmentBakeOptions(),
+			"options"_a = osgx::Environment::BakeOptions(),
 			"Bakes specular and diffuse cubemaps from an equirectangular HDR osg.Image on the GPU. "
 			"Add `bakeRoot` to a rendered scene graph; textures are bindable immediately but only "
 			"correct once the bake passes have rendered."

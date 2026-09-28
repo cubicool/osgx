@@ -481,9 +481,9 @@ int main(int argc, char** argv) {
 		);
 
 		static constexpr std::array formats = {
-			osgx::AttachmentFormat::RGBA8,
-			osgx::AttachmentFormat::RGB16F,
-			osgx::AttachmentFormat::RGBA32F
+			osgx::GBuffer::AttachmentFormat::RGBA8,
+			osgx::GBuffer::AttachmentFormat::RGB16F,
+			osgx::GBuffer::AttachmentFormat::RGBA32F
 		};
 		auto gbuffer = osgx::GBuffer::create(selected, WIDTH, HEIGHT, formats);
 

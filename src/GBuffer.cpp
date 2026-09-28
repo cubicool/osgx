@@ -23,12 +23,12 @@ namespace osgx {
 
 namespace {
 
-GLint internalFormatFor(AttachmentFormat format) {
+GLint internalFormatFor(GBuffer::AttachmentFormat format) {
 	switch(format) {
-		case AttachmentFormat::RGBA8: return GL_RGBA;
-		case AttachmentFormat::RGB16F: return GL_RGB16F;
-		case AttachmentFormat::RGBA16F: return GL_RGBA16F;
-		case AttachmentFormat::RGBA32F: return GL_RGBA32F;
+		case GBuffer::AttachmentFormat::RGBA8: return GL_RGBA;
+		case GBuffer::AttachmentFormat::RGB16F: return GL_RGB16F;
+		case GBuffer::AttachmentFormat::RGBA16F: return GL_RGBA16F;
+		case GBuffer::AttachmentFormat::RGBA32F: return GL_RGBA32F;
 	}
 
 	return GL_RGBA;
@@ -209,7 +209,7 @@ GBuffer GBuffer::create(
 	osg::Node* node,
 	int width,
 	int height,
-	std::span<const AttachmentFormat> colorFormats,
+	std::span<const GBuffer::AttachmentFormat> colorFormats,
 	osg::Transform::ReferenceFrame referenceFrame
 ) {
 	GBuffer result;

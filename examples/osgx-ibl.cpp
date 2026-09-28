@@ -599,12 +599,12 @@ int main(int argc, char** argv) {
 		}
 
 		if(mode == Mode::GGX) {
-			osgx::GGXPrefilterOptions options;
+			osgx::GGXPrefilter::Options options;
 
 			options.prefilterSize = cubeSize;
 			options.sampleCount = sampleCount;
 
-			auto bake = osgx::GGXPrefilterScene::create(hdrImage, options);
+			auto bake = osgx::GGXPrefilter::create(hdrImage, options);
 
 			if(!bake.root || !bake.prefilterTexture) {
 				std::cerr << "osgx-ibl: could not create the GGX prefilter bake scene" << std::endl;
@@ -630,7 +630,7 @@ int main(int argc, char** argv) {
 		}
 
 		else {
-			auto bake = osgx::LambertianBakeScene::create(
+			auto bake = osgx::LambertianBake::create(
 				hdrImage,
 				{.cubeSize = cubeSize, .sampleCount = sampleCount}
 			);

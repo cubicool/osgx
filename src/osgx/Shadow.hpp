@@ -41,43 +41,44 @@ namespace osgx {
 // (updateMatrix()) if the light itself moves, which no pyosg-lighting example has ever done.
 // ================================================================================================
 
-struct ShadowMapOptions {
-	int size = 1024;
-
-	// Half-width, in world units, of the ORTHOGRAPHIC shadow frustum's box (both the X/Y extent
-	// and the margin added to near/far - see `margin` below). A directional light's rays are
-	// parallel by definition, so this - not a field-of-view angle - is what actually determines
-	// coverage; a perspective frustum here would make the light behave like a nearby spotlight
-	// whose rays diverge, which visibly disagrees with a direct-lighting term that (correctly)
-	// treats every point in the scene as lit from the same direction. 0 (the default) derives the
-	// extent from `sceneBoundRadius * margin`, matching every existing caller's coverage exactly;
-	// set explicitly to cover more than the casting geometry itself - e.g. a floor/room that
-	// needs to receive shadows well past the model's own bound (ported from
-	// OpenSceneGraph.py's 11-sketchfab.py, which computed this by hand as
-	// `max(bound_radius * margin, floor_size)` before this became a real option).
-	float extent = 0.0f;
-
-	// Multiplies sceneBoundRadius both when deriving a default `extent` above and when sizing
-	// near/far planes. Ported directly from 09-ibl.py's own investigation: a shadow camera placed
-	// at a FIXED distance from the scene puts near/far arbitrarily close together for a small
-	// scene and arbitrarily far apart for a large one - Lantern (a ~15-unit-radius glTF model)
-	// hit a ~2870:1 near:far ratio this way, collapsing shadow-map depth precision to nothing (the
-	// depth comparison in osgx_ShadowFactor() never triggers - looks like "no shadow" but is
-	// really "no usable depth precision"). Scaling by the scene's own bound keeps near:far bounded
-	// to a healthy ratio regardless of scene scale, with no per-scene tuning.
-	float margin = 1.3f;
-
-	float bias = 0.005f;
-	float strength = 0.7f; // 0 = shadows have no effect, 1 = fully black
-};
-
-// A directional (create()) or spot (createSpot()) shadow map: owns the PRE_RENDER depth-only camera (`camera` - add it to the
-// scene graph, e.g. as a sibling of whatever the shadowed model's own parent is, exactly where
-// the old hand-rolled examples added their own `shadow_cam`) plus the uniforms
-// DIRECT_LIGHTING_HOOK_SHADOWED reads every frame. Depth-only: no dummy color attachment
-// needed (the old hand-rolled Python examples worked around a since-irrelevant pybind11 binding
-// gap - osg::Camera::setDrawBuffer/setReadBuffer are ordinary C++ calls here).
 struct ShadowMap {
+	struct Options {
+		int size = 1024;
+
+		// Half-width, in world units, of the ORTHOGRAPHIC shadow frustum's box (both the X/Y extent
+		// and the margin added to near/far - see `margin` below). A directional light's rays are
+		// parallel by definition, so this - not a field-of-view angle - is what actually determines
+		// coverage; a perspective frustum here would make the light behave like a nearby spotlight
+		// whose rays diverge, which visibly disagrees with a direct-lighting term that (correctly)
+		// treats every point in the scene as lit from the same direction. 0 (the default) derives the
+		// extent from `sceneBoundRadius * margin`, matching every existing caller's coverage exactly;
+		// set explicitly to cover more than the casting geometry itself - e.g. a floor/room that
+		// needs to receive shadows well past the model's own bound (ported from
+		// OpenSceneGraph.py's 11-sketchfab.py, which computed this by hand as
+		// `max(bound_radius * margin, floor_size)` before this became a real option).
+		float extent = 0.0f;
+
+		// Multiplies sceneBoundRadius both when deriving a default `extent` above and when sizing
+		// near/far planes. Ported directly from 09-ibl.py's own investigation: a shadow camera placed
+		// at a FIXED distance from the scene puts near/far arbitrarily close together for a small
+		// scene and arbitrarily far apart for a large one - Lantern (a ~15-unit-radius glTF model)
+		// hit a ~2870:1 near:far ratio this way, collapsing shadow-map depth precision to nothing (the
+		// depth comparison in osgx_ShadowFactor() never triggers - looks like "no shadow" but is
+		// really "no usable depth precision"). Scaling by the scene's own bound keeps near:far bounded
+		// to a healthy ratio regardless of scene scale, with no per-scene tuning.
+		float margin = 1.3f;
+
+		float bias = 0.005f;
+		float strength = 0.7f; // 0 = shadows have no effect, 1 = fully black
+	};
+
+	// A directional (create()) or spot (createSpot()) shadow map: owns the PRE_RENDER depth-only
+	// camera (`camera` - add it to the scene graph, e.g. as a sibling of whatever the shadowed
+	// model's own parent is, exactly where the old hand-rolled examples added their own
+	// `shadow_cam`) plus the uniforms DIRECT_LIGHTING_HOOK_SHADOWED reads every frame. Depth-only:
+	// no dummy color attachment needed (the old hand-rolled Python examples worked around a
+	// since-irrelevant pybind11 binding gap - osg::Camera::setDrawBuffer/setReadBuffer are ordinary
+	// C++ calls here).
 	osg::ref_ptr<osg::Camera> camera;
 	osg::ref_ptr<osg::Texture2D> depthTexture;
 
@@ -98,11 +99,11 @@ struct ShadowMap {
 	// Point-light-only (see createPoint()) - null/invalid for a directional or spot map, whose
 	// `camera`/`depthTexture`/`shadowMatrix` above are the ones populated instead. A point light
 	// needs visibility in every direction, not one 2D frustum's worth, so it's built on
-	// CaptureCubeMapScene's six-camera distance-cube capture (CaptureCubeMap.hpp) rather than a
+	// CaptureCubeMap's six-camera distance-cube capture (CaptureCubeMap.hpp) rather than a
 	// single osgx::RTT camera. `casters` is createPoint()'s counterpart to adding children
 	// directly to `camera` for the other two kinds - there's no single camera here for a caller to
 	// hang casting geometry off of, so all six cameras share this one Group instead.
-	CaptureCubeMapScene cubeCapture;
+	CaptureCubeMap cubeCapture;
 	osg::ref_ptr<osg::Group> casters;
 	osg::ref_ptr<osg::Uniform> lightPosition;
 
@@ -110,7 +111,7 @@ struct ShadowMap {
 
 	// Builds `camera` - an ORTHOGRAPHIC depth-only camera, the physically-correct frustum shape
 	// for a directional (parallel-ray) light - looking from a point `2 * extent` away from
-	// `sceneBoundCenter` (`extent` per ShadowMapOptions::extent), back along `lightDirection`,
+	// `sceneBoundCenter` (`extent` per Options::extent), back along `lightDirection`,
 	// toward `sceneBoundCenter`. `lightDirection` is the ray TRAVEL direction, matching
 	// osgx::LightSet::setDirectional()'s own convention - the camera looks the opposite way,
 	// toward where the light is coming FROM, same as any physical shadow-casting light would.
@@ -130,7 +131,12 @@ struct ShadowMap {
 		const osg::Vec3& lightDirection,
 		const osg::Vec3& sceneBoundCenter,
 		float sceneBoundRadius,
-		const ShadowMapOptions& options={}
+		const Options& options
+	);
+	static ShadowMap create(
+		const osg::Vec3& lightDirection,
+		const osg::Vec3& sceneBoundCenter,
+		float sceneBoundRadius
 	);
 
 	// Recomputes `shadowMatrix` from `lightView`/`lightProj` - call after mutating either
@@ -153,7 +159,12 @@ struct ShadowMap {
 		const osg::Vec3& lightDirection,
 		const osg::Vec3& sceneBoundCenter,
 		float sceneBoundRadius,
-		const ShadowMapOptions& options={}
+		const Options& options
+	);
+	void reposition(
+		const osg::Vec3& lightDirection,
+		const osg::Vec3& sceneBoundCenter,
+		float sceneBoundRadius
 	);
 
 	// A spot light's shadow map: a PERSPECTIVE depth-only camera at `position` looking along
@@ -169,7 +180,14 @@ struct ShadowMap {
 		float outerConeAngle,
 		const osg::Vec3& sceneBoundCenter,
 		float sceneBoundRadius,
-		const ShadowMapOptions& options={}
+		const Options& options
+	);
+	static ShadowMap createSpot(
+		const osg::Vec3& position,
+		const osg::Vec3& direction,
+		float outerConeAngle,
+		const osg::Vec3& sceneBoundCenter,
+		float sceneBoundRadius
 	);
 
 	// reposition()'s counterpart for a createSpot() map.
@@ -179,13 +197,20 @@ struct ShadowMap {
 		float outerConeAngle,
 		const osg::Vec3& sceneBoundCenter,
 		float sceneBoundRadius,
-		const ShadowMapOptions& options={}
+		const Options& options
+	);
+	void repositionSpot(
+		const osg::Vec3& position,
+		const osg::Vec3& direction,
+		float outerConeAngle,
+		const osg::Vec3& sceneBoundCenter,
+		float sceneBoundRadius
 	);
 
-	// A point light's shadow: an omnidirectional distance CUBE MAP (CaptureCubeMapScene, six
+	// A point light's shadow: an omnidirectional distance CUBE MAP (CaptureCubeMap, six
 	// perspective views written by a distance-only Program) instead of a single 2D depth camera -
 	// see this struct's own header comment for why a point light specifically needs this.
-	// `cubeSize` is separate from ShadowMapOptions::size (which this ignores) since it's six
+	// `cubeSize` is separate from Options::size (which this ignores) since it's six
 	// real-time cameras, not one - start small (256, the default) and raise it once the demo's
 	// actually running. `options.extent` is unused (no ortho box); `options.margin` sizes the far
 	// plane the same way createSpot() does.
@@ -193,8 +218,14 @@ struct ShadowMap {
 		const osg::Vec3& position,
 		const osg::Vec3& sceneBoundCenter,
 		float sceneBoundRadius,
-		int cubeSize=256,
-		const ShadowMapOptions& options={}
+		int cubeSize,
+		const Options& options
+	);
+	static ShadowMap createPoint(
+		const osg::Vec3& position,
+		const osg::Vec3& sceneBoundCenter,
+		float sceneBoundRadius,
+		int cubeSize=256
 	);
 
 	// reposition()/repositionSpot()'s counterpart for a createPoint() map - re-aims the six capture
@@ -205,7 +236,12 @@ struct ShadowMap {
 		const osg::Vec3& position,
 		const osg::Vec3& sceneBoundCenter,
 		float sceneBoundRadius,
-		const ShadowMapOptions& options={}
+		const Options& options
+	);
+	void repositionPoint(
+		const osg::Vec3& position,
+		const osg::Vec3& sceneBoundCenter,
+		float sceneBoundRadius
 	);
 };
 

@@ -41,18 +41,18 @@ namespace osgx {
 // its own private near/far during its own cull pass and never writes the result back onto the
 // Camera object, so a projection matrix read off a DIFFERENT camera after the fact does not
 // necessarily match what actually wrote the depth buffer).
-enum class AttachmentFormat {
-	RGBA8,
-	RGB16F,
-	RGBA16F,
-	RGBA32F
-};
-
 // One populated G-buffer: `camera` is the PRE_RENDER FBO pass that writes `colorTextures`
 // (indexed exactly as passed to create(), i.e. colorTextures[i] is
 // COLOR_BUFFER<i>) plus `depthTexture`. The caller still owns adding `camera` to the rendered
 // scene graph - this struct only owns creating it.
 struct GBuffer {
+	enum class AttachmentFormat {
+		RGBA8,
+		RGB16F,
+		RGBA16F,
+		RGBA32F
+	};
+
 	osg::ref_ptr<osg::Camera> camera;
 	std::vector<osg::ref_ptr<osg::Texture2D>> colorTextures;
 	osg::ref_ptr<osg::Texture2D> depthTexture;
@@ -89,7 +89,7 @@ struct GBuffer {
 // `AttachmentFormat::RGBA32F` comment gives), then a small fixed-radius box-blur RTT pass to
 // denoise it. `aoTexture` (the blurred result) is a single-channel `GL_R8` texture in `[0, 1]`
 // (1.0 = fully unoccluded) that plugs directly into
-// `osgx::PBRLightingPassOptions::aoTexture` (PBRDeferred.hpp) - that seam was built
+// `osgx::PBRLightingPass::Options::aoTexture` (PBRDeferred.hpp) - that seam was built
 // exactly for this - or any other consumer wanting a generic screen-space occlusion mask.
 struct SSAO {
 	osg::ref_ptr<osg::Camera> rawCamera;

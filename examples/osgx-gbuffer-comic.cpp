@@ -4,7 +4,7 @@
 // caller-supplied fragment shader REPLACING PBRLightingPass::create()'s entire lighting-pass
 // main(), not one leaf function - the "I know what I'm doing, rewrite the whole pipeline" escape
 // hatch described in Shader.hpp's own Hook::DeferredLighting comment and
-// PBRLightingPassOptions' own comment (PBRDeferred.hpp).
+// PBRLightingPass::Options' own comment (PBRDeferred.hpp).
 //
 // The custom shader below never calls osgx_DirectLighting()/osgx_EvaluateEnvironment() at all - it reads the
 // G-buffer via osgx_GetGBuffer() (#pragma osgx::gbuffer DEFERRED_LIGHTING_INPUTS, GET_GBUFFER --
@@ -19,7 +19,7 @@
 // geometry pass needed); and a soft-clamped emissive glow. It DOES still gamma-encode its final
 // output (a display-referred correctness requirement, not a style choice - osgx_Tonemap() itself
 // stays unused, see
-// PBRLightingPassOptions' own tonemap/hooks comment for why those are two separate decisions).
+// PBRLightingPass::Options' own tonemap/hooks comment for why those are two separate decisions).
 //
 // No environment/IBL, no LightSet, no ShadowMap - PBRLightingPass::create()'s `environment`
 // parameter is OPTIONAL specifically so a Hook::DeferredLighting override like this one, which
@@ -68,7 +68,7 @@
 // once looked dead on Batman (a non-Khronos custom asset with no occlusion texture at all), not a
 // pipeline bug: it works correctly on models that actually carry one, e.g. the Khronos
 // `CompareAmbientOcclusion` sample (purpose-built for exactly this A/B) or `DamagedHelmet`. `aoTex`
-// (gated behind `OSGX_PBR_AO`, set automatically when `PBRLightingPassOptions::aoTexture` is
+// (gated behind `OSGX_PBR_AO`, set automatically when `PBRLightingPass::Options::aoTexture` is
 // non-null) is real-time screen-space AO from `osgx::SSAO::create()` (GBuffer.hpp) - catches
 // self/contact occlusion the static bake can't (this model resting against itself, or against
 // nothing else in this shadowless/lightless scratchpad, but the mechanism is general). Combining
@@ -278,7 +278,7 @@ uniform float h3Angle, h3SpacingScale, h3ThicknessScale, h3Seed, h3OnsetLow, h3O
 
 // Real-time SSAO - see the file header's "NOTE on AO Mask" for how this combines with gb.ao.
 // Gated the same way the built-in lighting shader gates it (OSGX_PBR_AO, set automatically by
-// PBRLightingPassOptions::aoTexture when non-null) - so this shader still compiles/runs
+// PBRLightingPass::Options::aoTexture when non-null) - so this shader still compiles/runs
 // unchanged if no SSAO pass is ever wired in. `#pragma import_defines` IS required here (confirmed
 // against OSG's own osg::Shader::_shaderDefines/getDefineString(): a StateSet define is only
 // written into a given Shader's compiled source if that Shader itself declares the define name via
@@ -547,7 +547,7 @@ void main() {
 	// but still needs the gamma ENCODE step every display-referred fragment needs before writing
 	// to the backbuffer - omitting it (as this shader did until now) makes midtones read
 	// noticeably darker/muddier than intended. Two separate decisions, same as
-	// PBRLightingPassOptions::tonemap's own comment explains for the built-in path.
+	// PBRLightingPass::Options::tonemap's own comment explains for the built-in path.
 	color = pow(max(color, vec3(0.0)), vec3(1.0 / 2.2));
 
 	fragColor = vec4(color, gb.alphaCoverage);
@@ -680,7 +680,7 @@ int main(int argc, char** argv) {
 	// SSAO: built before lightingOptions/PBRLightingPass::create() specifically so its
 	// aoTexture can be set on lightingOptions normally, rather than the "wire it in by hand
 	// afterward" workaround an SSAO-after-the-lighting-pass ordering would need (see
-	// PBRLightingPassOptions::aoTexture's own comment, PBRDeferred.hpp, for how that seam expects to
+	// PBRLightingPass::Options::aoTexture's own comment, PBRDeferred.hpp, for how that seam expects to
 	// be used). Reads gbuffer's normal/position directly - both already exist once the geometry
 	// pass above is built. Radius scaled off the model's own bound, same "derive from the model's
 	// own bounds" precedent hatchFrequencyFor() above already uses - a fixed radius tuned for one
@@ -700,10 +700,10 @@ int main(int argc, char** argv) {
 		return 1;
 	}
 
-	osgx::PBRLightingPassOptions lightingOptions;
+	osgx::PBRLightingPass::Options lightingOptions;
 
 	// The seam CUSTOM_DEFERRED_LIGHTING_FRAGMENT_SHADER's own `#ifdef OSGX_PBR_AO` block reads
-	// - setting this here (same as any other PBRLightingPassOptions consumer) is what makes
+	// - setting this here (same as any other PBRLightingPass::Options consumer) is what makes
 	// PBRLightingPass::create() bind aoTex/unit 8/OSGX_PBR_AO on the StateSet at all; the
 	// custom shader still has to declare and sample `aoTex` itself, since Hook::DeferredLighting
 	// REPLACES main() rather than inheriting the built-in's own declarations.

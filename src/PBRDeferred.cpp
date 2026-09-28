@@ -133,7 +133,7 @@ void main() {
 // rotated to world space from the G-buffer's view-space channels.
 // Plus osgx_DirectLighting(), reading G-buffer textures (position included - NOT reconstructed
 // from depth; see PBRGBuffer::positionTexture's comment) instead of interpolated per-vertex
-// varyings. OSGX_PBR_NO_TONEMAP/OSGX_PBR_AO mirror PBRLightingPassOptions::tonemap/
+// varyings. OSGX_PBR_NO_TONEMAP/OSGX_PBR_AO mirror PBRLightingPass::Options::tonemap/
 // aoTexture - see that struct's comment in PBRDeferred.hpp for why each is an independent opt-out/
 // opt-in rather than one flag.
 constexpr const char LIGHTING_FRAGMENT_SHADER_SRC[] = R"GLSL(
@@ -275,12 +275,12 @@ PBRGBuffer PBRGBuffer::create(osg::Node* node, int width, int height, const Hook
 
 	ss->setAttributeAndModes(prog, osg::StateAttribute::ON | osg::StateAttribute::OVERRIDE);
 
-	static constexpr osgx::AttachmentFormat formats[] = {
-		osgx::AttachmentFormat::RGBA8,   // gAlbedo
-		osgx::AttachmentFormat::RGB16F,  // gNormal (signed, view-space)
-		osgx::AttachmentFormat::RGBA8,   // gMaterial
-		osgx::AttachmentFormat::RGBA16F, // gEmissive (HDR)
-		osgx::AttachmentFormat::RGBA32F  // gPosition (view-space, real precision needed)
+	static constexpr osgx::GBuffer::AttachmentFormat formats[] = {
+		osgx::GBuffer::AttachmentFormat::RGBA8,   // gAlbedo
+		osgx::GBuffer::AttachmentFormat::RGB16F,  // gNormal (signed, view-space)
+		osgx::GBuffer::AttachmentFormat::RGBA8,   // gMaterial
+		osgx::GBuffer::AttachmentFormat::RGBA16F, // gEmissive (HDR)
+		osgx::GBuffer::AttachmentFormat::RGBA32F  // gPosition (view-space, real precision needed)
 	};
 
 	result.gbuffer = osgx::GBuffer::create(node, width, height, formats);
@@ -311,7 +311,7 @@ bool PBRLightingPass::valid() const { return node.valid(); }
 PBRLightingPass PBRLightingPass::create(
 	const PBRGBuffer& gbuffer,
 	osg::Camera* mainCamera,
-	const PBRLightingPassOptions& options
+	const Options& options
 ) {
 	PBRLightingPass result;
 
@@ -472,6 +472,10 @@ PBRLightingPass PBRLightingPass::create(
 	result.update(mainCamera);
 
 	return result;
+}
+
+PBRLightingPass PBRLightingPass::create(const PBRGBuffer& gbuffer, osg::Camera* mainCamera) {
+	return create(gbuffer, mainCamera, Options{});
 }
 
 void PBRLightingPass::update(const osg::Camera* mainCamera) {

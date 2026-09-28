@@ -63,9 +63,20 @@ void bind_shadow(py::module_& m) {
 		"lookup, for a ShadowMap.createPoint() map)."
 	);
 
-	py::class_<osgx::ShadowMapOptions>(
+	auto shadowMap = py::class_<osgx::ShadowMap>(
 		m,
-		"ShadowMapOptions",
+		"ShadowMap",
+		"A directional (create()), spot (createSpot()), or point (createPoint()) light's shadow "
+		"map. Directional/spot own a single PRE_RENDER depth-only camera plus the uniforms "
+		"DIRECT_LIGHTING_HOOK_SHADOWED reads every frame (world-space, not eye-space - shadowMatrix "
+		"is just lightProj * lightView, no per-frame main-camera dependency); point owns an "
+		"omnidirectional distance CaptureCubeMap instead (see cubeCapture/casters/"
+		"lightPosition), read by DIRECT_LIGHTING_HOOK_SHADOWED_POINT."
+	);
+
+	py::class_<osgx::ShadowMap::Options>(
+		shadowMap,
+		"Options",
 		"Tuning knobs for ShadowMap.create()/reposition(): orthographic frustum size, depth "
 		"precision, and shadow darkness."
 	)
@@ -74,39 +85,30 @@ void bind_shadow(py::module_& m) {
 			"Constructs default options (size=1024, extent=0 i.e. auto, margin=1.3, bias=0.005, strength=0.7)."
 		)
 		.def_readwrite(
-			"size", &osgx::ShadowMapOptions::size,
+			"size", &osgx::ShadowMap::Options::size,
 			"Shadow map texture resolution (width == height), in texels."
 		)
 		.def_readwrite(
-			"extent", &osgx::ShadowMapOptions::extent,
+			"extent", &osgx::ShadowMap::Options::extent,
 			"Half-width, in world units, of the orthographic shadow frustum's box. 0 (default) "
 			"derives it from sceneBoundRadius * margin."
 		)
 		.def_readwrite(
-			"margin", &osgx::ShadowMapOptions::margin,
+			"margin", &osgx::ShadowMap::Options::margin,
 			"Multiplies sceneBoundRadius both when deriving a default `extent` and when sizing "
 			"near/far planes, keeping near:far depth precision bounded regardless of scene scale."
 		)
 		.def_readwrite(
-			"bias", &osgx::ShadowMapOptions::bias,
+			"bias", &osgx::ShadowMap::Options::bias,
 			"Depth-comparison bias added during the shadow test to avoid self-shadowing artifacts."
 		)
 		.def_readwrite(
-			"strength", &osgx::ShadowMapOptions::strength,
+			"strength", &osgx::ShadowMap::Options::strength,
 			"How dark a shadowed fragment gets: 0 = shadows have no effect, 1 = fully black."
 		)
 	;
 
-	py::class_<osgx::ShadowMap>(
-		m,
-		"ShadowMap",
-		"A directional (create()), spot (createSpot()), or point (createPoint()) light's shadow "
-		"map. Directional/spot own a single PRE_RENDER depth-only camera plus the uniforms "
-		"DIRECT_LIGHTING_HOOK_SHADOWED reads every frame (world-space, not eye-space - shadowMatrix "
-		"is just lightProj * lightView, no per-frame main-camera dependency); point owns an "
-		"omnidirectional distance CaptureCubeMapScene instead (see cubeCapture/casters/"
-		"lightPosition), read by DIRECT_LIGHTING_HOOK_SHADOWED_POINT."
-	)
+	shadowMap
 		.def(py::init<>(), "Constructs an empty ShadowMap with no camera/textures set; see ShadowMap.create().")
 		.def_readwrite(
 			"camera", &osgx::ShadowMap::camera,
@@ -161,11 +163,13 @@ void bind_shadow(py::module_& m) {
 		.def("valid", &osgx::ShadowMap::valid, "True if camera and depthTexture were successfully built.")
 		.def_static(
 			"create",
-			&osgx::ShadowMap::create,
+			static_cast<osgx::ShadowMap (*) (
+				const osg::Vec3&, const osg::Vec3&, float, const osgx::ShadowMap::Options&
+			)>(&osgx::ShadowMap::create),
 			"lightDirection"_a,
 			"sceneBoundCenter"_a,
 			"sceneBoundRadius"_a,
-			"options"_a=osgx::ShadowMapOptions{},
+			"options"_a=osgx::ShadowMap::Options{},
 			"Builds a directional shadow map (PRE_RENDER depth camera + shadow-matrix uniform) sized "
 			"and placed to keep near:far depth precision sane regardless of scene scale. `camera` "
 			"still needs adding to the scene graph by the caller."
@@ -179,11 +183,13 @@ void bind_shadow(py::module_& m) {
 		)
 		.def(
 			"reposition",
-			&osgx::ShadowMap::reposition,
+			static_cast<void (osgx::ShadowMap::*) (
+				const osg::Vec3&, const osg::Vec3&, float, const osgx::ShadowMap::Options&
+			)>(&osgx::ShadowMap::reposition),
 			"lightDirection"_a,
 			"sceneBoundCenter"_a,
 			"sceneBoundRadius"_a,
-			"options"_a=osgx::ShadowMapOptions{},
+			"options"_a=osgx::ShadowMap::Options{},
 			"Repositions this EXISTING ShadowMap for a new light direction/scene bound, in place - "
 			"no new camera/FBO/depth-texture allocation, just recomputed view/projection matrices. "
 			"Cheap enough to call every frame (or on every GUI-slider tick) for an interactively-moving "
@@ -191,13 +197,16 @@ void bind_shadow(py::module_& m) {
 		)
 		.def_static(
 			"createSpot",
-			&osgx::ShadowMap::createSpot,
+			static_cast<osgx::ShadowMap (*) (
+				const osg::Vec3&, const osg::Vec3&, float, const osg::Vec3&, float,
+				const osgx::ShadowMap::Options&
+			)>(&osgx::ShadowMap::createSpot),
 			"position"_a,
 			"direction"_a,
 			"outerConeAngle"_a,
 			"sceneBoundCenter"_a,
 			"sceneBoundRadius"_a,
-			"options"_a=osgx::ShadowMapOptions{},
+			"options"_a=osgx::ShadowMap::Options{},
 			"Builds a spot light's shadow map: a PERSPECTIVE depth camera at `position` looking "
 			"along `direction`, covering `outerConeAngle` (radians, half-angle, as "
 			"LightSet.setSpot()). Near/far bracket the scene bound as seen from the light. A spot "
@@ -205,27 +214,32 @@ void bind_shadow(py::module_& m) {
 		)
 		.def(
 			"repositionSpot",
-			&osgx::ShadowMap::repositionSpot,
+			static_cast<void (osgx::ShadowMap::*) (
+				const osg::Vec3&, const osg::Vec3&, float, const osg::Vec3&, float,
+				const osgx::ShadowMap::Options&
+			)>(&osgx::ShadowMap::repositionSpot),
 			"position"_a,
 			"direction"_a,
 			"outerConeAngle"_a,
 			"sceneBoundCenter"_a,
 			"sceneBoundRadius"_a,
-			"options"_a=osgx::ShadowMapOptions{},
+			"options"_a=osgx::ShadowMap::Options{},
 			"reposition()'s counterpart for a createSpot() map."
 		)
 		.def_static(
 			"createPoint",
-			&osgx::ShadowMap::createPoint,
+			static_cast<osgx::ShadowMap (*) (
+				const osg::Vec3&, const osg::Vec3&, float, int, const osgx::ShadowMap::Options&
+			)>(&osgx::ShadowMap::createPoint),
 			"position"_a,
 			"sceneBoundCenter"_a,
 			"sceneBoundRadius"_a,
 			"cubeSize"_a=256,
-			"options"_a=osgx::ShadowMapOptions{},
+			"options"_a=osgx::ShadowMap::Options{},
 			"Builds a point light's shadow map: an omnidirectional distance CUBE MAP (six "
 			"perspective views written by a distance-only Program) instead of a single 2D depth "
 			"camera - a point light needs visibility in every direction. `cubeSize` is separate "
-			"from ShadowMapOptions.size (unused here) since it's six real-time cameras, not one - "
+			"from ShadowMap.Options.size (unused here) since it's six real-time cameras, not one - "
 			"start small (256, the default) and raise it once a demo's actually running. "
 			"options.extent is unused (no ortho box); options.margin sizes the far plane the same "
 			"way createSpot() does. Add point-shadow-casting geometry to the returned ShadowMap's "
@@ -233,11 +247,13 @@ void bind_shadow(py::module_& m) {
 		)
 		.def(
 			"repositionPoint",
-			&osgx::ShadowMap::repositionPoint,
+			static_cast<void (osgx::ShadowMap::*) (
+				const osg::Vec3&, const osg::Vec3&, float, const osgx::ShadowMap::Options&
+			)>(&osgx::ShadowMap::repositionPoint),
 			"position"_a,
 			"sceneBoundCenter"_a,
 			"sceneBoundRadius"_a,
-			"options"_a=osgx::ShadowMapOptions{},
+			"options"_a=osgx::ShadowMap::Options{},
 			"reposition()/repositionSpot()'s counterpart for a createPoint() map - re-aims the six "
 			"capture cameras at a new position and refreshes their shared far plane/clear value for "
 			"the new distance to the scene."

@@ -54,16 +54,16 @@ void setCaptureView(osg::Camera& camera, const osg::Vec3d& position, unsigned in
 
 }
 
-bool CaptureCubeMapScene::ready() const {
+bool CaptureCubeMap::ready() const {
 	return completion && completion->done();
 }
 
-CaptureCubeMapScene CaptureCubeMapScene::create(
+CaptureCubeMap CaptureCubeMap::create(
 	osg::Node* capturedNode,
 	const osg::Vec3d& position,
-	const CaptureCubeMapOptions& options
+	const Options& options
 ) {
-	CaptureCubeMapScene scene;
+	CaptureCubeMap scene;
 
 	if(!capturedNode) return scene;
 
@@ -74,7 +74,7 @@ CaptureCubeMapScene CaptureCubeMapScene::create(
 	auto root = new osg::Group();
 	auto completion = new BakeCompletion();
 
-	const bool distance = options.format == CaptureCubeMapFormat::Distance;
+	const bool distance = options.format == Format::Distance;
 
 	texture->setDataVariance(osg::Object::DYNAMIC);
 	texture->setTextureSize(cubeSize, cubeSize);
@@ -103,7 +103,7 @@ CaptureCubeMapScene CaptureCubeMapScene::create(
 		camera->attach(osg::Camera::COLOR_BUFFER0, texture, 0, face, false);
 
 		// continuous=true skips RunOnceCallback entirely - the camera just renders every frame
-		// like any ordinary PRE_RENDER camera (see CaptureCubeMapOptions::continuous).
+		// like any ordinary PRE_RENDER camera (see CaptureCubeMap::Options::continuous).
 		if(!options.continuous) camera->setUpdateCallback(new RunOnceCallback(false));
 
 		if(options.overrideProgram.valid()) {
@@ -125,13 +125,17 @@ CaptureCubeMapScene CaptureCubeMapScene::create(
 	}
 
 	scene.root = root;
-	scene.radianceTexture = texture;
+	scene.texture = texture;
 	scene.completion = completion;
 
 	return scene;
 }
 
-bool CaptureCubeMapScene::recapture(const osg::Vec3d& position) {
+CaptureCubeMap CaptureCubeMap::create(osg::Node* capturedNode, const osg::Vec3d& position) {
+	return create(capturedNode, position, Options{});
+}
+
+bool CaptureCubeMap::recapture(const osg::Vec3d& position) {
 	if(!root || !completion) return false;
 
 	for(unsigned int face = 0; face < cameras.size(); face++) {

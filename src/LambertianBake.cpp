@@ -54,7 +54,7 @@ in vec2 vUV;
 out vec4 fragColor;
 
 // Rescales `color` down (preserving hue) if its luminance exceeds `maxLuminance` - see
-// LambertianBakeOptions::fireflyClamp for why this exists.
+// LambertianBake::Options::fireflyClamp for why this exists.
 vec3 clampFirefly(vec3 color, float maxLuminance) {
 	float luminance = dot(color, vec3(0.2126, 0.7152, 0.0722));
 
@@ -149,15 +149,15 @@ osg::ref_ptr<osg::Program> makeProgram() {
 
 }
 
-bool LambertianBakeScene::ready() const {
+bool LambertianBake::ready() const {
 	return completion && completion->done();
 }
 
-LambertianBakeScene LambertianBakeScene::create(
+LambertianBake LambertianBake::create(
 	osg::Image* equirectangularHDR,
-	const LambertianBakeOptions& options
+	const Options& options
 ) {
-	LambertianBakeScene scene;
+	LambertianBake scene;
 
 	if(!equirectangularHDR) return scene;
 
@@ -253,7 +253,11 @@ LambertianBakeScene LambertianBakeScene::create(
 	return scene;
 }
 
-bool LambertianBakeScene::rebake(osg::Image* equirectangularHDR) {
+LambertianBake LambertianBake::create(osg::Image* equirectangularHDR) {
+	return create(equirectangularHDR, Options{});
+}
+
+bool LambertianBake::rebake(osg::Image* equirectangularHDR) {
 	if(!root || !sourceTexture || !completion || !equirectangularHDR) return false;
 
 	sourceTexture->setImage(equirectangularHDR);

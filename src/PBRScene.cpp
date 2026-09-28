@@ -179,7 +179,7 @@ void main() {
 
 bool PBRScene::valid() const { return node.valid(); }
 
-PBRScene PBRScene::create(osg::Node* node, const PBRSceneOptions& options) {
+PBRScene PBRScene::create(osg::Node* node, const Options& options) {
 	PBRScene pis;
 
 	if(!node) return pis;
@@ -283,6 +283,10 @@ PBRScene PBRScene::create(osg::Node* node, const PBRSceneOptions& options) {
 	}
 
 	return pis;
+}
+
+PBRScene PBRScene::create(osg::Node* node) {
+	return create(node, Options{});
 }
 
 }

@@ -144,20 +144,6 @@ osgx_EnvironmentLight osgx_EvaluateEnvironment(osgx_Material mat, vec3 N, vec3 V
 }
 )GLSL";
 
-// Environment's bake-from-HDR constructor options. Namespace-scope rather than nested so it can be
-// a default argument inside Environment's own class definition.
-struct EnvironmentBakeOptions {
-	EnvironmentBakeOptions() { specular.prefilterSize = 256; }
-
-	GGXPrefilterOptions specular;
-	LambertianBakeOptions diffuse;
-	int lutSize = 1024;
-
-	// False skips the GGX specular bake: the specular map is a 1x1 placeholder until
-	// Environment::setSpecularMap() supplies one (e.g. a live-rebaked probe).
-	bool bakeSpecular = true;
-};
-
 // Distant image-based lighting as one StateAttribute. See the file comment above.
 //
 // Construct from an equirectangular HDR image (live GPU bakes) or from already-made cubemaps
@@ -173,18 +159,27 @@ struct EnvironmentBakeOptions {
 // why the (Type, member) pair must be unique per custom attribute.
 class Environment: public osg::StateAttribute {
 	public:
+		struct BakeOptions {
+			BakeOptions() { specular.prefilterSize = 256; }
+
+			GGXPrefilter::Options specular;
+			LambertianBake::Options diffuse;
+			int lutSize = 1024;
+			bool bakeSpecular = true;
+		};
 		static constexpr Type ENVIRONMENT_TYPE = CAPABILITY;
 		static constexpr unsigned int ENVIRONMENT_MEMBER = 2;
 
 		Environment();
 
-		// Bakes specular (GGXPrefilterScene, unless options.bakeSpecular is false) and diffuse
-		// (LambertianBakeScene) cubemaps from `equirectangularHDR`. maxSpecularMip is the bake's
+		// Bakes specular (GGXPrefilter, unless options.bakeSpecular is false) and diffuse
+		// (LambertianBake) cubemaps from `equirectangularHDR`. maxSpecularMip is the bake's
 		// last mip level.
 		explicit Environment(
 			osg::Image* equirectangularHDR,
-			const EnvironmentBakeOptions& options=EnvironmentBakeOptions()
+			const BakeOptions& options
 		);
+		explicit Environment(osg::Image* equirectangularHDR);
 
 		// Wraps existing cubemaps. `maxSpecularMip` is the mip level of `specularMap` holding
 		// roughness 1.0; a negative value means "its last level". Khronos-style KTX2 prefilters

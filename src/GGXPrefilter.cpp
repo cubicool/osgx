@@ -58,7 +58,7 @@ in vec2 vUV;
 out vec4 fragColor;
 
 // Rescales `color` down (preserving hue) if its luminance exceeds `maxLuminance` - see
-// GGXPrefilterOptions::fireflyClamp for why this exists.
+// GGXPrefilter::Options::fireflyClamp for why this exists.
 vec3 clampFirefly(vec3 color, float maxLuminance) {
 	float luminance = dot(color, vec3(0.2126, 0.7152, 0.0722));
 
@@ -311,7 +311,7 @@ void GGXPrefilterReadback::operator()(osg::RenderInfo& ri) const {
 
 	// The only step here without an osg-level equivalent: forcing the GPU to
 	// finish the bake before we trust the texture contents. Skipping this
-	// (see GGXPrefilterOptions::syncReadback) is the async/best-effort mode.
+	// (see GGXPrefilter::Options::syncReadback) is the async/best-effort mode.
 	if(sync) glFinish();
 
 #if OSG_MIN_VERSION_REQUIRED(3, 7, 0)
@@ -325,11 +325,11 @@ void GGXPrefilterReadback::operator()(osg::RenderInfo& ri) const {
 	done = true;
 }
 
-GGXPrefilterScene GGXPrefilterScene::create(
+GGXPrefilter GGXPrefilter::create(
 	osg::Image* equirectImage,
-	const GGXPrefilterOptions& options
+	const Options& options
 ) {
-	GGXPrefilterScene scene;
+	GGXPrefilter scene;
 
 	if(!equirectImage) return scene;
 
@@ -368,7 +368,11 @@ GGXPrefilterScene GGXPrefilterScene::create(
 	return scene;
 }
 
-bool GGXPrefilterScene::rebake(osg::Image* equirectImage) {
+GGXPrefilter GGXPrefilter::create(osg::Image* equirectImage) {
+	return create(equirectImage, Options{});
+}
+
+bool GGXPrefilter::rebake(osg::Image* equirectImage) {
 	if(!root || !sourceTexture || !readback || !equirectImage) {
 		return false;
 	}

@@ -5,8 +5,8 @@
 // --hdr/--env environment loading osgx-gltf-viewer.cpp/osgx-turntable.cpp already use, plus a
 // THIRD camera proving osgx::shadow fits into the split too: shadow-casting only needs depth,
 // not material data, so it sits alongside the geometry pass rather than inside it, and plugs
-// into the lighting pass via the exact same PBRLightingPassOptions::shadowMap seam
-// PBRSceneOptions::shadowMap uses.
+// into the lighting pass via the exact same PBRLightingPass::Options::shadowMap seam
+// PBRScene::Options::shadowMap uses.
 //
 // Press 0-6 to inspect the raw G-buffer channels (0=lit composite, 1=albedo, 2=normal,
 // 3=material(roughness/metallic), 4=emissive, 5=depth, 6=SSAO) - the same diagnostic shape
@@ -15,7 +15,7 @@
 //
 // Also the first live consumer of osgx::SSAO (GBuffer.hpp) - the generic hemisphere-kernel
 // screen-space AO pass ported from OpenSceneGraph.py/examples/pyosg-lighting/11-sketchfab.py's
-// hand-rolled one. Feeds PBRLightingPassOptions::aoTexture, the same seam a caller's own
+// hand-rolled one. Feeds PBRLightingPass::Options::aoTexture, the same seam a caller's own
 // hand-built SSAO (or a baked lightmap, or nothing) would use instead.
 //
 // Also proves osgx::shadow's 3 correctness fixes (same as osgx-shadow.cpp - see that file's own
@@ -512,7 +512,7 @@ int main(int argc, char** argv) {
 	osg::Vec3 lightColor = osg::Vec3(1.0f, 0.95f, 0.85f);
 	float lightIntensity = 3.0f;
 
-	osgx::ShadowMapOptions shadowOptions;
+	osgx::ShadowMap::Options shadowOptions;
 
 	auto shadowMap = osgx::ShadowMap::create(
 		lightDir, boundCenter, boundRadius, shadowOptions
@@ -557,7 +557,7 @@ int main(int argc, char** argv) {
 		return 1;
 	}
 
-	osgx::PBRLightingPassOptions lightingOptions;
+	osgx::PBRLightingPass::Options lightingOptions;
 
 	lightingOptions.shadowMap = &shadowMap;
 	lightingOptions.aoTexture = ssao.aoTexture.get();
@@ -614,7 +614,7 @@ int main(int argc, char** argv) {
 	// so OSG breaks the tie by scene-graph add order, not anything declared on the cameras
 	// themselves. ssao.rawCamera/blurCamera MUST come after gbuffer.gbuffer.camera (they read its
 	// normal/position output) and before lighting.node (which reads ssao.aoTexture back via
-	// PBRLightingPassOptions::aoTexture).
+	// PBRLightingPass::Options::aoTexture).
 	root->addChild(shadowMap.camera);
 	root->addChild(gbuffer.gbuffer.camera);
 	root->addChild(ssao.rawCamera);

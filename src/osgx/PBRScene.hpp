@@ -25,7 +25,7 @@ namespace osgx {
 // StateSet defines the fragment shader imports:
 //   OSGX_PBR_ENVIRONMENT - an environment was given; without it the environment term is zero and
 //                          the surface is lit by the direct lights and its emissive alone.
-//   OSGX_PBR_DIAGNOSTICS - PBRSceneOptions::diagnostics is true.
+//   OSGX_PBR_DIAGNOSTICS - PBRScene::Options::diagnostics is true.
 // ================================================================================================
 
 // - `environment`: attached to the node's StateSet. The caller owns it, may share it between
@@ -43,18 +43,18 @@ namespace osgx {
 //   specular, 3 base color, 4 roughness, 5 metallic, 6 normal texture, 7 raw normal texture,
 //   8 geometry normal, 9 shading normal, 10 tangent, 11 bitangent, 12-14 linear diffuse/specular/
 //   combined (no tone curve or gamma).
-struct PBRSceneOptions {
-	osgx::Environment* environment = nullptr;
-	const osgx::ShadowMap* shadowMap = nullptr;
-	osgx::HookList hooks = {};
-	bool diagnostics = false;
-};
-
 struct PBRScene {
+	struct Options {
+		osgx::Environment* environment = nullptr;
+		const osgx::ShadowMap* shadowMap = nullptr;
+		osgx::HookList hooks = {};
+		bool diagnostics = false;
+	};
+
 	osg::ref_ptr<osg::Node> node;
-	// The environment from PBRSceneOptions, attached to `node`; null if none.
+	// The environment from Options, attached to `node`; null if none.
 	osg::ref_ptr<osgx::Environment> environment;
-	// Set only when PBRSceneOptions::diagnostics is true.
+	// Set only when Options::diagnostics is true.
 	osg::ref_ptr<osg::Uniform> debugMode;
 	osg::ref_ptr<osg::Uniform> disableNormalMap;
 	osg::ref_ptr<osg::Uniform> disableRoughnessMap;
@@ -63,7 +63,8 @@ struct PBRScene {
 	bool valid() const;
 
 	// Attaches the forward PBR Program (OVERRIDE) and the given light sources to `node`'s StateSet.
-	static PBRScene create(osg::Node* node, const PBRSceneOptions& options={});
+	static PBRScene create(osg::Node* node, const Options& options);
+	static PBRScene create(osg::Node* node);
 };
 
 }

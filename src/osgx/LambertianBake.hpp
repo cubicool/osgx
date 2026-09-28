@@ -15,24 +15,24 @@ OSGX_ENABLE_WARNINGS
 
 namespace osgx {
 
-// Requested quality for a GPU cosine-convolution of an equirectangular HDR. The resulting cube
-// stores diffuse irradiance divided by pi, matching the existing CPU Lambertian cube convention.
-struct LambertianBakeOptions {
-	int cubeSize = 256;
-	int sampleCount = 2048;
-
-	// Same firefly-suppression tradeoff as GGXPrefilterOptions::fireflyClamp (see that comment
-	// for the full explanation, including why the default has to sit near the scene's *normal*
-	// luminance range rather than merely "below the sun") - caps a single equirect sample's
-	// luminance before it enters the cosine-weighted hemisphere average, so a bright sun disc
-	// doesn't show up as visible Hammersley-pattern speckle in the diffuse irradiance cube.
-	float fireflyClamp = 8.0f;
-};
-
 // A frame-driven GPU bake. Add root to a viewer scene, advance frames, then use diffuseTexture
 // once completion reports done. `rebake()` re-arms the same passes for a new
 // HDR image without recreating their cameras or output texture.
-struct LambertianBakeScene {
+struct LambertianBake {
+	// Requested quality for a GPU cosine-convolution of an equirectangular HDR. The resulting cube
+	// stores diffuse irradiance divided by pi, matching the existing CPU Lambertian cube convention.
+	struct Options {
+		int cubeSize = 256;
+		int sampleCount = 2048;
+
+		// Same firefly-suppression tradeoff as GGXPrefilter::Options::fireflyClamp (see that comment
+		// for the full explanation, including why the default has to sit near the scene's *normal*
+		// luminance range rather than merely "below the sun") - caps a single equirect sample's
+		// luminance before it enters the cosine-weighted hemisphere average, so a bright sun disc
+		// doesn't show up as visible Hammersley-pattern speckle in the diffuse irradiance cube.
+		float fireflyClamp = 8.0f;
+	};
+
 	osg::ref_ptr<osg::Group> root;
 	osg::ref_ptr<osg::Texture2D> sourceTexture;
 	osg::ref_ptr<osg::TextureCubeMap> diffuseTexture;
@@ -40,22 +40,23 @@ struct LambertianBakeScene {
 
 	bool ready() const;
 
-	static LambertianBakeScene create(
+	static LambertianBake create(
 		osg::Image* equirectangularHDR,
-		const LambertianBakeOptions& options={}
+		const Options& options
 	);
+	static LambertianBake create(osg::Image* equirectangularHDR);
 
 	// Re-arms this bake scene's existing passes for a new HDR image without recreating their
 	// cameras or output texture.
 	bool rebake(osg::Image* equirectangularHDR);
 };
 
-// A CPU-readback companion for LambertianBakeScene, mirroring GGXPrefilterReadback (see
+// A CPU-readback companion for LambertianBake, mirroring GGXPrefilterReadback (see
 // GGXPrefilter.hpp) - exists purely for the offline serialize-to-KTX2 use case. Attach to a
-// viewer's OUTER camera (not any of the six face cameras inside LambertianBakeScene::root), the
+// viewer's OUTER camera (not any of the six face cameras inside LambertianBake::root), the
 // same way osggltf-iblbake-gpu attaches GGXPrefilterReadback to viewer.getCamera(). Interactive/
-// dynamic-probe consumers of LambertianBakeScene::create() never construct one of these, so they
-// never pay for the glFinish-gated readback below - LambertianBakeScene::completion alone is
+// dynamic-probe consumers of LambertianBake::create() never construct one of these, so they
+// never pay for the glFinish-gated readback below - LambertianBake::completion alone is
 // enough for them. Triggers off that exact completion signal rather than a frame-count heuristic,
 // since one is already available here (GGX has no equivalent, hence its own trigger style).
 class LambertianCubeReadback: public osg::Camera::DrawCallback {

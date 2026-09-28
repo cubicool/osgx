@@ -127,11 +127,11 @@ by concern:
 - `osgx/IBL.hpp` — environment-map loading, BRDF-LUT baking (including the process-wide
   `SharedBRDFLUT::create()` cache), SH9/Lambertian diffuse irradiance, and cubemap readback helpers
   (`readCubeMapFaces()`, `BRDFLUTReadback`).
-- `osgx/CaptureCubeMap.hpp` — `CaptureCubeMapScene`, the low-level frame-driven reflection-probe
-  primitive (six ordered FBO cameras capturing a caller-owned scene into a radiance cubemap).
+- `osgx/CaptureCubeMap.hpp` — `CaptureCubeMap`, the low-level frame-driven reflection-probe
+  primitive (six ordered FBO cameras capturing a caller-owned scene into a cubemap).
 - `osgx/GGXPrefilter.hpp` — GPU GGX prefilter scene construction, rebaking, and readback.
 - `osgx/LambertianBake.hpp` — frame-driven GPU Lambertian/diffuse cubemap baking and readback
-  (`LambertianBakeScene`, `LambertianCubeReadback`).
+  (`LambertianBake`, `LambertianCubeReadback`).
 - `osgx/GBuffer.hpp` — generic deferred G-buffer camera setup (`GBuffer::create()`), the primitive
   `osgx::PBRGBuffer` builds on.
 - `osgx.hpp` — convenience umbrella that includes all of the above (but not `osgx::debug` or

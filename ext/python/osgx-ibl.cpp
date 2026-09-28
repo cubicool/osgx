@@ -87,10 +87,19 @@ void bind_ibl(py::module_& m) {
 		"instead of 9 coefficients. Usable directly as osgx.Environment's diffuseMap."
 	);
 
-	py::class_<osgx::GGXPrefilterOptions>(
+	auto ggxPrefilter = py::class_<osgx::GGXPrefilter>(
 		m,
-		"GGXPrefilterOptions",
-		"Tuning knobs for GGXPrefilterScene.create()/rebake(): bake resolution, sample count, "
+		"GGXPrefilter",
+		"The offscreen scene graph (PRE_RENDER cameras, one per cubemap face/mip) that "
+		"GGX-prefilters an equirectangular HDR source. Building it renders nothing - the caller "
+		"owns adding `root` to a rendered scene graph, attaching `readback` as a post-draw "
+		"callback, and running frames until readback.done."
+	);
+
+	py::class_<osgx::GGXPrefilter::Options>(
+		ggxPrefilter,
+		"Options",
+		"Tuning knobs for GGXPrefilter.create()/rebake(): bake resolution, sample count, "
 		"firefly suppression, and readback timing."
 	)
 		.def(
@@ -99,73 +108,77 @@ void bind_ibl(py::module_& m) {
 			"maxFrames=8, readbackFrame=2, syncReadback=True)."
 		)
 		.def_readwrite(
-			"prefilterSize", &osgx::GGXPrefilterOptions::prefilterSize,
+			"prefilterSize", &osgx::GGXPrefilter::Options::prefilterSize,
 			"Cubemap face resolution (in texels) of the baked prefilter chain."
 		)
 		.def_readwrite(
-			"sampleCount", &osgx::GGXPrefilterOptions::sampleCount,
+			"sampleCount", &osgx::GGXPrefilter::Options::sampleCount,
 			"Number of importance samples accumulated per texel."
 		)
 		.def_readwrite(
-			"fireflyClamp", &osgx::GGXPrefilterOptions::fireflyClamp,
+			"fireflyClamp", &osgx::GGXPrefilter::Options::fireflyClamp,
 			"Caps per-sample luminance before accumulation, suppressing sun-disc/firefly noise at "
 			"low roughness; tune per-HDRI."
 		)
 		.def_readwrite(
-			"maxFrames", &osgx::GGXPrefilterOptions::maxFrames,
+			"maxFrames", &osgx::GGXPrefilter::Options::maxFrames,
 			"Number of frames the bake scene runs before the bake is considered complete."
 		)
 		.def_readwrite(
-			"readbackFrame", &osgx::GGXPrefilterOptions::readbackFrame,
+			"readbackFrame", &osgx::GGXPrefilter::Options::readbackFrame,
 			"Frame at which GGXPrefilterReadback reads the baked cubemap back from the GPU."
 		)
 		.def_readwrite(
-			"syncReadback", &osgx::GGXPrefilterOptions::syncReadback,
+			"syncReadback", &osgx::GGXPrefilter::Options::syncReadback,
 			"If True, the readback calls glFinish() before reading back (deterministic, stalls "
 			"the pipeline); if False, it trusts that readbackFrame frames have already elapsed."
 		)
 	;
 
-	py::class_<osgx::LambertianBakeOptions>(
+	auto lambertianBake = py::class_<osgx::LambertianBake>(
 		m,
-		"LambertianBakeOptions",
+		"LambertianBake",
+		"A frame-driven GPU cosine-convolution (diffuse irradiance) bake of an equirectangular HDR. "
+		"Add `root` to a rendered scene graph and advance frames until ready()."
+	);
+
+	py::class_<osgx::LambertianBake::Options>(
+		lambertianBake,
+		"Options",
 		"Quality knobs for the GPU cosine-convolution (diffuse irradiance) bake."
 	)
 		.def(py::init<>(), "Constructs default options (cubeSize=256, sampleCount=2048, fireflyClamp=8.0).")
 		.def_readwrite(
-			"cubeSize", &osgx::LambertianBakeOptions::cubeSize,
+			"cubeSize", &osgx::LambertianBake::Options::cubeSize,
 			"Cubemap face resolution (in texels) of the baked irradiance cube."
 		)
 		.def_readwrite(
-			"sampleCount", &osgx::LambertianBakeOptions::sampleCount,
+			"sampleCount", &osgx::LambertianBake::Options::sampleCount,
 			"Number of cosine-weighted samples accumulated per texel."
 		)
 		.def_readwrite(
-			"fireflyClamp", &osgx::LambertianBakeOptions::fireflyClamp,
+			"fireflyClamp", &osgx::LambertianBake::Options::fireflyClamp,
 			"Caps per-sample luminance before accumulation (same tradeoff as "
-			"GGXPrefilterOptions.fireflyClamp)."
+			"GGXPrefilter.Options.fireflyClamp)."
 		)
 	;
 
-	py::class_<osgx::LambertianBakeScene>(
-		m,
-		"LambertianBakeScene",
-		"A frame-driven GPU cosine-convolution (diffuse irradiance) bake of an equirectangular HDR. "
-		"Add `root` to a rendered scene graph and advance frames until ready()."
-	)
-		.def_readonly("root", &osgx::LambertianBakeScene::root, "The offscreen bake passes; add to a rendered scene graph.")
-		.def_readonly("sourceTexture", &osgx::LambertianBakeScene::sourceTexture, "The equirectangular source texture.")
-		.def_readonly("diffuseTexture", &osgx::LambertianBakeScene::diffuseTexture, "The diffuse irradiance cubemap being baked into.")
-		.def("ready", &osgx::LambertianBakeScene::ready, "True once the bake's final pass has rendered.")
+	lambertianBake
+		.def_readonly("root", &osgx::LambertianBake::root, "The offscreen bake passes; add to a rendered scene graph.")
+		.def_readonly("sourceTexture", &osgx::LambertianBake::sourceTexture, "The equirectangular source texture.")
+		.def_readonly("diffuseTexture", &osgx::LambertianBake::diffuseTexture, "The diffuse irradiance cubemap being baked into.")
+		.def("ready", &osgx::LambertianBake::ready, "True once the bake's final pass has rendered.")
 		.def_static(
 			"create",
-			&osgx::LambertianBakeScene::create,
+			static_cast<osgx::LambertianBake (*) (
+				osg::Image*, const osgx::LambertianBake::Options&
+			)>(&osgx::LambertianBake::create),
 			"equirectangularHDR"_a,
-			"options"_a = osgx::LambertianBakeOptions(),
+			"options"_a = osgx::LambertianBake::Options(),
 			"Builds the bake scene for `equirectangularHDR`. Renders nothing itself."
 		)
 		.def(
-			"rebake", &osgx::LambertianBakeScene::rebake, "equirectangularHDR"_a,
+			"rebake", &osgx::LambertianBake::rebake, "equirectangularHDR"_a,
 			"Re-arms the existing passes for a new HDR image without recreating cameras or the "
 			"output texture."
 		)
@@ -203,28 +216,23 @@ void bind_ibl(py::module_& m) {
 		)
 	;
 
-	py::class_<osgx::GGXPrefilterScene>(
-		m,
-		"GGXPrefilterScene",
-		"The offscreen scene graph (PRE_RENDER cameras, one per cubemap face/mip) that "
-		"GGX-prefilters an equirectangular HDR source. Building it renders nothing - the caller "
-		"owns adding `root` to a rendered scene graph, attaching `readback` as a post-draw "
-		"callback, and running frames until readback.done."
-	)
-		.def_readonly("root", &osgx::GGXPrefilterScene::root, "The offscreen bake scene graph; add it to a rendered scene graph.")
-		.def_readonly("sourceTexture", &osgx::GGXPrefilterScene::sourceTexture, "The equirectangular source texture being prefiltered.")
-		.def_readonly("prefilterTexture", &osgx::GGXPrefilterScene::prefilterTexture, "The GGX-prefiltered specular cubemap being baked into.")
-		.def_readonly("readback", &osgx::GGXPrefilterScene::readback, "The GGXPrefilterReadback to attach as a post-draw callback on the rendering camera.")
+	ggxPrefilter
+		.def_readonly("root", &osgx::GGXPrefilter::root, "The offscreen bake scene graph; add it to a rendered scene graph.")
+		.def_readonly("sourceTexture", &osgx::GGXPrefilter::sourceTexture, "The equirectangular source texture being prefiltered.")
+		.def_readonly("prefilterTexture", &osgx::GGXPrefilter::prefilterTexture, "The GGX-prefiltered specular cubemap being baked into.")
+		.def_readonly("readback", &osgx::GGXPrefilter::readback, "The GGXPrefilterReadback to attach as a post-draw callback on the rendering camera.")
 		.def_static(
 			"create",
-			&osgx::GGXPrefilterScene::create,
+			static_cast<osgx::GGXPrefilter (*) (
+				osg::Image*, const osgx::GGXPrefilter::Options&
+			)>(&osgx::GGXPrefilter::create),
 			"equirectImage"_a,
-			"options"_a = osgx::GGXPrefilterOptions(),
+			"options"_a = osgx::GGXPrefilter::Options(),
 			"Builds the offscreen bake scene for `equirectImage`. Renders nothing itself - add "
 			"`root` to the scene graph, attach `readback`, and run frames until readback.done."
 		)
 		.def(
-			"rebake", &osgx::GGXPrefilterScene::rebake, "equirectImage"_a,
+			"rebake", &osgx::GGXPrefilter::rebake, "equirectImage"_a,
 			"Reuses this bake scene for a new equirectangular source image, avoiding a full "
 			"rebuild of every PRE_RENDER camera/FBO/program."
 		)

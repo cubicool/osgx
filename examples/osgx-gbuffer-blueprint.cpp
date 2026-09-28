@@ -435,7 +435,7 @@ int main(int argc, char** argv) {
 		return 1;
 	}
 
-	osgx::PBRLightingPassOptions lightingOptions;
+	osgx::PBRLightingPass::Options lightingOptions;
 
 	lightingOptions.hooks = {{
 		osgx::Hook::DeferredLighting,

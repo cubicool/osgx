@@ -54,12 +54,12 @@ Environment::Environment() {
 	_initBuffer();
 }
 
-Environment::Environment(osg::Image* equirectangularHDR, const EnvironmentBakeOptions& options) {
+Environment::Environment(osg::Image* equirectangularHDR, const BakeOptions& options) {
 	if(!equirectangularHDR) throw std::invalid_argument("osgx::Environment: null HDR image");
 
 	_initLUT(options.lutSize);
 
-	auto diffuseBake = LambertianBakeScene::create(equirectangularHDR, options.diffuse);
+	auto diffuseBake = LambertianBake::create(equirectangularHDR, options.diffuse);
 
 	_diffuseMap = diffuseBake.diffuseTexture;
 
@@ -68,7 +68,7 @@ Environment::Environment(osg::Image* equirectangularHDR, const EnvironmentBakeOp
 	_bakeRoot->addChild(diffuseBake.root);
 
 	if(options.bakeSpecular) {
-		auto specularBake = GGXPrefilterScene::create(equirectangularHDR, options.specular);
+		auto specularBake = GGXPrefilter::create(equirectangularHDR, options.specular);
 
 		_specularMap = specularBake.prefilterTexture;
 
@@ -81,6 +81,9 @@ Environment::Environment(osg::Image* equirectangularHDR, const EnvironmentBakeOp
 
 	_initBuffer();
 }
+
+Environment::Environment(osg::Image* equirectangularHDR):
+	Environment(equirectangularHDR, BakeOptions{}) {}
 
 Environment::Environment(
 	osg::TextureCubeMap* specularMap,

@@ -450,9 +450,9 @@ baking, SH9/Lambertian diffuse irradiance, and cubemap readback helpers.
   despite sometimes returning an *existing* cached LUT rather than baking a fresh one — see its own
   doc comment for the cache-or-create contract.
 - `readCubeMapFaces()` / `BRDFLUTReadback` — CPU readback helpers for a baked cubemap/LUT.
-- `CaptureCubeMap.hpp` — `CaptureCubeMapScene`, the low-level frame-driven reflection-probe primitive (six ordered FBO cameras capturing a caller-owned scene into a radiance cubemap). `CaptureCubeMapScene::create()`/`::recapture()`.
-- `GGXPrefilter.hpp` — GPU GGX prefilter scene construction, rebaking, and readback (`GGXPrefilterScene::create()`/`::rebake()`, `GGXPrefilterReadback::finish()`).
-- `LambertianBake.hpp` — frame-driven GPU Lambertian/diffuse cubemap baking and readback (`LambertianBakeScene::create()`/`::rebake()`, `LambertianCubeReadback::finish()`).
+- `CaptureCubeMap.hpp` — `CaptureCubeMap`, the low-level frame-driven reflection-probe primitive (six ordered FBO cameras capturing a caller-owned scene into a cubemap). `CaptureCubeMap::create()`/`::recapture()`.
+- `GGXPrefilter.hpp` — GPU GGX prefilter construction, rebaking, and readback (`GGXPrefilter::create()`/`::rebake()`, `GGXPrefilterReadback::finish()`).
+- `LambertianBake.hpp` — frame-driven GPU Lambertian/diffuse cubemap baking and readback (`LambertianBake::create()`/`::rebake()`, `LambertianCubeReadback::finish()`).
 
 glTF-specific material and rendering integration lives with the loader in [`osgx::gltf`](GLTF.md) —
 generic `osgx` does not depend on or duplicate its public shader interface.
@@ -490,7 +490,7 @@ stateSet->setAttributeAndModes(env);
 ## `osgx/Shadow.hpp`
 
 Directional shadow mapping, shared by any `LightSet`-lit scene (nothing here is glTF/PBR-specific;
-`PBRSceneOptions`/`PBRLightingPassOptions` take it as an optional input). Lives flat in
+`PBRScene::Options`/`PBRLightingPass::Options` take it as an optional input). Lives flat in
 `osgx::` — the `"osgx::shadow"` catalog tag is a conventional shader-lib
 key only, same split as `PBR.hpp`/`IBL.hpp` above.
 
@@ -498,7 +498,7 @@ Only ONE light — the key/directional light — is ever shadowed; point/spot-li
 cubemap and meaningfully different frustum math, and remain a separate, unimplemented feature (see
 TODO.md's Shadow section).
 
-- `ShadowMapOptions` — `size` (shadow-map resolution), `extent` (half-width of the orthographic
+- `ShadowMap::Options` — `size` (shadow-map resolution), `extent` (half-width of the orthographic
   frustum's box; `0` derives it from `sceneBoundRadius * margin`), `margin` (scales both the
   derived `extent` and near/far — keeps near:far bounded to a healthy ratio regardless of scene
   scale, avoiding depth-precision collapse on a large scene), `bias`, `strength` (`0` = no effect,
@@ -543,7 +543,7 @@ Generic deferred G-buffer camera setup — not PBR-specific. `PBRGBuffer::create
 shader can use it directly too. Lives flat in `osgx::`, same
 reasoning as `Shadow.hpp` above.
 
-- `AttachmentFormat` — texture internal-format presets for one G-buffer color attachment: `RGBA8`
+- `GBuffer::AttachmentFormat` — texture internal-format presets for one G-buffer color attachment: `RGBA8`
   (ordinary LDR color/albedo), `RGB16F` (signed `[-1,1]` data, e.g. a view-space normal, needing no
   encode/decode remap), `RGBA16F` (HDR color, e.g. emissive, which can exceed `1.0` before
   tonemapping), `RGBA32F` (real eye-space position, written straight from the vertex shader rather
@@ -567,7 +567,7 @@ reasoning as `Shadow.hpp` above.
   implementation: a 16-sample hemisphere kernel + a small tiled tangent-space noise-rotation
   texture, a raw RTT pass, then a small box-blur RTT pass denoising it. `radius`/`bias` are live
   `osg::Uniform`s — set them at any time, no pass rebuild needed. `aoTexture` (the blurred,
-  single-channel `GL_R8` result) plugs directly into `PBRLightingPassOptions::aoTexture` or any
+  single-channel `GL_R8` result) plugs directly into `PBRLightingPass::Options::aoTexture` or any
   other consumer wanting a generic occlusion mask.
   - `SSAO::create(normalTexture, positionTexture, projectionMatrix, width, height, radius=0.5, bias=0.02)`
     — `projectionMatrix` is a caller-owned uniform this pass reads every draw; keep it refreshed
@@ -577,7 +577,7 @@ reasoning as `Shadow.hpp` above.
     bounding radius, not a fixed constant) — compute them from the scene being rendered.
 
 See `examples/osgx-gbuffer.cpp` for the full deferred pipeline (`PBRGBuffer` +
-`PBRLightingPass`, both built on this), live SSAO wired into `PBRLightingPassOptions::aoTexture`
+`PBRLightingPass`, both built on this), live SSAO wired into `PBRLightingPass::Options::aoTexture`
 with live ImGui radius/bias sliders, and a channel-by-channel G-buffer visualizer (press `0`-`6`,
 `6` being SSAO's own output). Python: `osgx.GBuffer`/`osgx.SSAO`.
 
@@ -587,7 +587,7 @@ Forward PBR for `osgx::Material` geometry: one Program (`PBR_VERTEX_SHADER` plus
 shading each material by whichever light sources are present.
 
 - `PBRScene::create(node, options={})` attaches the Program (`ON|OVERRIDE`) to `node`'s StateSet.
-  `PBRSceneOptions`, every field optional:
+  `PBRScene::Options`, every field optional:
   - `environment` — an `osgx::Environment` (image-based light), attached to the node. Without one
     the environment term is zero and surfaces are lit by the `osgx::LightSet` direct lights
     inherited from the scene graph and their own emissive.
@@ -602,7 +602,7 @@ shading each material by whichever light sources are present.
 
 The Khronos glTF-Sample-Viewer setup is `osgx::gltf::loadEnvironment()` plus this (see
 [GLTF.md](GLTF.md#rendering-gltf-content)). Python: `osgx.PBRScene.create(node,
-osgx.PBRSceneOptions(environment=env, ...))`.
+osgx.PBRScene.Options(environment=env, ...))`.
 
 ## `osgx/PBRDeferred.hpp`
 
@@ -619,8 +619,8 @@ textures, then a fullscreen lighting pass running the same `osgx_EvaluateEnviron
   copy of the projection during cull and never writes it back, so a projection read off the main
   camera does not reliably match the one the geometry pass used.
 - `PBRLightingPass::create(gbuffer, mainCamera, options={})` — a `POST_RENDER` fullscreen-quad
-  pass. `PBRLightingPassOptions`, every field optional:
-  - `environment` — same contract as `PBRSceneOptions::environment`; without one the built-in
+  pass. `PBRLightingPass::Options`, every field optional:
+  - `environment` — same contract as `PBRScene::Options::environment`; without one the built-in
     shader's environment term is zero.
   - `tonemap` — `false` leaves the output linear HDR (no curve, no gamma) for further passes.
   - `hooks` — substitutes `Hook::Tonemap` (the `osgx_Tonemap()` definition),
@@ -646,7 +646,7 @@ textures, then a fullscreen lighting pass running the same `osgx_EvaluateEnviron
 See `examples/osgx-gbuffer.cpp` for the full wiring (shadow camera, SSAO, and a per-channel
 G-buffer visualizer) and `examples/osgx-gbuffer-comic.cpp`/`-blueprint.cpp`/`-edgewear.cpp` for
 `Hook::DeferredLighting` shaders. Python: `osgx.PBRGBuffer`, `osgx.PBRLightingPass`,
-`osgx.PBRLightingPassOptions`.
+`osgx.PBRLightingPass.Options`.
 
 ## Namespaces
 

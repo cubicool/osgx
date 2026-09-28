@@ -56,11 +56,11 @@ osg::ref_ptr<osg::Program> makeDepthOnlyProgram() {
 }
 
 // Distance-only Program for ShadowMap::createPoint()'s six-camera cube capture (installed via
-// CaptureCubeMapOptions::overrideProgram). Unlike DEPTH_ONLY_*_SHADER above (which relies purely
+// CaptureCubeMap::Options::overrideProgram). Unlike DEPTH_ONLY_*_SHADER above (which relies purely
 // on hardware NDC depth, never read back), this writes an explicit LINEAR distance to a
 // single-channel color output - a point light's shadow test (SHADOW_FACTOR_POINT, Shadow.hpp)
 // compares real distances in a cube, not projected NDC depth. Each capture camera's own eye IS the
-// light (CaptureCubeMapScene positions all six there), so "distance to light" is just the
+// light (CaptureCubeMap positions all six there), so "distance to light" is just the
 // fragment's own view-space distance from the origin - no separate light-position uniform needed
 // here at all, only when SAMPLING the result later.
 constexpr const char DISTANCE_ONLY_VERTEX_SHADER[] = R"GLSL(
@@ -107,7 +107,7 @@ void computeDirectionalShadowMatrices(
 	const osg::Vec3& lightDirection,
 	const osg::Vec3& sceneBoundCenter,
 	float sceneBoundRadius,
-	const ShadowMapOptions& options,
+	const ShadowMap::Options& options,
 	osg::Matrixd& lightView,
 	osg::Matrixd& lightProj
 ) {
@@ -130,7 +130,7 @@ void computeDirectionalShadowMatrices(
 	const double far_ = distance + extent;
 
 	// Orthographic, not perspective - a directional light's rays are parallel by construction;
-	// see ShadowMapOptions::extent's own comment for why a perspective frustum here is simply
+	// see ShadowMap::Options::extent's own comment for why a perspective frustum here is simply
 	// wrong (not a style choice) for this light type.
 	lightProj = osg::Matrix::ortho(-extent, extent, -extent, extent, near_, far_);
 }
@@ -144,7 +144,7 @@ void computeSpotShadowMatrices(
 	float outerConeAngle,
 	const osg::Vec3& sceneBoundCenter,
 	float sceneBoundRadius,
-	const ShadowMapOptions& options,
+	const ShadowMap::Options& options,
 	osg::Matrixd& lightView,
 	osg::Matrixd& lightProj
 ) {
@@ -174,7 +174,7 @@ void computeSpotShadowMatrices(
 bool ShadowMap::valid() const {
 	if(camera.valid() && depthTexture.valid() && shadowMatrix.valid()) return true;
 
-	return cubeCapture.radianceTexture.valid() && lightPosition.valid();
+	return cubeCapture.texture.valid() && lightPosition.valid();
 }
 
 namespace {
@@ -182,7 +182,7 @@ namespace {
 // The depth texture, depth-only camera, and uniforms shared by every ShadowMap kind.
 ShadowMap makeShadowMap(
 	const char* name,
-	const ShadowMapOptions& options,
+	const ShadowMap::Options& options,
 	const osg::Matrixd& lightView,
 	const osg::Matrixd& lightProj
 ) {
@@ -246,7 +246,7 @@ ShadowMap ShadowMap::create(
 	const osg::Vec3& lightDirection,
 	const osg::Vec3& sceneBoundCenter,
 	float sceneBoundRadius,
-	const ShadowMapOptions& options
+	const ShadowMap::Options& options
 ) {
 	osg::Matrixd lightView, lightProj;
 
@@ -257,13 +257,21 @@ ShadowMap ShadowMap::create(
 	return makeShadowMap("osgx_shadow_DirectionalShadowMap", options, lightView, lightProj);
 }
 
+ShadowMap ShadowMap::create(
+	const osg::Vec3& lightDirection,
+	const osg::Vec3& sceneBoundCenter,
+	float sceneBoundRadius
+) {
+	return create(lightDirection, sceneBoundCenter, sceneBoundRadius, Options{});
+}
+
 ShadowMap ShadowMap::createSpot(
 	const osg::Vec3& position,
 	const osg::Vec3& direction,
 	float outerConeAngle,
 	const osg::Vec3& sceneBoundCenter,
 	float sceneBoundRadius,
-	const ShadowMapOptions& options
+	const ShadowMap::Options& options
 ) {
 	osg::Matrixd lightView, lightProj;
 
@@ -281,6 +289,16 @@ ShadowMap ShadowMap::createSpot(
 	return makeShadowMap("osgx_shadow_SpotShadowMap", options, lightView, lightProj);
 }
 
+ShadowMap ShadowMap::createSpot(
+	const osg::Vec3& position,
+	const osg::Vec3& direction,
+	float outerConeAngle,
+	const osg::Vec3& sceneBoundCenter,
+	float sceneBoundRadius
+) {
+	return createSpot(position, direction, outerConeAngle, sceneBoundCenter, sceneBoundRadius, Options{});
+}
+
 void ShadowMap::updateMatrix() {
 	if(!shadowMatrix) return;
 
@@ -294,7 +312,7 @@ void ShadowMap::reposition(
 	const osg::Vec3& lightDirection,
 	const osg::Vec3& sceneBoundCenter,
 	float sceneBoundRadius,
-	const ShadowMapOptions& options
+	const ShadowMap::Options& options
 ) {
 	if(!camera) return;
 
@@ -308,13 +326,21 @@ void ShadowMap::reposition(
 	updateMatrix();
 }
 
+void ShadowMap::reposition(
+	const osg::Vec3& lightDirection,
+	const osg::Vec3& sceneBoundCenter,
+	float sceneBoundRadius
+) {
+	reposition(lightDirection, sceneBoundCenter, sceneBoundRadius, Options{});
+}
+
 void ShadowMap::repositionSpot(
 	const osg::Vec3& position,
 	const osg::Vec3& direction,
 	float outerConeAngle,
 	const osg::Vec3& sceneBoundCenter,
 	float sceneBoundRadius,
-	const ShadowMapOptions& options
+	const ShadowMap::Options& options
 ) {
 	if(!camera) return;
 
@@ -335,12 +361,22 @@ void ShadowMap::repositionSpot(
 	updateMatrix();
 }
 
+void ShadowMap::repositionSpot(
+	const osg::Vec3& position,
+	const osg::Vec3& direction,
+	float outerConeAngle,
+	const osg::Vec3& sceneBoundCenter,
+	float sceneBoundRadius
+) {
+	repositionSpot(position, direction, outerConeAngle, sceneBoundCenter, sceneBoundRadius, Options{});
+}
+
 ShadowMap ShadowMap::createPoint(
 	const osg::Vec3& position,
 	const osg::Vec3& sceneBoundCenter,
 	float sceneBoundRadius,
 	int cubeSize,
-	const ShadowMapOptions& options
+	const ShadowMap::Options& options
 ) {
 	ShadowMap result;
 
@@ -349,17 +385,17 @@ ShadowMap ShadowMap::createPoint(
 
 	result.casters = osgx::make_nref<osg::Group>("osgx_shadow_PointCasters");
 
-	CaptureCubeMapOptions cubeOptions;
+	CaptureCubeMap::Options cubeOptions;
 
 	cubeOptions.cubeSize = std::max(cubeSize, 1);
 	// 0.05 fixed, not derived like createSpot()'s near_ - unlike a hardware NDC depth buffer, the
 	// stored value here is a real linear distance (DISTANCE_ONLY_FRAGMENT_SHADER above), so it
-	// carries none of the near:far precision-compression risk ShadowMapOptions::margin's own
+	// carries none of the near:far precision-compression risk ShadowMap::Options::margin's own
 	// comment describes; this near plane only needs to keep the depth TEST correct, not preserve
 	// storage precision.
 	cubeOptions.nearPlane = 0.05;
 	cubeOptions.farPlane = farPlane;
-	cubeOptions.format = CaptureCubeMapFormat::Distance;
+	cubeOptions.format = CaptureCubeMap::Format::Distance;
 	cubeOptions.overrideProgram = makeDistanceOnlyProgram();
 	cubeOptions.continuous = true;
 	// Clears every non-geometry texel to well past the far plane, so an unoccluded direction's
@@ -367,7 +403,7 @@ ShadowMap ShadowMap::createPoint(
 	// equivalent of the 2D depth map's cleared-to-1.0 (far) background.
 	cubeOptions.clearColor = osg::Vec4(float(farPlane) * 2.0f, 0.0f, 0.0f, 1.0f);
 
-	result.cubeCapture = CaptureCubeMapScene::create(
+	result.cubeCapture = CaptureCubeMap::create(
 		result.casters.get(), osg::Vec3d(position), cubeOptions
 	);
 
@@ -379,11 +415,20 @@ ShadowMap ShadowMap::createPoint(
 	return result;
 }
 
+ShadowMap ShadowMap::createPoint(
+	const osg::Vec3& position,
+	const osg::Vec3& sceneBoundCenter,
+	float sceneBoundRadius,
+	int cubeSize
+) {
+	return createPoint(position, sceneBoundCenter, sceneBoundRadius, cubeSize, Options{});
+}
+
 void ShadowMap::repositionPoint(
 	const osg::Vec3& position,
 	const osg::Vec3& sceneBoundCenter,
 	float sceneBoundRadius,
-	const ShadowMapOptions& options
+	const ShadowMap::Options& options
 ) {
 	if(!cubeCapture.recapture(osg::Vec3d(position))) return;
 
@@ -403,6 +448,14 @@ void ShadowMap::repositionPoint(
 	}
 
 	if(lightPosition) lightPosition->set(position);
+}
+
+void ShadowMap::repositionPoint(
+	const osg::Vec3& position,
+	const osg::Vec3& sceneBoundCenter,
+	float sceneBoundRadius
+) {
+	repositionPoint(position, sceneBoundCenter, sceneBoundRadius, Options{});
 }
 
 void registerShadowShaderLibs() {

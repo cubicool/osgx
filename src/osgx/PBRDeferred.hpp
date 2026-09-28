@@ -38,10 +38,10 @@ namespace osgx {
 //
 // The built-in lighting shader, and any custom one that declares them via `#pragma
 // import_defines`, sees these StateSet defines:
-//   OSGX_PBR_AO          - PBRLightingPassOptions::aoTexture is set; `sampler2D aoTex` holds it.
-//   OSGX_PBR_NO_TONEMAP  - PBRLightingPassOptions::tonemap is false and no Tonemap hook is given.
-//   OSGX_PBR_DIAGNOSTICS - PBRLightingPassOptions::diagnostics is true.
-//   OSGX_PBR_ENVIRONMENT - PBRLightingPassOptions::environment is set; without it the built-in
+//   OSGX_PBR_AO          - PBRLightingPass::Options::aoTexture is set; `sampler2D aoTex` holds it.
+//   OSGX_PBR_NO_TONEMAP  - PBRLightingPass::Options::tonemap is false and no Tonemap hook is given.
+//   OSGX_PBR_DIAGNOSTICS - PBRLightingPass::Options::diagnostics is true.
+//   OSGX_PBR_ENVIRONMENT - PBRLightingPass::Options::environment is set; without it the built-in
 //                          shader's environment term is zero.
 // ================================================================================================
 
@@ -70,7 +70,7 @@ struct PBRGBuffer {
 };
 
 // Lighting-pass inputs, each independent and optional:
-// - `environment`: attached to the pass (same contract as PBRSceneOptions::environment).
+// - `environment`: attached to the pass (same contract as PBRScene::Options::environment).
 // - `tonemap=false` leaves the output as linear HDR (no tone curve, no gamma), for a caller
 //   chaining bloom/exposure passes after this one. It strips the CALL (OSGX_PBR_NO_TONEMAP) but
 //   still attaches a DEFINITION of osgx_Tonemap() - the identity one, TONEMAP_HOOK_IDENTITY - since
@@ -91,18 +91,18 @@ struct PBRGBuffer {
 //   texture (at the "osgx::shadowMap" slot) and uniforms.
 // - `aoTexture`, if set, is multiplied into the ambient term (osgx::SSAO::create()'s output, or any
 //   other occlusion source).
-struct PBRLightingPassOptions {
-	osgx::Environment* environment = nullptr;
-	bool tonemap = true;
-	osgx::HookList hooks = {};
-	const osgx::ShadowMap* shadowMap = nullptr;
-	osg::Texture2D* aoTexture = nullptr;
-	bool diagnostics = false;
-};
-
 struct PBRLightingPass {
+	struct Options {
+		osgx::Environment* environment = nullptr;
+		bool tonemap = true;
+		osgx::HookList hooks = {};
+		const osgx::ShadowMap* shadowMap = nullptr;
+		osg::Texture2D* aoTexture = nullptr;
+		bool diagnostics = false;
+	};
+
 	osg::ref_ptr<osg::Node> node;
-	// The environment from PBRLightingPassOptions, attached to the pass; null if none.
+	// The environment from Options, attached to the pass; null if none.
 	osg::ref_ptr<osgx::Environment> environment;
 	// The main camera's view matrix and its inverse, refreshed by update().
 	osg::ref_ptr<osg::Uniform> mainViewMatrix;
@@ -116,8 +116,9 @@ struct PBRLightingPass {
 	static PBRLightingPass create(
 		const PBRGBuffer& gbuffer,
 		osg::Camera* mainCamera,
-		const PBRLightingPassOptions& options={}
+		const Options& options
 	);
+	static PBRLightingPass create(const PBRGBuffer& gbuffer, osg::Camera* mainCamera);
 
 	// Refreshes mainViewMatrix/mainViewMatrixInverse from `mainCamera`. Call it from a
 	// preDrawCallback on the FIRST PRE_RENDER camera in the scene graph (by render order): every

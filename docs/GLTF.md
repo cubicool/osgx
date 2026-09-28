@@ -139,7 +139,7 @@ if(environment && scene.valid()) {
 
 Skinned models deform with `{.hooks = {{osgx::Hook::Skinning, new osg::Shader(osg::Shader::VERTEX,
 osgx::resolveShaderLibs(osgx::SKINNING_HOOK_LINEAR_BLEND))}}}`. Python: `osgx.PBRScene`,
-`osgx.PBRSceneOptions`, `osgx.gltf.loadEnvironment`, `osgx.gltf.KHRONOS_ENVIRONMENT_ROTATION`.
+`osgx.PBRScene.Options`, `osgx.gltf.loadEnvironment`, `osgx.gltf.KHRONOS_ENVIRONMENT_ROTATION`.
 `utils/osgx-gltf-viewer` is the complete C++ consumer.
 
 ## PBR/IBL environment baking

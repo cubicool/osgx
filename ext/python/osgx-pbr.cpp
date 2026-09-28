@@ -148,9 +148,16 @@ void bind_pbr(py::module_& m) {
 	// G-buffer with its fullscreen lighting pass. Both take their light sources (environment,
 	// shadow map) in an options object; custom deferred lighting shaders read the G-buffer through
 	// the "osgx::gbuffer" catalog.
-	py::class_<osgx::PBRSceneOptions>(
+	auto pbrScene = py::class_<osgx::PBRScene>(
 		m,
-		"PBRSceneOptions",
+		"PBRScene",
+		"The result of PBRScene.create(): the node the forward PBR Program was attached to, plus "
+		"the diagnostics uniforms when requested."
+	);
+
+	py::class_<osgx::PBRScene::Options>(
+		pbrScene,
+		"Options",
 		"PBRScene.create() inputs, each optional: environment (an osgx.Environment), shadowMap (an "
 		"osgx.ShadowMap for the key light), hooks, diagnostics."
 	)
@@ -161,7 +168,7 @@ void bind_pbr(py::module_& m) {
 				py::object hooks,
 				bool diagnostics
 			) {
-				osgx::PBRSceneOptions options;
+				osgx::PBRScene::Options options;
 
 				options.environment = environment;
 				options.shadowMap = shadowMap;
@@ -177,11 +184,11 @@ void bind_pbr(py::module_& m) {
 			"Constructs the options; every argument is optional."
 		)
 		.def_readwrite(
-			"environment", &osgx::PBRSceneOptions::environment,
+			"environment", &osgx::PBRScene::Options::environment,
 			"The osgx.Environment lighting the scene; None leaves the environment term at zero."
 		)
 		.def_readwrite(
-			"shadowMap", &osgx::PBRSceneOptions::shadowMap,
+			"shadowMap", &osgx::PBRScene::Options::shadowMap,
 			"An osgx.ShadowMap shadowing the key/directional light; None is unshadowed."
 		)
 		.def_property(
@@ -189,8 +196,8 @@ void bind_pbr(py::module_& m) {
 			// A property so the setter goes through pyx::unpack_one_or_many<T>() (pybind11x.hpp): a
 			// dict of {osgx.Hook: osg.Shader} (preferred), a list of (Hook, Shader) pairs, or a
 			// single bare pair.
-			[](const osgx::PBRSceneOptions& self) { return self.hooks; },
-			[](osgx::PBRSceneOptions& self, py::object hooks) {
+			[](const osgx::PBRScene::Options& self) { return self.hooks; },
+			[](osgx::PBRScene::Options& self, py::object hooks) {
 				self.hooks = pyx::unpack_one_or_many<osgx::HookList::value_type>(hooks);
 			},
 			"Substitutes a built-in shader object per slot: osgx.Hook.Skinning (a VERTEX shader "
@@ -199,17 +206,12 @@ void bind_pbr(py::module_& m) {
 			"osgx_Tonemap()). Each REPLACES its default."
 		)
 		.def_readwrite(
-			"diagnostics", &osgx::PBRSceneOptions::diagnostics,
+			"diagnostics", &osgx::PBRScene::Options::diagnostics,
 			"Adds the debugMode/disableNormalMap/disableRoughnessMap/disableSpecularAA uniforms."
 		)
 	;
 
-	py::class_<osgx::PBRScene>(
-		m,
-		"PBRScene",
-		"The result of PBRScene.create(): the node the forward PBR Program was attached to, plus "
-		"the diagnostics uniforms when requested."
-	)
+	pbrScene
 		.def(py::init<>(), "Constructs an empty, invalid PBRScene.")
 		.def_readwrite("node", &osgx::PBRScene::node, "The node the renderer was applied to.")
 		.def_readwrite(
@@ -235,9 +237,11 @@ void bind_pbr(py::module_& m) {
 		.def("valid", &osgx::PBRScene::valid, "True once node is set.")
 		.def_static(
 			"create",
-			&osgx::PBRScene::create,
+			static_cast<osgx::PBRScene (*) (osg::Node*, const osgx::PBRScene::Options&)>(
+				&osgx::PBRScene::create
+			),
 			"node"_a,
-			"options"_a=osgx::PBRSceneOptions{},
+			"options"_a=osgx::PBRScene::Options{},
 			"Attaches the forward PBR Program (OVERRIDE) to `node`, shading osgx.Material geometry by "
 			"the options' environment and shadow map and the osgx.LightSet lights inherited from "
 			"the scene graph."
@@ -305,9 +309,16 @@ void bind_pbr(py::module_& m) {
 		)
 	;
 
-	py::class_<osgx::PBRLightingPassOptions>(
+	auto pbrLightingPass = py::class_<osgx::PBRLightingPass>(
 		m,
-		"PBRLightingPassOptions",
+		"PBRLightingPass",
+		"The result of PBRLightingPass.create(): a fullscreen-quad deferred lighting pass "
+		"reading a PBRGBuffer, plus live uniforms a caller must keep in sync via update()."
+	);
+
+	py::class_<osgx::PBRLightingPass::Options>(
+		pbrLightingPass,
+		"Options",
 		"PBRLightingPass.create() inputs, each an independent, optional seam rather than one "
 		"monolithic flag blob."
 	)
@@ -320,7 +331,7 @@ void bind_pbr(py::module_& m) {
 				osg::Texture2D* aoTexture,
 				bool diagnostics
 			) {
-				osgx::PBRLightingPassOptions options;
+				osgx::PBRLightingPass::Options options;
 
 				options.environment = environment;
 				options.tonemap = tonemap;
@@ -340,12 +351,12 @@ void bind_pbr(py::module_& m) {
 			"Constructs the options; every argument is optional."
 		)
 		.def_readwrite(
-			"environment", &osgx::PBRLightingPassOptions::environment,
+			"environment", &osgx::PBRLightingPass::Options::environment,
 			"The osgx.Environment lighting the pass; None leaves the built-in shader's environment "
 			"term at zero."
 		)
 		.def_readwrite(
-			"tonemap", &osgx::PBRLightingPassOptions::tonemap,
+			"tonemap", &osgx::PBRLightingPass::Options::tonemap,
 			"True applies the built-in (or hooks[osgx.Hook.Tonemap]-substituted) tonemap curve; "
 			"False leaves the result linear HDR, for a caller chaining further passes."
 		)
@@ -353,12 +364,12 @@ void bind_pbr(py::module_& m) {
 			"hooks",
 			// A property (not def_readwrite) purely so the setter can go through
 			// pyx::unpack_one_or_many<T>() (pybind11x.hpp) - same reasoning, and same accepted
-			// shapes, as PBRSceneOptions.hooks: a dict of
+			// shapes, as PBRScene.Options.hooks: a dict of
 			// {osgx.Hook: osg.Shader} (preferred), a list of (Hook, Shader) pairs, or a single
 			// bare pair. The getter is unchanged - reading back a plain osgx.HookList (a list of
 			// pairs) is unambiguous, there's nothing to disambiguate on the way out.
-			[](const osgx::PBRLightingPassOptions& self) { return self.hooks; },
-			[](osgx::PBRLightingPassOptions& self, py::object hooks) {
+			[](const osgx::PBRLightingPass::Options& self) { return self.hooks; },
+			[](osgx::PBRLightingPass::Options& self, py::object hooks) {
 				self.hooks = pyx::unpack_one_or_many<osgx::HookList::value_type>(hooks);
 			},
 			"Substitutes this pass's built-in shader for a slot - a dict of "
@@ -368,27 +379,22 @@ void bind_pbr(py::module_& m) {
 			"supported. Each REPLACES its default, it does not add alongside it."
 		)
 		.def_readwrite(
-			"shadowMap", &osgx::PBRLightingPassOptions::shadowMap,
+			"shadowMap", &osgx::PBRLightingPass::Options::shadowMap,
 			"An osgx.ShadowMap shadowing the key/directional light; None is unshadowed."
 		)
 		.def_readwrite(
-			"aoTexture", &osgx::PBRLightingPassOptions::aoTexture,
+			"aoTexture", &osgx::PBRLightingPass::Options::aoTexture,
 			"Optional ambient-occlusion texture, multiplied into the ambient term. This pass does "
 			"not bake SSAO itself - feed osgx.SSAO.create()'s result here, or any other "
 			"occlusion source."
 		)
 		.def_readwrite(
-			"diagnostics", &osgx::PBRLightingPassOptions::diagnostics,
+			"diagnostics", &osgx::PBRLightingPass::Options::diagnostics,
 			"Enables extra debug output on the lighting pass."
 		)
 	;
 
-	py::class_<osgx::PBRLightingPass>(
-		m,
-		"PBRLightingPass",
-		"The result of PBRLightingPass.create(): a fullscreen-quad deferred lighting pass "
-		"reading a PBRGBuffer, plus live uniforms a caller must keep in sync via update()."
-	)
+	pbrLightingPass
 		.def(py::init<>(), "Constructs an empty, invalid PBRLightingPass.")
 		.def_readwrite(
 			"node", &osgx::PBRLightingPass::node,
@@ -417,10 +423,12 @@ void bind_pbr(py::module_& m) {
 		)
 		.def_static(
 			"create",
-			&osgx::PBRLightingPass::create,
+			static_cast<osgx::PBRLightingPass (*) (
+				const osgx::PBRGBuffer&, osg::Camera*, const osgx::PBRLightingPass::Options&
+			)>(&osgx::PBRLightingPass::create),
 			"gbuffer"_a,
 			"mainCamera"_a,
-			"options"_a=osgx::PBRLightingPassOptions{},
+			"options"_a=osgx::PBRLightingPass::Options{},
 			"Deferred-split lighting pass: a fullscreen quad reading `gbuffer` (position included, "
 			"not reconstructed from depth), rotating it into world space via `mainCamera`'s real "
 			"view matrix, running the same osgx_EvaluateEnvironment()/osgx_DirectLighting() logic "

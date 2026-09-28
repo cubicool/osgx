@@ -4,26 +4,28 @@
 namespace osgx_python {
 
 void bind_gbuffer(py::module_& m) {
-	py::enum_<osgx::AttachmentFormat>(
-		m,
-		"AttachmentFormat",
-		"Texture internal-format presets for one G-buffer color attachment: RGBA8 for ordinary "
-		"LDR color/albedo, RGB16F for signed [-1,1] data (e.g. a view-space normal), RGBA16F for "
-		"HDR color that can exceed 1.0 before tonemapping, RGBA32F for real eye-space position data."
-	)
-		.value("RGBA8", osgx::AttachmentFormat::RGBA8)
-		.value("RGB16F", osgx::AttachmentFormat::RGB16F)
-		.value("RGBA16F", osgx::AttachmentFormat::RGBA16F)
-		.value("RGBA32F", osgx::AttachmentFormat::RGBA32F)
-	;
-
-	py::class_<osgx::GBuffer>(
+	auto gbuffer = py::class_<osgx::GBuffer>(
 		m,
 		"GBuffer",
 		"One populated G-buffer: `camera` is the PRE_RENDER FBO pass writing `colorTextures` "
 		"(indexed exactly as passed to create(), i.e. colorTextures[i] is COLOR_BUFFERi) plus "
 		"`depthTexture`. The caller still owns adding `camera` to the rendered scene graph."
+	);
+
+	py::enum_<osgx::GBuffer::AttachmentFormat>(
+		gbuffer,
+		"AttachmentFormat",
+		"Texture internal-format presets for one G-buffer color attachment: RGBA8 for ordinary "
+		"LDR color/albedo, RGB16F for signed [-1,1] data (e.g. a view-space normal), RGBA16F for "
+		"HDR color that can exceed 1.0 before tonemapping, RGBA32F for real eye-space position data."
 	)
+		.value("RGBA8", osgx::GBuffer::AttachmentFormat::RGBA8)
+		.value("RGB16F", osgx::GBuffer::AttachmentFormat::RGB16F)
+		.value("RGBA16F", osgx::GBuffer::AttachmentFormat::RGBA16F)
+		.value("RGBA32F", osgx::GBuffer::AttachmentFormat::RGBA32F)
+	;
+
+	gbuffer
 		.def(py::init<>(), "Constructs an empty GBuffer with no camera/textures set; see GBuffer.create().")
 		.def_readwrite(
 			"camera", &osgx::GBuffer::camera,
@@ -48,7 +50,7 @@ void bind_gbuffer(py::module_& m) {
 				osg::Node* node,
 				int width,
 				int height,
-				const std::vector<osgx::AttachmentFormat>& colorFormats,
+				const std::vector<osgx::GBuffer::AttachmentFormat>& colorFormats,
 				osg::Transform::ReferenceFrame referenceFrame
 			) {
 				return osgx::GBuffer::create(

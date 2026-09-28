@@ -27,7 +27,7 @@ PYBIND11_MODULE(osgx, m) {
 	osgx_python::bind_pbr(m);
 	osgx_python::bind_light(m);
 
-	// Registered before bind_shadow(): ShadowMap.cubeCapture is a CaptureCubeMapScene field, so
+	// Registered before bind_shadow(): ShadowMap.cubeCapture is a CaptureCubeMap field, so
 	// that type needs to already exist as a Python class by the time ShadowMap's own py::class_
 	// exposes it.
 	osgx_python::bind_capturecubemap(m);

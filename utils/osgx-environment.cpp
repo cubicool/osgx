@@ -429,8 +429,8 @@ bool writeCubeMap(
 
 bool bakeSoftwareIBL(
 	osg::Image* equirectangularHDR,
-	const osgx::GGXPrefilterOptions& specularOptions,
-	const osgx::LambertianBakeOptions& diffuseOptions,
+	const osgx::GGXPrefilter::Options& specularOptions,
+	const osgx::LambertianBake::Options& diffuseOptions,
 	const std::filesystem::path& specularPath,
 	const std::filesystem::path& diffusePath
 ) {
@@ -531,8 +531,8 @@ int main(int argc, char* argv[]) {
 
 	const std::string inputPath = argv[1];
 	const OutputPaths outputs = makeOutputPaths(argv[2]);
-	osgx::GGXPrefilterOptions specularOptions;
-	osgx::LambertianBakeOptions diffuseOptions;
+	osgx::GGXPrefilter::Options specularOptions;
+	osgx::LambertianBake::Options diffuseOptions;
 	int lutSize = 1024;
 	bool software = false;
 
@@ -587,8 +587,8 @@ int main(int argc, char* argv[]) {
 #endif
 	}
 
-	auto specular = osgx::GGXPrefilterScene::create(image, specularOptions);
-	auto diffuse = osgx::LambertianBakeScene::create(image, diffuseOptions);
+	auto specular = osgx::GGXPrefilter::create(image, specularOptions);
+	auto diffuse = osgx::LambertianBake::create(image, diffuseOptions);
 
 	if(!specular.root || !diffuse.root) {
 		OSG_WARN << "osgx-environment: failed to create cubemap bake passes" << std::endl;

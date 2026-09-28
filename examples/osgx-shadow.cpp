@@ -444,7 +444,7 @@ int main(int argc, char** argv) {
 
 	mainSS->setAttributeAndModes(lights);
 
-	osgx::ShadowMapOptions shadowOptions;
+	osgx::ShadowMap::Options shadowOptions;
 
 	// Spot maps store perspective (non-linear) depth: a directional map's bias pushes shadows
 	// visibly off their casters there.
@@ -494,7 +494,7 @@ int main(int argc, char** argv) {
 	// No depth-only Program set here anymore - ShadowMap::create()/createSpot() now install one
 	// directly on shadowMap.camera's own StateSet (ON|OVERRIDE), which applies automatically to
 	// any subgraph added as its child (createPoint()'s six cameras get their own distance-only
-	// Program the same way, via CaptureCubeMapOptions::overrideProgram). `casters` used to need its
+	// Program the same way, via CaptureCubeMap::Options::overrideProgram). `casters` used to need its
 	// own explicit workaround; it doesn't anymore, and neither does any other osgx::shadow caller.
 	// Point maps have no single camera to hang casters off of - shadowMap.casters is createPoint()'s
 	// counterpart, shared by all six capture cameras (see ShadowMap's own header comment).
@@ -591,12 +591,12 @@ int main(int argc, char** argv) {
 	}
 
 	// Shadow texture unit 0 - this demo has no other textures. `shadowMap`'s own bias/strength/
-	// casterIndex uniforms are added as-is (their defaults already match ShadowMapOptions above).
+	// casterIndex uniforms are added as-is (their defaults already match ShadowMap::Options above).
 	// A point map has no shadowMatrix (SHADOW_FACTOR_POINT rebuilds direction/distance straight
 	// from osgx_shadowLightPos instead - see Shadow.hpp) but does need that light-position uniform.
 	if(point) {
 		mainSS->setTextureAttributeAndModes(
-			0, shadowMap.cubeCapture.radianceTexture.get(), osg::StateAttribute::ON
+			0, shadowMap.cubeCapture.texture.get(), osg::StateAttribute::ON
 		);
 		mainSS->addUniform(new osg::Uniform("osgx_shadowCubeMap", 0));
 		mainSS->addUniform(shadowMap.lightPosition.get());

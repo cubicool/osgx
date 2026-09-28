@@ -506,10 +506,10 @@ function(OSGX_COMPILE_OPTIONS _target)
 	# This used to only be applied in OSGX_ADD_EXECUTABLE below (examples/utils), not here -- so any
 	# LIBRARY calling this function directly (osgx_gltf, osgx_ktx2, osgdb_gltf,
 	# osgdb_ktx2, osgdb_debug, osgx_python_bindings, osgx_python) was still exposed. Found the hard
-	# way 2026-07-31 via GGXPrefilterOptions::fireflyClamp: a glTF library silently built against
-	# an installed GGXPrefilterOptions missing that field entirely while `osgx` itself (compiled
+	# way 2026-07-31 via GGXPrefilter::Options::fireflyClamp: a glTF library silently built against
+	# an installed GGXPrefilter::Options missing that field entirely while `osgx` itself (compiled
 	# fresh from source, via this same function but previously without this guard) read it,
-	# causing GGXPrefilterScene's bake to read past the end of the caller's undersized struct.
+	# causing GGXPrefilter's bake to read past the end of the caller's undersized struct.
 	#
 	# PRIVATE, not PUBLIC: this only needs to win the #include <...> search for THIS target's own
 	# compilation -- every real compiled target in this project calls osgx_compile_options() on
