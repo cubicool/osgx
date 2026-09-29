@@ -7,6 +7,10 @@
 # generator expression keeps multi-config generators from appending a per-config subdirectory.
 set(OSGX_PLUGIN_OUTPUT_DIR "$<1:${PROJECT_BINARY_DIR}/osgPlugins-${OPENSCENEGRAPH_VERSION}>")
 
+if(OSGX_BUILD_DDS)
+	add_subdirectory("dds")
+endif()
+
 if(OSGX_BUILD_KTX2)
 	add_subdirectory("ktx2")
 endif()

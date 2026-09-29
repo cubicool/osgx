@@ -35,6 +35,7 @@ libOpenSceneGraph_python{d}.a (experimental -- see TODO.md)"
 )
 option(OSGX_BUILD_KTX2 "Build the KTX2 osgDB plugin (osgdb_ktx2) and the osgx::ktx2 static library" ${OSGX_IS_TOP_LEVEL})
 option(OSGX_BUILD_GLTF "Build the glTF osgDB plugin (osgdb_gltf) and the osgx::gltf static library" ${OSGX_IS_TOP_LEVEL})
+option(OSGX_BUILD_DDS "Build the DDS osgDB plugin (osgdb_dds) with DDS DX10 BC7 support" ${OSGX_IS_TOP_LEVEL})
 option(OSGX_INSTALL "Generate osgx installation rules" ${OSGX_IS_TOP_LEVEL})
 
 if(WIN32)
@@ -231,6 +232,7 @@ add_library(osgx ${OSGX_LIBRARY_TYPE}
 	src/Aura.cpp
 	src/CameraIntents.cpp
 	src/CaptureCubeMap.cpp
+	src/CompressedTexture.cpp
 	src/Cursor.cpp
 	src/Debug.cpp
 	src/Environment.cpp
@@ -273,6 +275,7 @@ target_sources(osgx PUBLIC
 	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/Grid.hpp>"
 	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/IBL.hpp>"
 	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/CaptureCubeMap.hpp>"
+	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/CompressedTexture.hpp>"
 	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/Cursor.hpp>"
 	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/Environment.hpp>"
 	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/GBuffer.hpp>"
@@ -593,6 +596,7 @@ if(OSGX_BUILD_PYTHON AND Python3_Development.Module_FOUND)
 	add_library(osgx_python_bindings STATIC
 		"ext/python/osgx-library.cpp"
 		"ext/python/osgx-core.cpp"
+		"ext/python/osgx-compressedtexture.cpp"
 		"ext/python/osgx-callbacks.cpp"
 		"ext/python/osgx-cursor.cpp"
 		"ext/python/osgx-rtt.cpp"

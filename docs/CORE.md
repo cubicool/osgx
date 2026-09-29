@@ -457,6 +457,23 @@ baking, SH9/Lambertian diffuse irradiance, and cubemap readback helpers.
 glTF-specific material and rendering integration lives with the loader in [`osgx::gltf`](GLTF.md) —
 generic `osgx` does not depend on or duplicate its public shader interface.
 
+## `osgx/CompressedTexture.hpp`
+
+- `isBC7(GLenum format)` / `isBPTC(const osg::Image& image)` — the one place BC7/BPTC format
+  detection (`GL_COMPRESSED_{RGBA,SRGB_ALPHA}_BPTC_UNORM`) lives; `isBPTC()` checks both an
+  image's pixel format and internal texture format, since different producers (the `osgdb_dds`
+  plugin, the glTF loader) settle those fields differently.
+- `makeCompressedTexture2D(osg::Image* image)` — builds an ordinary `Texture2D`, except for BC7
+  images, which get a `SubloadCallback` that uploads the authored block payload and mip chain
+  directly (`glCompressedTexImage2D`/`glCompressedTexSubImage2D`), since core OSG does not
+  classify BPTC as a compressed internal format on its own. Returns null for a null image.
+
+DDS files (including BC7/DX10) load through the ordinary `osgDB` plugin path
+(`osgDB::readImageFile()`), via `osgdb_dds` (`plugins/dds/`, gated behind `OSGX_BUILD_DDS`) — a
+vendored, BC7/DX10-patched copy of OSG's own upstream DDS reader/writer, kept separate because
+neither of the project's local OSG checkouts read DX10-header BC7 DDS files. See
+`examples/osgx-bc7.cpp` for a full load-and-display example.
+
 ## `osgx/Environment.hpp`
 
 `Environment` — distant image-based lighting as one `StateAttribute`, the third lighting attribute

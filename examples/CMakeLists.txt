@@ -1,6 +1,7 @@
 set(OSGX_EXAMPLES
 	"array"
 	"aura"
+	"bc7"
 	"callback"
 	"culling"
 	"eventhandler"

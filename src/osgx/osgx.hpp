@@ -22,6 +22,7 @@
 #include "Headless.hpp"
 #include "IBL.hpp"
 #include "CaptureCubeMap.hpp"
+#include "CompressedTexture.hpp"
 #include "GGXPrefilter.hpp"
 #include "LambertianBake.hpp"
 #include "Environment.hpp"

@@ -195,6 +195,23 @@ PBRScene PBRScene::create(osg::Node* node, const Options& options) {
 	// may assign osg_Tangent to another generic attribute and normal mapping reads a default value.
 	osgx::bindMeshAttributes(*prog);
 
+	// resolveShaderLibs() writes these named Library slots into GLSL layout(binding=...) qualifiers.
+	// OSG does not inspect those qualifiers, so register the same bindings on Program as well: this
+	// keeps its link-time uniform-block bookkeeping accurate and avoids false warnings.
+	auto& bindings = Library::instance().bindings();
+	prog->addBindUniformBlock(
+		"osgx_LightBuffer",
+		bindings.get("osgx::light")
+	);
+	prog->addBindUniformBlock(
+		"osgx_MaterialInputs",
+		bindings.get("osgx::material")
+	);
+	prog->addBindUniformBlock(
+		"osgx_EnvironmentInputs",
+		bindings.get("osgx::environment")
+	);
+
 	auto* vertexShader = new osg::Shader(
 		osg::Shader::VERTEX,
 		resolveShaderLibs(PBR_VERTEX_SHADER)

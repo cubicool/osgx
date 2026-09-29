@@ -1,5 +1,6 @@
 set(OSGX_UTILS
 	"describe"
+	"dds-info"
 	"drawables"
 )
 

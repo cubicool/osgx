@@ -9,9 +9,12 @@ OSGX_ENABLE_WARNINGS
 #include "Texture.hpp"
 #include "tg3_util.hpp"
 
+#include "osgx/CompressedTexture.hpp"
+
 OSGX_DISABLE_WARNINGS
 
 #include <osg/Image>
+#include <osg/Notify>
 
 #include <osgDB/ConvertBase64>
 #include <osgDB/FileNameUtils>
@@ -195,11 +198,17 @@ osg::Image* decodeCompressedImage(
 	}
 
 	// glTF's UV convention puts v=0 at the TOP of the image, opposite OpenGL's native texture
-	// row order - a fixed, spec-wide convention (not per-image), so every glTF-in-GL loader
-	// flips unconditionally after decode. Mirrors what the external-file path (loadRawImage's
-	// osgDB::readImageFile branch) already does; this is the same requirement for bytes that
-	// happen to come from a bufferView or data URI instead of a standalone file.
-	if(image) image->flipVertical();
+	// row order. Image::flipVertical() only understands the older DXT block layouts - calling it
+	// on BPTC data falls through to its byte-level fallback flip, which corrupts the blocks rather
+	// than reorienting them - so BPTC textures are left as authored and must already match glTF's
+	// V convention (verify against the non-BPTC textures in the same asset if a mesh looks wrong).
+	if(image && isBPTC(*image)) {
+		OSG_WARN << "osgx::gltf: BPTC texture '" << image->getFileName()
+			<< "' left unflipped (BPTC blocks cannot be vertically flipped); if it was not "
+			<< "pre-flipped by its authoring tool, it will not match glTF's V convention"
+			<< std::endl;
+	}
+	else if(image) image->flipVertical();
 
 	return image.release();
 }
@@ -331,7 +340,16 @@ osg::Image* TextureLoader::loadRawImage(int textureIndex) const {
 
 		else image = osgDB::readImageFile(path, _readOptions);
 
-		if(image && !imageAlreadyFlipped) image->flipVertical();
+		if(image && !imageAlreadyFlipped) {
+			// See the embedded-image decode path above for why BPTC textures are left unflipped.
+			if(isBPTC(*image)) {
+				OSG_WARN << "osgx::gltf: BPTC texture '" << path
+					<< "' left unflipped (BPTC blocks cannot be vertically flipped); if it was "
+					<< "not pre-flipped by its authoring tool, it will not match glTF's V convention"
+					<< std::endl;
+			}
+			else image->flipVertical();
+		}
 	}
 
 	return image.release();
@@ -411,7 +429,7 @@ osg::Texture2D* TextureLoader::getOrCreateTexture(int textureIndex, bool sRGB) c
 
 	if(!loadedImage) return nullptr;
 
-	osg::ref_ptr<osg::Texture2D> osgTexture = new osg::Texture2D(loadedImage);
+	osg::ref_ptr<osg::Texture2D> osgTexture = osgx::makeCompressedTexture2D(loadedImage);
 
 	applyFormatAndSampler(osgTexture, loadedImage, sRGB, texture.sampler);
 	osgTexture->setUnRefImageDataAfterApply(unrefImageDataAfterApply);
