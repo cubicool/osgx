@@ -16,6 +16,7 @@ PYBIND11_MODULE(osgx, m) {
 	osgx_python::bind_library(m);
 	osgx_python::bind_core(m);
 	osgx_python::bind_compressedtexture(m);
+	osgx_python::bind_pbotexture(m);
 	osgx_python::bind_callbacks(m);
 	osgx_python::bind_rtt(m);
 

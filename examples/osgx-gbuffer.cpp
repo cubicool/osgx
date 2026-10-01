@@ -678,7 +678,7 @@ int main(int argc, char** argv) {
 	auto* gui = new osgx::imgui::Widget(viewer, gizmos->getOverlay());
 
 	gui->addSection("Directional Light", [
-		lights, &shadowMap, &lightDir, &lightColor, &lightIntensity, boundCenter, boundRadius, shadowOptions
+		lights, &shadowMap, &lightDir, &lightColor, &lightIntensity, boundCenter, boundRadius, &shadowOptions
 	](osg::RenderInfo&) {
 		bool changed = false;
 
@@ -699,6 +699,42 @@ int main(int argc, char** argv) {
 			else {
 				lights->setDirectional(0, osg::Vec3(0.0f, 0.0f, -1.0f), lightColor, lightIntensity);
 			}
+		}
+	}, osgx::imgui::SectionOptions::create(false, true));
+
+	// Bias and strength are uniforms, so they take effect immediately. Frustum coverage changes
+	// must also re-aim the existing shadow camera, but still avoid rebuilding its FBO or texture.
+	gui->addSection("Shadows", [
+		&shadowMap, &lightDir, boundCenter, boundRadius, &shadowOptions
+	](osg::RenderInfo&) {
+		float bias = 0.0f, strength = 0.0f;
+
+		shadowMap.bias->get(bias);
+		shadowMap.strength->get(strength);
+
+		bool changed = false;
+
+		changed |= ImGui::SliderFloat("Raw Bias (debug)", &bias, 0.0f, 0.05f, "%.6f");
+		changed |= ImGui::SliderFloat("Strength", &strength, 0.0f, 1.0f);
+
+		if(changed) {
+			shadowMap.bias->set(bias);
+			shadowMap.strength->set(strength);
+		}
+
+		ImGui::Separator();
+		ImGui::Text("Map: %d x %d", shadowOptions.size, shadowOptions.size);
+		ImGui::TextDisabled("Raise Bias until acne clears; too much causes peter panning.");
+
+		bool frustumChanged = false;
+
+		frustumChanged |= ImGui::SliderFloat(
+			"Frustum Extent", &shadowOptions.extent, 0.0f, std::max(1.0f, boundRadius * 10.0f)
+		);
+		frustumChanged |= ImGui::SliderFloat("Frustum Margin", &shadowOptions.margin, 1.0f, 5.0f);
+
+		if(frustumChanged && lightDir.length2() > 1e-8f) {
+			shadowMap.reposition(lightDir, boundCenter, boundRadius, shadowOptions);
 		}
 	}, osgx::imgui::SectionOptions::create(false, true));
 

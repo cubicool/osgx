@@ -1,7 +1,7 @@
 // vimrun! ./examples/osgx-shadow
 //
-// A standalone proof that osgx::DIRECT_LIGHTING_HOOK_SHADOWED(_POINT) actually shadows: three
-// osgx::Cube shapes of different sizes/colors sitting on a flat floor quad, lit by one
+// A standalone proof that osgx::DIRECT_LIGHTING_HOOK_SHADOWED(_POINT) actually shadows: one of
+// several small osgx::Cube-based test scenes sitting on a flat floor quad, lit by one
 // osgx::LightSet light whose shadow is cast via osgx::ShadowMap: `--type directional` (default,
 // ShadowMap::create(), orthographic), `--type spot` (ShadowMap::createSpot(), perspective from the
 // light's position, covering its cone), or `--type point` (ShadowMap::createPoint(), an
@@ -28,11 +28,15 @@
 //
 // Scene-graph shape (avoids a shadow-texture read/write feedback loop, same pattern the old
 // hand-rolled pyosg-lighting/08-shadows.py used): root -> [shadowMap.camera (PRE_RENDER, renders
-// ONLY the three cubes into the depth texture) , mainGroup (shadow texture + shadow/light
-// uniforms; renders the cubes AND the floor, lit+shadowed)].
+// ONLY the selected scene objects into the depth texture) , mainGroup (shadow texture + shadow/
+// light uniforms; renders the scene objects AND the floor, lit+shadowed)].
 //
 // Press 's' to toggle the shadow on/off (swaps back to the unshadowed hook shader) - the
 // clearest possible A/B: same scene, same light, only the shadow term changes.
+//
+// `--scene cubes` (default), `lean-to`, `table`, `stairs`, and `bridge` select compact,
+// deliberately code-only arrangements. Each has overlapping or raised parts, so it exercises
+// both floor-received shadows and occlusion between scene objects without needing an asset.
 //
 // Also exercises three fixes made to osgx::shadow itself (see osgx/TODO.md's old Shadow section,
 // and OpenSceneGraph.py's 11-sketchfab.py pivot, which is what surfaced all three):
@@ -73,8 +77,10 @@ OSGX_DISABLE_WARNINGS
 OSGX_ENABLE_WARNINGS
 
 #include <algorithm>
+#include <cstddef>
 #include <functional>
 #include <iostream>
+#include <iterator>
 #include <string>
 #include <string_view>
 
@@ -210,12 +216,85 @@ osg::ref_ptr<osg::Geode> makeFloor(float halfSize, float z) {
 	return geode;
 }
 
-osg::ref_ptr<osg::Geode> makeCube(const osg::Vec3& center, const osg::Vec3& size) {
+struct SceneObjectSpec {
+	osg::Vec3 center;
+	osg::Vec3 size;
+	osg::Vec3 color;
+	float pitchDegrees;
+};
+
+struct SceneSpec {
+	const SceneObjectSpec* objects;
+	std::size_t objectCount;
+	osg::Vec3 boundCenter;
+	float boundRadius;
+	float floorHalfSize;
+};
+
+// Returns a transformed box with its local center at the origin. Keeping every test scene to
+// boxes makes differences in a shadow result attributable to the shadow implementation, rather
+// than a mesh importer or an asset's normals/tangents.
+osg::ref_ptr<osg::MatrixTransform> makeSceneObject(const SceneObjectSpec& spec) {
 	auto geode = osgx::make_ref<osg::Geode>();
+	auto transform = osgx::make_ref<osg::MatrixTransform>();
 
-	geode->addDrawable(new osgx::Cube(center, size));
+	geode->addDrawable(new osgx::Cube(osg::Vec3(), spec.size));
+	transform->addChild(geode.get());
+	transform->setMatrix(
+		osg::Matrix::rotate(osg::DegreesToRadians(spec.pitchDegrees), osg::Vec3(0.0f, 1.0f, 0.0f)) *
+		osg::Matrix::translate(spec.center)
+	);
 
-	return geode;
+	return transform;
+}
+
+const SceneSpec* findScene(std::string_view name) {
+	// Baseline: isolated box silhouettes with three different footprints/heights.
+	static const SceneObjectSpec CUBES[] = {
+		{osg::Vec3(-1.3f, 0.0f, 0.5f), osg::Vec3(1.0f, 1.0f, 1.0f), osg::Vec3(0.90f, 0.25f, 0.20f), 0.0f},
+		{osg::Vec3(0.3f, 0.4f, 0.75f), osg::Vec3(0.9f, 0.9f, 1.5f), osg::Vec3(0.20f, 0.55f, 0.90f), 0.0f},
+		{osg::Vec3(0.5f, -0.7f, 0.35f), osg::Vec3(0.7f, 0.7f, 0.7f), osg::Vec3(0.95f, 0.75f, 0.10f), 0.0f},
+	};
+	static const SceneObjectSpec LEAN_TO[] = {
+		{osg::Vec3(0.75f, 0.0f, 1.0f), osg::Vec3(0.16f, 2.4f, 2.0f), osg::Vec3(0.50f, 0.28f, 0.18f), 0.0f},
+		{osg::Vec3(-0.20f, 0.0f, 1.58f), osg::Vec3(2.20f, 2.65f, 0.16f), osg::Vec3(0.65f, 0.48f, 0.22f), 26.0f},
+		{osg::Vec3(-1.00f, -1.00f, 0.62f), osg::Vec3(0.16f, 0.16f, 1.24f), osg::Vec3(0.25f, 0.42f, 0.65f), 0.0f},
+		{osg::Vec3(-1.00f, 1.00f, 0.62f), osg::Vec3(0.16f, 0.16f, 1.24f), osg::Vec3(0.25f, 0.42f, 0.65f), 0.0f},
+	};
+	static const SceneObjectSpec TABLE[] = {
+		{osg::Vec3(0.0f, 0.0f, 1.45f), osg::Vec3(2.70f, 1.55f, 0.18f), osg::Vec3(0.62f, 0.38f, 0.18f), 0.0f},
+		{osg::Vec3(-1.05f, -0.55f, 0.72f), osg::Vec3(0.18f, 0.18f, 1.44f), osg::Vec3(0.24f, 0.30f, 0.38f), 0.0f},
+		{osg::Vec3(-1.05f, 0.55f, 0.72f), osg::Vec3(0.18f, 0.18f, 1.44f), osg::Vec3(0.24f, 0.30f, 0.38f), 0.0f},
+		{osg::Vec3(1.05f, -0.55f, 0.72f), osg::Vec3(0.18f, 0.18f, 1.44f), osg::Vec3(0.24f, 0.30f, 0.38f), 0.0f},
+		{osg::Vec3(1.05f, 0.55f, 0.72f), osg::Vec3(0.18f, 0.18f, 1.44f), osg::Vec3(0.24f, 0.30f, 0.38f), 0.0f},
+	};
+	static const SceneObjectSpec STAIRS[] = {
+		{osg::Vec3(-1.10f, 0.0f, 0.18f), osg::Vec3(0.55f, 2.0f, 0.36f), osg::Vec3(0.34f, 0.48f, 0.70f), 0.0f},
+		{osg::Vec3(-0.55f, 0.0f, 0.36f), osg::Vec3(0.55f, 2.0f, 0.72f), osg::Vec3(0.38f, 0.54f, 0.78f), 0.0f},
+		{osg::Vec3(0.00f, 0.0f, 0.54f), osg::Vec3(0.55f, 2.0f, 1.08f), osg::Vec3(0.42f, 0.60f, 0.84f), 0.0f},
+		{osg::Vec3(0.55f, 0.0f, 0.72f), osg::Vec3(0.55f, 2.0f, 1.44f), osg::Vec3(0.46f, 0.66f, 0.90f), 0.0f},
+		{osg::Vec3(1.10f, 0.0f, 0.90f), osg::Vec3(0.55f, 2.0f, 1.80f), osg::Vec3(0.50f, 0.72f, 0.96f), 0.0f},
+	};
+	static const SceneObjectSpec BRIDGE[] = {
+		{osg::Vec3(0.0f, 0.0f, 1.45f), osg::Vec3(3.40f, 1.20f, 0.20f), osg::Vec3(0.62f, 0.48f, 0.22f), 0.0f},
+		{osg::Vec3(-1.25f, -0.38f, 0.70f), osg::Vec3(0.30f, 0.30f, 1.40f), osg::Vec3(0.26f, 0.40f, 0.62f), 0.0f},
+		{osg::Vec3(-1.25f, 0.38f, 0.70f), osg::Vec3(0.30f, 0.30f, 1.40f), osg::Vec3(0.26f, 0.40f, 0.62f), 0.0f},
+		{osg::Vec3(1.25f, -0.38f, 0.70f), osg::Vec3(0.30f, 0.30f, 1.40f), osg::Vec3(0.26f, 0.40f, 0.62f), 0.0f},
+		{osg::Vec3(1.25f, 0.38f, 0.70f), osg::Vec3(0.30f, 0.30f, 1.40f), osg::Vec3(0.26f, 0.40f, 0.62f), 0.0f},
+	};
+	static const SceneSpec CUBES_SCENE = {CUBES, std::size(CUBES), osg::Vec3(0.0f, 0.0f, 0.5f), 2.2f, 6.0f};
+	static const SceneSpec LEAN_TO_SCENE = {LEAN_TO, std::size(LEAN_TO), osg::Vec3(0.0f, 0.0f, 0.9f), 2.7f, 6.0f};
+	static const SceneSpec TABLE_SCENE = {TABLE, std::size(TABLE), osg::Vec3(0.0f, 0.0f, 0.8f), 2.5f, 6.0f};
+	static const SceneSpec STAIRS_SCENE = {STAIRS, std::size(STAIRS), osg::Vec3(0.0f, 0.0f, 0.8f), 2.7f, 6.0f};
+	static const SceneSpec BRIDGE_SCENE = {BRIDGE, std::size(BRIDGE), osg::Vec3(0.0f, 0.0f, 0.8f), 2.7f, 6.0f};
+
+	if(name == "cubes") return &CUBES_SCENE;
+	if(name == "lean-to") return &LEAN_TO_SCENE;
+	if(name == "table") return &TABLE_SCENE;
+	if(name == "stairs") return &STAIRS_SCENE;
+	if(name == "bridge") return &BRIDGE_SCENE;
+
+	return nullptr;
 }
 
 // A single flat triangular "fan blade" for the --fan demo below - local space, flat in the XY
@@ -355,11 +434,22 @@ int main(int argc, char** argv) {
 	auto lib = osgx::initialize(args);
 
 	std::string type = "directional";
+	std::string sceneName = "cubes";
 
 	args.read("--type", type);
+	args.read("--scene", sceneName);
 
 	if(type != "directional" && type != "spot" && type != "point") {
 		std::cerr << "osgx-shadow: --type must be 'directional', 'spot', or 'point'" << std::endl;
+
+		return 1;
+	}
+
+	const SceneSpec* scene = findScene(sceneName);
+
+	if(!scene) {
+		std::cerr << "osgx-shadow: --scene must be 'cubes', 'lean-to', 'table', 'stairs', or 'bridge'"
+			<< std::endl;
 
 		return 1;
 	}
@@ -376,51 +466,36 @@ int main(int argc, char** argv) {
 
 	const bool flicker = args.read("--flicker");
 
-	// Three cubes of different footprints/heights, loosely matching osgx-grid's own floor demo
-	// screenshot - close enough to prove multi-caster shadows land in believable places, not a
-	// pixel-exact match. Sizes are (width, depth, height); center.z is size.z()/2 so each cube's
-	// base sits exactly on the floor (z=0).
-	struct CubeSpec {
-		osg::Vec3 center;
-		osg::Vec3 size;
-		osg::Vec3 color;
-	};
-
-	const CubeSpec cubes[] = {
-		{osg::Vec3(-1.3f, 0.0f, 0.5f), osg::Vec3(1.0f, 1.0f, 1.0f), osg::Vec3(0.90f, 0.25f, 0.20f)}, // red
-		{osg::Vec3(0.3f, 0.4f, 0.75f), osg::Vec3(0.9f, 0.9f, 1.5f), osg::Vec3(0.20f, 0.55f, 0.90f)}, // blue
-		{osg::Vec3(0.5f, -0.7f, 0.35f), osg::Vec3(0.7f, 0.7f, 0.7f), osg::Vec3(0.95f, 0.75f, 0.10f)}, // yellow
-	};
-
-	// Directional light travel direction (down and across) - steep enough that all three cubes
-	// cast a clearly visible shadow onto the floor without one cube's shadow completely burying
-	// another's. Not const: the ImGui "Directional Light" section below drags this live (see
+	// Directional light travel direction (down and across) - steep enough that elevated parts cast
+	// a clearly visible shadow onto the floor without completely burying neighboring detail. Not
+	// const: the ImGui "Directional Light" section below drags this live (see
 	// ShadowMap::reposition() further down).
 	osg::Vec3 lightDir = osg::Vec3(0.5f, 0.35f, -1.0f);
 	osg::Vec3 lightColor = osg::Vec3(1.0f, 0.96f, 0.88f);
 	float lightIntensity = spot ? 40.0f : (point ? 20.0f : 3.0f);
 
-	// Spot light (--type spot): above and in front of the cubes, aimed at the scene's center.
+	// Spot light (--type spot): above and in front of the scene, aimed near its center.
 	osg::Vec3 spotPosition(2.2f, -2.0f, 3.4f);
 	osg::Vec3 spotDirection = osg::Vec3(0.0f, 0.0f, 0.3f) - spotPosition;
 	float spotInnerDegrees = 22.0f;
 	float spotOuterDegrees = 32.0f;
 
 	// Point light (--type point): no direction, no cone - just a position, close enough among the
-	// cubes that its inverse-square falloff and 90 degree-per-face cube coverage both stay visible.
+	// scene that its inverse-square falloff and 90 degree-per-face cube coverage both stay visible.
 	osg::Vec3 pointPosition(1.2f, -1.5f, 1.8f);
 
-	const osg::Vec3 sceneBoundCenter(0.0f, 0.0f, 0.5f);
-	constexpr float sceneBoundRadius = 2.2f;
+	const osg::Vec3 sceneBoundCenter = scene->boundCenter;
+	const float sceneBoundRadius = scene->boundRadius;
 
 	auto root = osgx::make_ref<osg::Group>();
 	auto casters = osgx::make_ref<osg::Group>();
 	auto mainGroup = osgx::make_ref<osg::Group>();
-	auto floor = makeFloor(6.0f, 0.0f);
+	auto floor = makeFloor(scene->floorHalfSize, 0.0f);
 
-	for(const auto& spec: cubes) {
-		auto caster = makeCube(spec.center, spec.size);
-		auto receiver = makeCube(spec.center, spec.size);
+	for(std::size_t i = 0; i < scene->objectCount; i++) {
+		const auto& spec = scene->objects[i];
+		auto caster = makeSceneObject(spec);
+		auto receiver = makeSceneObject(spec);
 
 		receiver->getOrCreateStateSet()->addUniform(new osg::Uniform("albedo", spec.color));
 
@@ -436,7 +511,7 @@ int main(int argc, char** argv) {
 	mainSS->addUniform(new osg::Uniform("metallic", 0.0f));
 	mainSS->addUniform(new osg::Uniform("ambientColor", osg::Vec3(1.0f, 1.0f, 1.0f)));
 	mainSS->addUniform(new osg::Uniform("ambientIntensity", 0.08f));
-	// Floor never sets its own "albedo" (unlike the cubes above) - a flat, slightly warm
+	// Floor never sets its own "albedo" (unlike the scene objects above) - a flat, slightly warm
 	// gray-stone default so it reads clearly against the shadow it receives.
 	floor->getOrCreateStateSet()->addUniform(new osg::Uniform("albedo", osg::Vec3(0.72f, 0.68f, 0.60f)));
 
@@ -445,6 +520,7 @@ int main(int argc, char** argv) {
 	mainSS->setAttributeAndModes(lights);
 
 	osgx::ShadowMap::Options shadowOptions;
+	float shadowBias = shadowOptions.bias;
 
 	// Spot maps store perspective (non-linear) depth: a directional map's bias pushes shadows
 	// visibly off their casters there.
@@ -536,6 +612,7 @@ int main(int argc, char** argv) {
 				&spotDirection,
 				&spotOuterDegrees,
 				sceneBoundCenter,
+				sceneBoundRadius,
 				shadowOptions
 			] (const osg::Vec3& pos) {
 				shadowMap.repositionSpot(
@@ -556,7 +633,7 @@ int main(int argc, char** argv) {
 				lights->setPoint(0, pos, lightColor, intensity);
 			};
 
-			flickerRig->reposition = [&shadowMap, sceneBoundCenter, shadowOptions] (
+			flickerRig->reposition = [&shadowMap, sceneBoundCenter, sceneBoundRadius, shadowOptions] (
 				const osg::Vec3& pos
 			) {
 				shadowMap.repositionPoint(pos, sceneBoundCenter, sceneBoundRadius, shadowOptions);
@@ -617,7 +694,7 @@ int main(int argc, char** argv) {
 	mainSS->setAttributeAndModes(makeProgram(shadowed, point).get(), osg::StateAttribute::ON);
 
 	// minMarkerRadius/spotConeLength stay at their unit-scene-scale library defaults - this
-	// scene's own cubes/floor are already close to unit scale, unlike osgx-lights.cpp's object.
+	// scene's own objects/floor are already close to unit scale, unlike osgx-lights.cpp's object.
 	// `mainGroup` (not `root`) so the gizmo sizes itself off the actual shaded scene, not the
 	// shadow camera/gizmo overlay's own unrelated bounds.
 	auto gizmos = osgx::make_ref<osgx::LightGizmos>(*lights, mainGroup.get());
@@ -631,7 +708,8 @@ int main(int argc, char** argv) {
 	root->addChild(mainGroup.get());
 	root->addChild(gizmos.get());
 
-	std::cout << "osgx-shadow: " << type << " light, shadow ON (press 's' to toggle)" << std::endl;
+	std::cout << "osgx-shadow: " << sceneName << " scene, " << type
+		<< " light, shadow ON (press 's' to toggle)" << std::endl;
 
 	auto viewer = osgViewer::Viewer(args);
 
@@ -685,6 +763,7 @@ int main(int argc, char** argv) {
 		setSpotLight,
 		flickerRig,
 		sceneBoundCenter,
+		sceneBoundRadius,
 		shadowOptions
 	] (osg::RenderInfo&) {
 		bool changed = false;
@@ -730,6 +809,7 @@ int main(int argc, char** argv) {
 		&lightIntensity,
 		flickerRig,
 		sceneBoundCenter,
+		sceneBoundRadius,
 		shadowOptions
 	] (osg::RenderInfo&) {
 		bool changed = false;
@@ -759,7 +839,9 @@ int main(int argc, char** argv) {
 		&lightColor,
 		&lightIntensity,
 		flickerRig,
+		&shadowBias,
 		sceneBoundCenter,
+		sceneBoundRadius,
 		shadowOptions
 	] (osg::RenderInfo&) {
 		bool changed = false;
@@ -767,6 +849,10 @@ int main(int argc, char** argv) {
 		changed |= ImGui::SliderFloat3("Direction", lightDir.ptr(), -1.0f, 1.0f);
 		changed |= ImGui::ColorEdit3("Color", lightColor.ptr());
 		changed |= ImGui::SliderFloat("Intensity", &lightIntensity, 0.0f, 10.0f);
+
+		if(ImGui::SliderFloat("Shadow Bias", &shadowBias, 0.0f, 0.05f, "%.5f")) {
+			shadowMap.bias->set(shadowBias);
+		}
 
 		if(changed) {
 			if(flickerRig) flickerRig->baseIntensity = lightIntensity;

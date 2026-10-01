@@ -39,6 +39,7 @@ void bind_pbr(py::module_& m);
 void bind_light(py::module_& m);
 void bind_capturecubemap(py::module_& m);
 void bind_compressedtexture(py::module_& m);
+void bind_pbotexture(py::module_& m);
 void bind_shadow(py::module_& m);
 void bind_gbuffer(py::module_& m);
 void bind_ibl(py::module_& m);

@@ -23,9 +23,45 @@ set(OSGX_EXAMPLES
 	"visitor"
 )
 
+# TEMPORARY: osgx-pbotexture.cpp is being tried against a real WebM decode via mbew, sourced
+# directly from an unvendored ~/dev/mbew checkout (not ext/, not a submodule) to see whether it's
+# worth vendoring for real. Links the static libs from mbew's OWN already-configured `BUILD` dir
+# rather than add_subdirectory()'ing the whole mbew project in here, which would also pull in all
+# of mbew's own SDL2/SDL3/cairo/libao examples. Remove this block (and revert
+# osgx-pbotexture.cpp) once a decision is made either way.
+set(OSGX_TEMP_MBEW_DIR "$ENV{HOME}/dev/mbew")
+set(OSGX_TEMP_MBEW_BUILD_DIR "${OSGX_TEMP_MBEW_DIR}/BUILD")
+
+if(EXISTS "${OSGX_TEMP_MBEW_DIR}/src/mbew.hpp"
+	AND EXISTS "${OSGX_TEMP_MBEW_BUILD_DIR}/libmbewd.a"
+	AND EXISTS "${OSGX_TEMP_MBEW_BUILD_DIR}/ext/mbew-vpx/libmbew-vpxd.a"
+	AND EXISTS "${OSGX_TEMP_MBEW_BUILD_DIR}/ext/mbew-nestegg/libmbew-nesteggd.a"
+	AND EXISTS "${OSGX_TEMP_MBEW_BUILD_DIR}/ext/mbew-vorbis/libmbew-vorbisd.a"
+	AND EXISTS "${OSGX_TEMP_MBEW_BUILD_DIR}/ext/mbew-ogg/libmbew-oggd.a"
+	AND EXISTS "${OSGX_TEMP_MBEW_BUILD_DIR}/ext/mbew-opus/libmbew-opusd.a")
+	list(APPEND OSGX_EXAMPLES "pbotexture")
+else()
+	message(STATUS "mbew not found or not built; skipping osgx-pbotexture")
+endif()
+
 foreach(example IN LISTS OSGX_EXAMPLES)
 	osgx_add_executable("osgx" "${example}")
 endforeach()
+
+if(TARGET osgx-pbotexture)
+	target_include_directories(osgx-pbotexture PRIVATE "${OSGX_TEMP_MBEW_DIR}/src")
+	target_link_libraries(osgx-pbotexture PRIVATE
+		-Wl,--start-group
+		"${OSGX_TEMP_MBEW_BUILD_DIR}/libmbewd.a"
+		"${OSGX_TEMP_MBEW_BUILD_DIR}/ext/mbew-vpx/libmbew-vpxd.a"
+		"${OSGX_TEMP_MBEW_BUILD_DIR}/ext/mbew-nestegg/libmbew-nesteggd.a"
+		"${OSGX_TEMP_MBEW_BUILD_DIR}/ext/mbew-vorbis/libmbew-vorbisd.a"
+		"${OSGX_TEMP_MBEW_BUILD_DIR}/ext/mbew-ogg/libmbew-oggd.a"
+		"${OSGX_TEMP_MBEW_BUILD_DIR}/ext/mbew-opus/libmbew-opusd.a"
+		-Wl,--end-group
+		pthread
+	)
+endif()
 
 # find_package(OpenGL REQUIRED)
 # target_link_libraries(osgx-hover PRIVATE OpenGL::GL)

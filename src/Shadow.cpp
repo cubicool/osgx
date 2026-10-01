@@ -121,10 +121,22 @@ void computeDirectionalShadowMatrices(
 	const double distance = extent * 2.0;
 	const osg::Vec3 lightPos = sceneBoundCenter - dir * float(distance);
 
-	// Up vector (0,1,0), not (0,0,1) - a light direction nearly aligned with world-up produces a
-	// degenerate lookAt with (0,0,1) (same failure mode 08-shadows.py/09-ibl.py both noted); (0,1,0)
-	// sidesteps it for every direction any pyosg-lighting example has used.
-	lightView = osg::Matrix::lookAt(lightPos, sceneBoundCenter, osg::Vec3(0.0, 1.0, 0.0));
+	// Up hint must not be nearly parallel to dir, or lookAt()'s basis degenerates - the classic
+	// failure mode is a light aligned with world-up ((0,0,1) in this Z-up engine), which is why
+	// this used to hardcode (0,1,0) here. But (0,1,0) is an ordinary HORIZONTAL direction in a
+	// Z-up world, not a safe "other axis": any light with a dominant Y component (a perfectly
+	// normal shallow/grazing directional light, not just a Z-aligned one) is then nearly
+	// parallel to the hint instead, degenerating the same way - confirmed live via a 25-degree-
+	// elevation light (dir.y() ~ -0.91), which is nowhere near a hardcoded "is this basically
+	// vertical" cutoff but was already badly degenerate. Compare alignment with BOTH candidates
+	// instead of gating on dir.z() alone, and take whichever is less parallel to dir - same
+	// spirit as computeSpotShadowMatrices()'s dynamic up below, but a magnitude comparison
+	// rather than a fixed threshold, so there is no dangerous middle ground between the two.
+	const osg::Vec3 up = std::abs(dir.y()) < std::abs(dir.z())
+		? osg::Vec3(0.0, 1.0, 0.0)
+		: osg::Vec3(0.0, 0.0, 1.0);
+
+	lightView = osg::Matrix::lookAt(lightPos, sceneBoundCenter, up);
 
 	const double near_ = std::max(0.01, distance - extent);
 	const double far_ = distance + extent;

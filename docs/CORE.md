@@ -474,6 +474,38 @@ vendored, BC7/DX10-patched copy of OSG's own upstream DDS reader/writer, kept se
 neither of the project's local OSG checkouts read DX10-header BC7 DDS files. See
 `examples/osgx-bc7.cpp` for a full load-and-display example.
 
+## `osgx/PBOTexture.hpp`
+
+`PBOTexture` — an `osg::Texture2D` that uploads new frame data through a persistent-mapped PBO
+ring (`glBufferStorage` with `GL_MAP_PERSISTENT_BIT`/`GL_MAP_COHERENT_BIT`) plus immutable
+`glTexStorage2D` storage and a per-slot fence, instead of OSG's own `osg::Image` dirty-flag →
+`glTexSubImage2D` path. Generalizes the upload pattern from the sibling `mbew` project's
+`mbew-example-video-osg.cpp` — video is the motivating case, but nothing here is video-specific;
+any high-frequency CPU→GPU source (camera feed, procedural data) is a valid `FrameSource`. Ring
+state is buffered per GL context, same pattern as `osgx::debug::FrameAccumulator`.
+
+```cpp
+auto texture = osgx::make_ref<osgx::PBOTexture>(
+	width, height, GL_RGBA,
+	[]() -> const void* { return nextFrameBytesOrNullptr(); }
+);
+```
+
+- `FrameSource = std::function<const void*()>` — returns a pointer to exactly
+  `width*height*bytesPerPixel(format)` bytes of new frame data, or `nullptr` if no new frame is
+  ready yet (a no-op upload for that subload). Called at most once per GL context, per frame.
+- `getAverageWaitMilliseconds(contextID=0)` / `getAverageUploadMilliseconds(contextID=0)` — rolling
+  CPU-wall-time averages (last 60 subloads): the isolated `glClientWaitSync` stall, and the whole
+  per-subload cost (wait + memcpy + `glTexSubImage2D` submission), respectively. Deliberately CPU
+  wall-clock time, not a GPU timestamp query — `osgx::debug`'s `ProfilerCallback`/
+  `ProfilerFinalCallback` measure GPU execution time of a `Drawable`'s own draw call, which is both
+  the wrong traversal step (texture upload happens during `StateSet` application, before
+  `drawImplementation()`) and the wrong kind of time (GPU execution vs. CPU blocking) for what this
+  answers.
+
+See `examples/osgx-pbotexture.cpp` for a procedural-noise `FrameSource` that exercises the ring/
+subload/fence plumbing without any real video decode involved.
+
 ## `osgx/Environment.hpp`
 
 `Environment` — distant image-based lighting as one `StateAttribute`, the third lighting attribute

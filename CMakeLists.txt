@@ -246,6 +246,7 @@ add_library(osgx ${OSGX_LIBRARY_TYPE}
 	src/Library.cpp
 	src/Light.cpp
 	src/Manipulators.cpp
+	src/PBOTexture.cpp
 	src/PBR.cpp
 	src/PBRDeferred.cpp
 	src/PBRScene.cpp
@@ -284,6 +285,7 @@ target_sources(osgx PUBLIC
 	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/Library.hpp>"
 	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/Light.hpp>"
 	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/Manipulators.hpp>"
+	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/PBOTexture.hpp>"
 	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/PBR.hpp>"
 	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/PBRDeferred.hpp>"
 	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/PBRScene.hpp>"
@@ -597,6 +599,7 @@ if(OSGX_BUILD_PYTHON AND Python3_Development.Module_FOUND)
 		"ext/python/osgx-library.cpp"
 		"ext/python/osgx-core.cpp"
 		"ext/python/osgx-compressedtexture.cpp"
+		"ext/python/osgx-pbotexture.cpp"
 		"ext/python/osgx-callbacks.cpp"
 		"ext/python/osgx-cursor.cpp"
 		"ext/python/osgx-rtt.cpp"
