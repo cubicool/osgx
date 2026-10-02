@@ -128,6 +128,12 @@ void bind_shadow(py::module_& m) {
 			"Depth-comparison bias uniform read by osgx_ShadowFactor()."
 		)
 		.def_readwrite(
+			"normalOffset", &osgx::ShadowMap::normalOffset,
+			"World-space distance applied along the receiver's own normal before the light-space "
+			"transform, derived from this map's own texel footprint at create()/reposition() time. "
+			"Prefer tuning this over `bias` for ordinary acne/peter-panning."
+		)
+		.def_readwrite(
 			"strength", &osgx::ShadowMap::strength,
 			"Shadow darkness uniform: 0 = shadows have no effect, 1 = fully black."
 		)

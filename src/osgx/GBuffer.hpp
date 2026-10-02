@@ -107,14 +107,16 @@ struct SSAO {
 	// re-projection below both assume it.
 	//
 	// `projectionMatrix` is a CALLER-OWNED uniform this pass reads every draw, not a one-time
-	// snapshot - SSAO reconstructs each sample's screen position via a forward projection, and
-	// (same reasoning as `PBRLightingPass`'s own view-matrix uniforms) the real matrix isn't
-	// meaningfully established until well after this call returns, and can change every frame
-	// besides. Keep its value fresh yourself from the same per-frame `preDrawCallback` that updates
-	// any other deferred-pass matrix uniforms you already have (see `PBRLightingPass::update()`'s
-	// own comment for why that must be a `PRE_RENDER` `preDrawCallback`, not application code after
-	// `viewer.frame()` returns) - e.g. `projectionMatrix->set(osg::Matrixf(mainCamera->
-	// getProjectionMatrix()))`.
+	// snapshot - SSAO reconstructs each sample's screen position via a forward projection, and it
+	// must match the EXACT projection the gPosition/gNormal source camera actually drew with, not
+	// a later read of mainCamera->getProjectionMatrix() - OSG's CullVisitor clamps each camera's
+	// near/far privately during cull and never writes it back to the Camera object, so that read
+	// is reliably stale/wrong the moment near/far auto-computes to anything other than what was
+	// last explicitly set. Install an osgx::DepthProjectionCallback (Projection.hpp) as the
+	// gPosition-producing camera's own postDrawCallback, constructed with this uniform's name
+	// ("projectionMatrix", to match SSAO_FRAGMENT_SHADER_SRC's own declaration), and pass its
+	// getProjection() straight through as this parameter - it captures the real osg::State
+	// projection matrix at the moment that camera draws, every frame, with no manual copying.
 	//
 	// `radius`/`bias` seed the two returned uniforms' initial values; both are scale-dependent
 	// (a sane `radius` is a small fraction of the scene's own bounding radius, not a fixed

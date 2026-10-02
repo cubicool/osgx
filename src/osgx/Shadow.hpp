@@ -88,6 +88,18 @@ struct ShadowMap {
 	osg::ref_ptr<osg::Uniform> bias;
 	osg::ref_ptr<osg::Uniform> strength;
 
+	// World-space distance, applied along the receiver's OWN normal to worldPos BEFORE it is
+	// transformed into light space (SHADOW_FACTOR/SHADOW_FACTOR_POINT below) - unlike `bias`
+	// above, this is not a comparison-space value, so the identical formula works for
+	// directional/spot's non-linear projected depth AND point's linear cube distance alike.
+	// Derived from this map's own texel footprint (coverage / resolution) at create()/
+	// createSpot()/createPoint() time - see each one's own comment for its exact formula -
+	// rather than a single literal, since a map covering a tabletop and one covering a terrain
+	// need very different absolute offsets for the same number of texels of safety margin.
+	// `bias` remains available as a raw escape hatch on top of this for content normal offset
+	// alone doesn't fully resolve.
+	osg::ref_ptr<osg::Uniform> normalOffset;
+
 	// Which osgx_lights[] index (osgx::LightSet) this shadow map is cast by/matched against --
 	// DIRECT_LIGHTING_HOOK_SHADOWED multiplies exactly that light's contribution by
 	// osgx_ShadowFactor(); every other light is unaffected. Defaults to 0 (the common "index 0 is
@@ -253,16 +265,20 @@ inline constexpr const char* SHADOW_UNIFORMS = R"GLSL(
 uniform sampler2D osgx_shadowMap;
 uniform mat4 osgx_shadowMatrix;
 uniform float osgx_shadowBias;
+uniform float osgx_shadowNormalOffset;
 uniform float osgx_shadowStrength;
 uniform int osgx_shadowCasterIndex;
 )GLSL";
 
 // PCF 3x3 shadow test, WORLD-space - ported from 08-shadows.py/09-ibl.py's shadowFactor(),
 // generalized from the eye-space `vPosition` those files fed it to a world-space `worldPos`
-// instead (see the file-level comment above for why). Requires SHADOW_UNIFORMS already in scope.
+// instead (see the file-level comment above for why). `N` offsets worldPos along the receiver's
+// own normal by osgx_shadowNormalOffset BEFORE the light-space transform below - see
+// ShadowMap::normalOffset's own comment for why this is preferred over a larger `osgx_shadowBias`
+// alone. Requires SHADOW_UNIFORMS already in scope.
 inline constexpr const char* SHADOW_FACTOR = R"GLSL(
-float osgx_ShadowFactor(vec3 worldPos) {
-	vec4 sc = osgx_shadowMatrix * vec4(worldPos, 1.0);
+float osgx_ShadowFactor(vec3 worldPos, vec3 N) {
+	vec4 sc = osgx_shadowMatrix * vec4(worldPos + N * osgx_shadowNormalOffset, 1.0);
 
 	sc /= sc.w;
 
@@ -309,7 +325,7 @@ const float PI = 3.14159265359;
 
 vec3 osgx_DirectLighting(vec3 N, vec3 V, vec3 worldPos, osgx_Material mat) {
 	vec3 color = vec3(0.0);
-	float shadow = osgx_ShadowFactor(worldPos);
+	float shadow = osgx_ShadowFactor(worldPos, N);
 
 	// Every slot, gated by its `enabled` flag (as DIRECT_LIGHTING_HOOK_DEFAULT in Light.hpp).
 	for(int i = 0; i < OSGX_MAX_LIGHTS; i++) {
@@ -344,6 +360,7 @@ inline constexpr const char* SHADOW_UNIFORMS_POINT = R"GLSL(
 uniform samplerCube osgx_shadowCubeMap;
 uniform vec3 osgx_shadowLightPos;
 uniform float osgx_shadowBias;
+uniform float osgx_shadowNormalOffset;
 uniform float osgx_shadowStrength;
 uniform int osgx_shadowCasterIndex;
 )GLSL";
@@ -357,8 +374,9 @@ uniform int osgx_shadowCasterIndex;
 // translate directly to a cube's non-uniform texel spacing) - a starting point, not a final form.
 // Requires SHADOW_UNIFORMS_POINT already in scope.
 inline constexpr const char* SHADOW_FACTOR_POINT = R"GLSL(
-float osgx_ShadowFactorPoint(vec3 worldPos) {
-	vec3 toFragment = worldPos - osgx_shadowLightPos;
+float osgx_ShadowFactorPoint(vec3 worldPos, vec3 N) {
+	vec3 offsetPos = worldPos + N * osgx_shadowNormalOffset;
+	vec3 toFragment = offsetPos - osgx_shadowLightPos;
 	float dist = length(toFragment);
 	float stored = texture(osgx_shadowCubeMap, toFragment).r;
 
@@ -384,7 +402,7 @@ const float PI = 3.14159265359;
 
 vec3 osgx_DirectLighting(vec3 N, vec3 V, vec3 worldPos, osgx_Material mat) {
 	vec3 color = vec3(0.0);
-	float shadow = osgx_ShadowFactorPoint(worldPos);
+	float shadow = osgx_ShadowFactorPoint(worldPos, N);
 
 	for(int i = 0; i < OSGX_MAX_LIGHTS; i++) {
 		osgx_Light light = osgx_lights[i];

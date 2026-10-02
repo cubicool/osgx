@@ -567,6 +567,12 @@ int main(int argc, char** argv) {
 
 	else shadowMap = osgx::ShadowMap::create(lightDir, sceneBoundCenter, sceneBoundRadius, shadowOptions);
 
+	// Seeds the directional panel's slider from the real auto-derived value create()/createSpot()
+	// just computed, rather than starting it at 0 and surprising the first drag.
+	float shadowNormalOffset = 0.0f;
+
+	if(shadowMap.normalOffset) shadowMap.normalOffset->get(shadowNormalOffset);
+
 	// No depth-only Program set here anymore - ShadowMap::create()/createSpot() now install one
 	// directly on shadowMap.camera's own StateSet (ON|OVERRIDE), which applies automatically to
 	// any subgraph added as its child (createPoint()'s six cameras get their own distance-only
@@ -686,6 +692,7 @@ int main(int argc, char** argv) {
 	}
 
 	mainSS->addUniform(shadowMap.bias.get());
+	mainSS->addUniform(shadowMap.normalOffset.get());
 	mainSS->addUniform(shadowMap.strength.get());
 	mainSS->addUniform(shadowMap.casterIndex.get());
 
@@ -840,6 +847,7 @@ int main(int argc, char** argv) {
 		&lightIntensity,
 		flickerRig,
 		&shadowBias,
+		&shadowNormalOffset,
 		sceneBoundCenter,
 		sceneBoundRadius,
 		shadowOptions
@@ -854,6 +862,12 @@ int main(int argc, char** argv) {
 			shadowMap.bias->set(shadowBias);
 		}
 
+		if(ImGui::SliderFloat(
+			"Normal Offset", &shadowNormalOffset, 0.0f, std::max(0.01f, sceneBoundRadius * 0.1f), "%.5f"
+		)) {
+			shadowMap.normalOffset->set(shadowNormalOffset);
+		}
+
 		if(changed) {
 			if(flickerRig) flickerRig->baseIntensity = lightIntensity;
 
@@ -864,6 +878,10 @@ int main(int argc, char** argv) {
 				lights->setDirectional(0, lightDir, lightColor, lightIntensity);
 
 				shadowMap.reposition(lightDir, sceneBoundCenter, sceneBoundRadius, shadowOptions);
+
+				// reposition() recomputes normalOffset's own derived default (coverage changed),
+				// unlike bias - resync the slider's tracked value so it doesn't go stale.
+				if(shadowMap.normalOffset) shadowMap.normalOffset->get(shadowNormalOffset);
 			}
 
 			else {

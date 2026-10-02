@@ -100,6 +100,13 @@ osg::ref_ptr<osg::Program> makeDistanceOnlyProgram() {
 	return program;
 }
 
+// Starting point for ShadowMap::normalOffset, in texels of this map's own footprint - a world-
+// space margin proportional to what one texel actually covers, not a fixed literal. 1.5 texels
+// is deliberately modest (enough to clear ordinary quantization/facet-slope acne without
+// visible peter-panning on the table-test scene); not yet exposed as its own Options field -
+// see ai/todo-shadow.md's scale-aware bias item for why.
+constexpr float NORMAL_OFFSET_TEXELS = 1.5f;
+
 // Shared by ShadowMap::create()/ShadowMap::reposition() - the only difference
 // between "create" and "reposition" is whether a new camera/texture gets allocated around this
 // math, not the math itself.
@@ -109,7 +116,8 @@ void computeDirectionalShadowMatrices(
 	float sceneBoundRadius,
 	const ShadowMap::Options& options,
 	osg::Matrixd& lightView,
-	osg::Matrixd& lightProj
+	osg::Matrixd& lightProj,
+	double& outExtent
 ) {
 	osg::Vec3 dir = lightDirection;
 
@@ -145,6 +153,7 @@ void computeDirectionalShadowMatrices(
 	// see ShadowMap::Options::extent's own comment for why a perspective frustum here is simply
 	// wrong (not a style choice) for this light type.
 	lightProj = osg::Matrix::ortho(-extent, extent, -extent, extent, near_, far_);
+	outExtent = extent;
 }
 
 // Perspective, from the light's own position along its direction: a spot light's rays diverge
@@ -158,7 +167,8 @@ void computeSpotShadowMatrices(
 	float sceneBoundRadius,
 	const ShadowMap::Options& options,
 	osg::Matrixd& lightView,
-	osg::Matrixd& lightProj
+	osg::Matrixd& lightProj,
+	double& outDistance
 ) {
 	osg::Vec3 dir = direction;
 
@@ -179,6 +189,7 @@ void computeSpotShadowMatrices(
 	);
 
 	lightProj = osg::Matrix::perspective(fovy, 1.0, near_, far_);
+	outDistance = distance;
 }
 
 }
@@ -196,7 +207,8 @@ ShadowMap makeShadowMap(
 	const char* name,
 	const ShadowMap::Options& options,
 	const osg::Matrixd& lightView,
-	const osg::Matrixd& lightProj
+	const osg::Matrixd& lightProj,
+	float texelWorldSize
 ) {
 	ShadowMap result;
 
@@ -233,6 +245,12 @@ ShadowMap makeShadowMap(
 	camera->setReadBuffer(GL_NONE);
 	camera->setViewMatrix(result.lightView);
 	camera->setProjectionMatrix(result.lightProj);
+	// Without this, OSG's CullVisitor silently reclamps near/far from whatever's visible in the
+	// shadow camera's own cull pass (e.g. a large ground-plane caster), diverging from the
+	// lightProj baked into `shadowMatrix` above - a structural mismatch between what's written
+	// into the depth texture and what osgx_ShadowFactor() compares against, which no bias value
+	// can compensate for (unlike CaptureCubeMap's point-light path, which already sets this).
+	camera->setComputeNearFarMode(osg::Camera::DO_NOT_COMPUTE_NEAR_FAR);
 	// ON|OVERRIDE, no PROTECTED: wins over any Program a child subgraph sets on its OWN StateSet
 	// with just ON (the convention every osgx::PBRScene/pyosg-lighting Program uses) --
 	// see this function's own header comment for the full rationale.
@@ -244,6 +262,9 @@ ShadowMap makeShadowMap(
 
 	result.shadowMatrix = new osg::Uniform("osgx_shadowMatrix", osg::Matrixf::identity());
 	result.bias = new osg::Uniform("osgx_shadowBias", options.bias);
+	result.normalOffset = new osg::Uniform(
+		"osgx_shadowNormalOffset", texelWorldSize * NORMAL_OFFSET_TEXELS
+	);
 	result.strength = new osg::Uniform("osgx_shadowStrength", options.strength);
 	result.casterIndex = new osg::Uniform("osgx_shadowCasterIndex", 0);
 
@@ -261,12 +282,17 @@ ShadowMap ShadowMap::create(
 	const ShadowMap::Options& options
 ) {
 	osg::Matrixd lightView, lightProj;
+	double extent = 0.0;
 
 	computeDirectionalShadowMatrices(
-		lightDirection, sceneBoundCenter, sceneBoundRadius, options, lightView, lightProj
+		lightDirection, sceneBoundCenter, sceneBoundRadius, options, lightView, lightProj, extent
 	);
 
-	return makeShadowMap("osgx_shadow_DirectionalShadowMap", options, lightView, lightProj);
+	const float texelWorldSize = float(extent * 2.0 / double(options.size));
+
+	return makeShadowMap(
+		"osgx_shadow_DirectionalShadowMap", options, lightView, lightProj, texelWorldSize
+	);
 }
 
 ShadowMap ShadowMap::create(
@@ -286,6 +312,7 @@ ShadowMap ShadowMap::createSpot(
 	const ShadowMap::Options& options
 ) {
 	osg::Matrixd lightView, lightProj;
+	double distance = 0.0;
 
 	computeSpotShadowMatrices(
 		position,
@@ -295,10 +322,21 @@ ShadowMap ShadowMap::createSpot(
 		sceneBoundRadius,
 		options,
 		lightView,
-		lightProj
+		lightProj,
+		distance
 	);
 
-	return makeShadowMap("osgx_shadow_SpotShadowMap", options, lightView, lightProj);
+	// Perspective, so texel world size grows with distance from the light - unlike the
+	// directional ortho case, there's no single constant value; this approximates it at the
+	// scene bound itself (not the near/far-padded frustum edge) using the cone's own half-angle,
+	// consistent with how computeSpotShadowMatrices() sizes the frustum around that same distance.
+	const float texelWorldSize = float(
+		2.0 * distance * std::tan(double(outerConeAngle)) / double(options.size)
+	);
+
+	return makeShadowMap(
+		"osgx_shadow_SpotShadowMap", options, lightView, lightProj, texelWorldSize
+	);
 }
 
 ShadowMap ShadowMap::createSpot(
@@ -328,12 +366,18 @@ void ShadowMap::reposition(
 ) {
 	if(!camera) return;
 
+	double extent = 0.0;
+
 	computeDirectionalShadowMatrices(
-		lightDirection, sceneBoundCenter, sceneBoundRadius, options, lightView, lightProj
+		lightDirection, sceneBoundCenter, sceneBoundRadius, options, lightView, lightProj, extent
 	);
 
 	camera->setViewMatrix(lightView);
 	camera->setProjectionMatrix(lightProj);
+
+	if(normalOffset) {
+		normalOffset->set(float(extent * 2.0 / double(options.size)) * NORMAL_OFFSET_TEXELS);
+	}
 
 	updateMatrix();
 }
@@ -356,6 +400,8 @@ void ShadowMap::repositionSpot(
 ) {
 	if(!camera) return;
 
+	double distance = 0.0;
+
 	computeSpotShadowMatrices(
 		position,
 		direction,
@@ -364,11 +410,19 @@ void ShadowMap::repositionSpot(
 		sceneBoundRadius,
 		options,
 		lightView,
-		lightProj
+		lightProj,
+		distance
 	);
 
 	camera->setViewMatrix(lightView);
 	camera->setProjectionMatrix(lightProj);
+
+	if(normalOffset) {
+		normalOffset->set(
+			float(2.0 * distance * std::tan(double(outerConeAngle)) / double(options.size))
+				* NORMAL_OFFSET_TEXELS
+		);
+	}
 
 	updateMatrix();
 }
@@ -420,6 +474,13 @@ ShadowMap ShadowMap::createPoint(
 	);
 
 	result.bias = new osg::Uniform("osgx_shadowBias", options.bias);
+	// Cube face FOV is fixed at 90 degrees (tan(45deg) == 1), so texel world size reduces to
+	// 2*distance/cubeSize - no cone-angle term needed, unlike createSpot()'s equivalent.
+	result.normalOffset = new osg::Uniform(
+		"osgx_shadowNormalOffset",
+		float(2.0 * (double((sceneBoundCenter - position).length())) / double(cubeOptions.cubeSize))
+			* NORMAL_OFFSET_TEXELS
+	);
 	result.strength = new osg::Uniform("osgx_shadowStrength", options.strength);
 	result.casterIndex = new osg::Uniform("osgx_shadowCasterIndex", 0);
 	result.lightPosition = new osg::Uniform("osgx_shadowLightPos", position);
@@ -460,6 +521,13 @@ void ShadowMap::repositionPoint(
 	}
 
 	if(lightPosition) lightPosition->set(position);
+
+	if(normalOffset && cubeCapture.texture.valid()) {
+		const double distance = (sceneBoundCenter - position).length();
+		const double cubeSize = std::max(1, cubeCapture.texture->getTextureWidth());
+
+		normalOffset->set(float(2.0 * distance / cubeSize) * NORMAL_OFFSET_TEXELS);
+	}
 }
 
 void ShadowMap::repositionPoint(

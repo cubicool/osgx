@@ -34,6 +34,7 @@
 #include "osgx/ImGui.hpp"
 #include "osgx/Library.hpp"
 #include "osgx/PBR.hpp"
+#include "osgx/Projection.hpp"
 #include "osgx/Shadow.hpp"
 #include "osgx/gltf/Environment.hpp"
 #include "osgx/gltf/SimplePlayer.hpp"
@@ -102,31 +103,18 @@ std::filesystem::path findEnvironmentManifest(std::string_view filename) {
 // code after viewer.frame() returns (the previous, buggy version of this example) hands the
 // lighting pass a one-frame-stale matrix instead, which showed up live as a shadow/position
 // artifact that visibly worsened while the camera was actively orbiting/zooming.
-// `ssaoProjection` is optional (nullptr when SSAO wasn't built) - refreshed here alongside the
-// lighting pass's own view-matrix uniforms for the same reason: SSAO's forward re-projection
-// needs the CURRENT frame's projection matrix, not a stale one from application code running
-// after viewer.frame() returns. See osgx::SSAO::create()'s own doc comment (GBuffer.hpp).
 class UpdateLightingPassCallback: public osg::Camera::DrawCallback {
 public:
-	UpdateLightingPassCallback(
-		osgx::PBRLightingPass* scene,
-		osg::Camera* mainCamera,
-		osg::Uniform* ssaoProjection=nullptr
-	):
-		_scene(scene), _mainCamera(mainCamera), _ssaoProjection(ssaoProjection) {}
+	UpdateLightingPassCallback(osgx::PBRLightingPass* scene, osg::Camera* mainCamera):
+		_scene(scene), _mainCamera(mainCamera) {}
 
 	void operator()(osg::RenderInfo&) const override {
 		_scene->update(_mainCamera.get());
-
-		if(_ssaoProjection.valid()) {
-			_ssaoProjection->set(osg::Matrixf(_mainCamera->getProjectionMatrix()));
-		}
 	}
 
 private:
 	osgx::PBRLightingPass* _scene;
 	osg::observer_ptr<osg::Camera> _mainCamera;
-	osg::observer_ptr<osg::Uniform> _ssaoProjection;
 };
 
 // Debug blit: samples any one texture into a fullscreen quad, with a small per-channel remap
@@ -506,6 +494,9 @@ int main(int argc, char** argv) {
 	const float boundRadius = bounds.valid() ? bounds.radius() : 1.0f;
 	// Moderate ~45 degree angle - offset enough to cast a clearly visible shadow without the
 	// extreme grazing angles that stress-test the shadow frustum's tight, model-sized coverage.
+	// (A straight-overhead default briefly lived here while diagnosing low-poly faceted self-
+	// acne against osgx::ShadowMap::normalOffset - see ai/todo-shadow.md's now-resolved
+	// scale-aware bias item; this reverts to the original angled default now that it's shipped.)
 	// Not const: the ImGui "Directional Light" section below drags this live (see
 	// ShadowMap::reposition() further down).
 	osg::Vec3 lightDir = osg::Vec3(0.6f, 0.4f, -0.6f);
@@ -535,20 +526,31 @@ int main(int argc, char** argv) {
 
 	// SSAO: reads gbuffer's normal/position directly (both already exist - the geometry pass
 	// wrote them, no new attachment needed), so it's built here, after the geometry pass and
-	// before the lighting pass whose aoTexture seam consumes its output below. `ssaoProjection`
-	// is a separate uniform from the lighting pass's own view-matrix ones - SSAO needs a forward
-	// PROJECTION matrix, refreshed the same way and for the same reason (see
-	// UpdateLightingPassCallback's own comment). Radius scaled off the model's own bound rather
-	// than a fixed constant - same "derive from the model's own bounds" precedent
-	// osgx-gbuffer-comic.cpp's hatchFrequency uses; a fixed radius tuned for one model looks wrong
-	// at a very different scale.
-	auto ssaoProjection = osgx::make_ref<osg::Uniform>(
-		"projectionMatrix", osg::Matrixf::identity()
-	);
+	// before the lighting pass whose aoTexture seam consumes its output below.
+	//
+	// SSAO's forward re-projection needs the EXACT projection gbuffer.gbuffer.camera actually
+	// drew gPosition/gNormal with - not mainCamera->getProjectionMatrix() (OSG's CullVisitor
+	// clamps each camera's near/far privately during cull and never writes it back to the Camera
+	// object; see osgx::DepthProjectionCallback's own comment in Projection.hpp). Installed as
+	// the geometry camera's own postDrawCallback, so it captures the real osg::State matrix right
+	// after that camera draws, well before ssao.rawCamera consumes it below. Named "projectionMatrix"
+	// to match SSAO_FRAGMENT_SHADER_SRC's own uniform declaration (GBuffer.cpp).
+	auto gbufferProjection = osgx::make_ref<osgx::DepthProjectionCallback>("projectionMatrix");
+
+	gbuffer.gbuffer.camera->setPostDrawCallback(gbufferProjection.get());
+
+	// Radius scaled off the model's own bound rather than a fixed constant - same "derive from
+	// the model's own bounds" precedent osgx-gbuffer-comic.cpp's hatchFrequency uses; a fixed
+	// radius tuned for one model looks wrong at a very different scale.
 	const float ssaoRadius = std::max(0.05f, boundRadius * 0.15f);
 
 	auto ssao = osgx::SSAO::create(
-		gbuffer.normalTexture, gbuffer.positionTexture, ssaoProjection.get(), WIDTH, HEIGHT, ssaoRadius
+		gbuffer.normalTexture,
+		gbuffer.positionTexture,
+		gbufferProjection->getProjection(),
+		WIDTH,
+		HEIGHT,
+		ssaoRadius
 	);
 
 	if(!ssao.valid()) {
@@ -607,7 +609,7 @@ int main(int argc, char** argv) {
 	// for why it has to be the first PRE_RENDER camera in the scene graph, not a post-frame()
 	// call in the loop below (the previous, buggy version of this example).
 	shadowMap.camera->setPreDrawCallback(
-		new UpdateLightingPassCallback(&lighting, viewer.getCamera(), ssaoProjection.get())
+		new UpdateLightingPassCallback(&lighting, viewer.getCamera())
 	);
 
 	// Add order matters: all four of these are PRE_RENDER at the same default order number (0),
@@ -707,20 +709,31 @@ int main(int argc, char** argv) {
 	gui->addSection("Shadows", [
 		&shadowMap, &lightDir, boundCenter, boundRadius, &shadowOptions
 	](osg::RenderInfo&) {
-		float bias = 0.0f, strength = 0.0f;
+		float bias = 0.0f, normalOffset = 0.0f, strength = 0.0f;
 
 		shadowMap.bias->get(bias);
+		shadowMap.normalOffset->get(normalOffset);
 		shadowMap.strength->get(strength);
 
 		bool changed = false;
 
 		changed |= ImGui::SliderFloat("Raw Bias (debug)", &bias, 0.0f, 0.05f, "%.6f");
+		changed |= ImGui::SliderFloat(
+			"Normal Offset", &normalOffset, 0.0f, std::max(0.01f, boundRadius * 0.1f), "%.6f"
+		);
 		changed |= ImGui::SliderFloat("Strength", &strength, 0.0f, 1.0f);
 
 		if(changed) {
 			shadowMap.bias->set(bias);
+			shadowMap.normalOffset->set(normalOffset);
 			shadowMap.strength->set(strength);
 		}
+
+		// Auto-derived from map coverage/resolution at create()/reposition() time - dragging
+		// Direction/Frustum Extent/Frustum Margin below recomputes and OVERWRITES a manual edit
+		// above, same as shadowMatrix itself. Expected for this diagnostic panel; a real app would
+		// pick one policy (always-auto or an explicit override) rather than both at once.
+		ImGui::TextDisabled("Normal Offset resets to its derived default on reposition.");
 
 		ImGui::Separator();
 		ImGui::Text("Map: %d x %d", shadowOptions.size, shadowOptions.size);

@@ -463,6 +463,7 @@ PBRLightingPass PBRLightingPass::create(
 		bindInput("osgx::shadowMap", options.shadowMap->depthTexture, "osgx_shadowMap");
 		ss->addUniform(options.shadowMap->shadowMatrix);
 		ss->addUniform(options.shadowMap->bias);
+		ss->addUniform(options.shadowMap->normalOffset);
 		ss->addUniform(options.shadowMap->strength);
 		ss->addUniform(options.shadowMap->casterIndex);
 	}

@@ -254,6 +254,11 @@ GBuffer GBuffer::create(
 
 	camera->setClearMask(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 	camera->setClearColor(osg::Vec4(0.0, 0.0, 0.0, 0.0));
+	// Without this, OSG's CullVisitor independently reclamps this camera's own near/far during
+	// its own cull pass (same mechanism as any nested camera - see ShadowMap's identical fix in
+	// Shadow.cpp) - a large receiver plane in view pushes the far plane out and crushes the
+	// depth texture's usable precision for everything closer to the camera on top of it.
+	camera->setComputeNearFarMode(osg::Camera::DO_NOT_COMPUTE_NEAR_FAR);
 
 	// Dynamic attachment count (caller-chosen colorFormats span) - AttachmentList's initializer-
 	// list shape needs a compile-time-fixed count, so this stays a loop over RTT's inherited

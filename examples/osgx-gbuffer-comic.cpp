@@ -115,6 +115,7 @@
 #include "osgx/gltf/Environment.hpp"
 #include "osgx/gltf/SimplePlayer.hpp"
 #include "osgx/PBRDeferred.hpp"
+#include "osgx/Projection.hpp"
 #include "osgx/Skinning.hpp"
 #include "osgx/ImGui.hpp"
 #include "osgx/Library.hpp"
@@ -158,29 +159,18 @@ std::filesystem::path findModelFile(std::string_view filename) {
 // Refreshes the lighting pass's view-matrix uniforms every frame - same requirement as
 // osgx-gbuffer.cpp's own UpdateLightingPassCallback, just as a lambda-driven NodeCallback here
 // since there's no shadow camera in this scratchpad to hang it off of as a preDrawCallback.
-// `ssaoProjection` mirrors osgx-gbuffer.cpp's own addition - see osgx::SSAO::create()'s doc
-// comment (GBuffer.hpp) for why SSAO needs its own freshly-updated forward-projection uniform.
 class UpdateLightingPassCallback: public osg::Camera::DrawCallback {
 public:
-	UpdateLightingPassCallback(
-		osgx::PBRLightingPass* scene,
-		osg::Camera* mainCamera,
-		osg::Uniform* ssaoProjection=nullptr
-	):
-		_scene(scene), _mainCamera(mainCamera), _ssaoProjection(ssaoProjection) {}
+	UpdateLightingPassCallback(osgx::PBRLightingPass* scene, osg::Camera* mainCamera):
+		_scene(scene), _mainCamera(mainCamera) {}
 
 	void operator()(osg::RenderInfo&) const override {
 		_scene->update(_mainCamera.get());
-
-		if(_ssaoProjection.valid()) {
-			_ssaoProjection->set(osg::Matrixf(_mainCamera->getProjectionMatrix()));
-		}
 	}
 
 private:
 	osgx::PBRLightingPass* _scene;
 	osg::observer_ptr<osg::Camera> _mainCamera;
-	osg::observer_ptr<osg::Uniform> _ssaoProjection;
 };
 
 // The osgx::Hook::DeferredLighting override itself. Requires nothing but the G-buffer contract --
@@ -682,16 +672,31 @@ int main(int argc, char** argv) {
 	// afterward" workaround an SSAO-after-the-lighting-pass ordering would need (see
 	// PBRLightingPass::Options::aoTexture's own comment, PBRDeferred.hpp, for how that seam expects to
 	// be used). Reads gbuffer's normal/position directly - both already exist once the geometry
-	// pass above is built. Radius scaled off the model's own bound, same "derive from the model's
-	// own bounds" precedent hatchFrequencyFor() above already uses - a fixed radius tuned for one
-	// model looks wrong at a very different scale.
-	auto ssaoProjection = osgx::make_ref<osg::Uniform>(
-		"projectionMatrix", osg::Matrixf::identity()
-	);
+	// pass above is built.
+	//
+	// SSAO's forward re-projection needs the EXACT projection gbuffer.gbuffer.camera actually
+	// drew gPosition/gNormal with - not mainCamera->getProjectionMatrix() (OSG's CullVisitor
+	// clamps each camera's near/far privately during cull and never writes it back to the Camera
+	// object; see osgx::DepthProjectionCallback's own comment in Projection.hpp). Installed as
+	// the geometry camera's own postDrawCallback, so it captures the real osg::State matrix right
+	// after that camera draws, well before ssao.rawCamera consumes it below. Named "projectionMatrix"
+	// to match SSAO_FRAGMENT_SHADER_SRC's own uniform declaration (GBuffer.cpp).
+	auto gbufferProjection = osgx::make_ref<osgx::DepthProjectionCallback>("projectionMatrix");
+
+	gbuffer.gbuffer.camera->setPostDrawCallback(gbufferProjection.get());
+
+	// Radius scaled off the model's own bound, same "derive from the model's own bounds"
+	// precedent hatchFrequencyFor() above already uses - a fixed radius tuned for one model
+	// looks wrong at a very different scale.
 	const float ssaoRadius = std::max(0.05f, boundRadius * 0.15f);
 
 	auto ssao = osgx::SSAO::create(
-		gbuffer.normalTexture, gbuffer.positionTexture, ssaoProjection.get(), WIDTH, HEIGHT, ssaoRadius
+		gbuffer.normalTexture,
+		gbuffer.positionTexture,
+		gbufferProjection->getProjection(),
+		WIDTH,
+		HEIGHT,
+		ssaoRadius
 	);
 
 	if(!ssao.valid()) {
@@ -785,7 +790,7 @@ int main(int argc, char** argv) {
 	// PBRLightingPass::create()'s) for why the update() call has to land here, not on
 	// lighting.node's own preDrawCallback or as a post-frame() application call.
 	gbuffer.gbuffer.camera->setPreDrawCallback(
-		new UpdateLightingPassCallback(&lighting, viewer.getCamera(), ssaoProjection.get())
+		new UpdateLightingPassCallback(&lighting, viewer.getCamera())
 	);
 
 	// Add order matters: gbuffer.gbuffer.camera, ssao.rawCamera, and ssao.blurCamera are all
