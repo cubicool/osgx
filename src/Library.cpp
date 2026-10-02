@@ -18,6 +18,7 @@ OSGX_DISABLE_WARNINGS
 OSGX_ENABLE_WARNINGS
 
 #include <algorithm>
+#include <string>
 
 namespace osgx {
 
@@ -109,6 +110,10 @@ unsigned int Bindings::get(std::string_view name) {
 	return index;
 }
 
+unsigned int Bindings::unused() {
+	return get("osgx::unused");
+}
+
 LibraryOptions& LibraryOptions::reserveBelow(Bindings::Type type, unsigned int count) {
 	auto& indices = reserve[type];
 
@@ -179,6 +184,7 @@ Library::Library(osg::ArgumentParser* arguments, const LibraryOptions& options) 
 		slots.declare(Bindings::Type::UBO, "osgx::light");
 		slots.declare(Bindings::Type::UBO, "osgx::material");
 		slots.declare(Bindings::Type::UBO, "osgx::sdf");
+		slots.declare(Bindings::Type::UBO, "osgx::shadow");
 
 		slots.declare(Bindings::Type::SSBO, "osgx::joints");
 		slots.declare(Bindings::Type::SSBO, "osgx::pixelText");
@@ -193,7 +199,27 @@ Library::Library(osg::ArgumentParser* arguments, const LibraryOptions& options) 
 		slots.declare(Bindings::Type::TextureUnit, "osgx::environment.brdfLUT", 6);
 		slots.declare(Bindings::Type::TextureUnit, "osgx::environment.diffuse", 7);
 		slots.declare(Bindings::Type::TextureUnit, "osgx::sdf.texture", 10);
-		slots.declare(Bindings::Type::TextureUnit, "osgx::shadowMap", 9);
+
+		// No preferred index for osgx::shadowMap2D#N/osgx::shadowMapCube#N (osgx::ShadowSet,
+		// Shadow.cpp) - this naming scheme is new as of the same change that removed the old
+		// single-map "osgx::shadowMap" slot (which WAS pinned to 9, "the unit this texture used
+		// before it was a slot" per this block's own comment), and has no such legacy fixed-number
+		// history to preserve. The allocator assigns each from whatever is next free, same as any
+		// other undeclared slot. Still must be declared up front - Bindings::get() throws for any
+		// name nothing declared, it does not auto-create slots on first use.
+		for(int i = 0; i < MAX_SHADOWED_2D; i++) {
+			slots.declare(Bindings::Type::TextureUnit, "osgx::shadowMap2D#" + std::to_string(i));
+		}
+
+		for(int i = 0; i < MAX_SHADOWED_CUBE; i++) {
+			slots.declare(Bindings::Type::TextureUnit, "osgx::shadowMapCube#" + std::to_string(i));
+		}
+
+		// Bindings::unused()'s single shared reservation - general-purpose, not shadow-specific
+		// (though osgx::ShadowSet is its first real caller); see unused()'s own doc comment
+		// (Library.hpp) for what it's for.
+		slots.declare(Bindings::Type::TextureUnit, "osgx::unused");
+
 		slots.declare(Bindings::Type::TextureUnit, "osgx::gbuffer.albedo", 0);
 		slots.declare(Bindings::Type::TextureUnit, "osgx::gbuffer.normal", 1);
 		slots.declare(Bindings::Type::TextureUnit, "osgx::gbuffer.material", 2);

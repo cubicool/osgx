@@ -538,52 +538,81 @@ stateSet->setAttributeAndModes(env);
 
 ## `osgx/Shadow.hpp`
 
-Directional shadow mapping, shared by any `LightSet`-lit scene (nothing here is glTF/PBR-specific;
-`PBRScene::Options`/`PBRLightingPass::Options` take it as an optional input). Lives flat in
-`osgx::` — the `"osgx::shadow"` catalog tag is a conventional shader-lib
-key only, same split as `PBR.hpp`/`IBL.hpp` above.
+Shadow mapping for any `LightSet`-lit scene (nothing here is glTF/PBR-specific;
+`PBRScene::Options`/`PBRLightingPass::Options` take an `osgx::ShadowSet` as an optional input).
+Lives flat in `osgx::` — the `"osgx::shadow"` catalog tag is a conventional shader-lib key only,
+same split as `PBR.hpp`/`IBL.hpp` above.
 
-Only ONE light — the key/directional light — is ever shadowed; point/spot-light shadows need a
-cubemap and meaningfully different frustum math, and remain a separate, unimplemented feature (see
-TODO.md's Shadow section).
+Directional, spot, and point lights can all cast shadows, and any mix of them can be shadowed
+**simultaneously** (`osgx::ShadowSet`, below) — up to `ShadowSet::MAX_SHADOWED_2D` directional/spot
+maps and `MAX_SHADOWED_CUBE` point maps at once (both `2` by default).
 
+- `ShadowMap::Coverage` — `center`/`radius` (the CASTER bound: what must be rendered into the depth
+  map) and optional `receiverCenter`/`receiverRadius` (the RECEIVER bound: what must be able to
+  *sample* the map correctly, e.g. a floor extending past the casting model — `0` radius, the
+  default, means receivers never extend past the caster bound). `bound()` returns the merged
+  `osg::BoundingSphere` every fitting call actually sizes its frustum/far-plane against.
 - `ShadowMap::Options` — `size` (shadow-map resolution), `extent` (half-width of the orthographic
-  frustum's box; `0` derives it from `sceneBoundRadius * margin`), `margin` (scales both the
-  derived `extent` and near/far — keeps near:far bounded to a healthy ratio regardless of scene
+  frustum's box; `0` derives it from `coverage.bound().radius() * margin`), `margin` (scales both
+  the derived `extent` and near/far — keeps near:far bounded to a healthy ratio regardless of scene
   scale, avoiding depth-precision collapse on a large scene), `bias`, `strength` (`0` = no effect,
   `1` = fully black).
-- `ShadowMap` — owns the `PRE_RENDER` depth-only `camera` (add it to the scene graph) plus the
-  uniforms `DIRECT_LIGHTING_HOOK_SHADOWED` reads every frame (`shadowMatrix`, `bias`, `strength`,
-  `casterIndex` — which `LightSet` index this shadow is cast by/matched against, default `0`).
-  - `ShadowMap::create(lightDirection, sceneBoundCenter, sceneBoundRadius, options={})` — builds an
-    **orthographic** depth-only camera (the physically-correct frustum shape for a directional,
-    parallel-ray light) with its own minimal depth-only `Program` (`ON|OVERRIDE`) — a caster's own,
-    potentially expensive, main-render `Program` never runs during the shadow pass. Not glTF-alpha-mask
-    aware by design; a caller needing alpha-cutout shadows overrides the Program on that geometry's
-    own StateSet.
+- `ShadowMap` — owns the `PRE_RENDER` depth-only `camera` (directional/spot) or the
+  `CaptureCubeMap`-backed `cubeCapture`/`casters` (point), plus `shadowMatrix`/`bias`/
+  `normalOffset`/`strength`/`casterIndex` (which `LightSet` index this map shadows, default `0`) —
+  read by `ShadowSet::add()`/`sync()`, not attached to a StateSet by `ShadowMap` itself.
+  - `ShadowMap::create(lightDirection, coverage, options={})` — builds an **orthographic**
+    depth-only camera (the physically-correct frustum shape for a directional, parallel-ray light)
+    with its own minimal depth-only `Program` (`ON|OVERRIDE`) — a caster's own, potentially
+    expensive, main-render `Program` never runs during the shadow pass. Not glTF-alpha-mask aware
+    by design; a caller needing alpha-cutout shadows overrides the Program on that geometry's own
+    StateSet.
   - `updateMatrix()` — recomputes `shadowMatrix` from `lightView`/`lightProj` after mutating either
     directly.
-  - `reposition(lightDirection, sceneBoundCenter, sceneBoundRadius, options={})` — repositions an
-    *existing* `ShadowMap` in place (no new camera/FBO/depth-texture allocation), cheap enough to
-    call every frame for an interactively-moving light (e.g. an ImGui-dragged direction). `create()`
-    remains the right call for a light fixed at scene-build time.
-  - `ShadowMap::createSpot(position, direction, outerConeAngle, sceneBoundCenter, sceneBoundRadius,
-    options={})` — a spot light's map: a **perspective** depth-only camera at the light's position,
-    looking along `direction` (ray travel direction and half-angle in radians, as
-    `LightSet::setSpot()`), covering the outer cone. Near/far bracket the scene bound as seen from
-    the light. Same camera/texture/uniforms/hook as `create()`; perspective depth is non-linear, so
-    a spot map usually wants a smaller `bias` (`osgx-shadow --type spot` uses `0.0005`).
-    `repositionSpot(...)` (same arguments) is its `reposition()`.
-- `DIRECT_LIGHTING_HOOK_SHADOWED` — a drop-in replacement for `Light.hpp`'s
-  `DIRECT_LIGHTING_HOOK_DEFAULT`: identical per-light dispatch loop, except the light at
-  `osgx_shadowCasterIndex` has its contribution multiplied by `osgx_ShadowFactor()` (world-space PCF
-  3×3 shadow test). Both define `osgx_DirectLighting()` with the same signature, so swapping hooks
-  is the only shader change needed — see `examples/osgx-shadow.cpp` for the full A/B wiring
-  (press `s` to toggle).
+  - `reposition(lightDirection, coverage, options={})` — repositions an *existing* `ShadowMap` in
+    place (no new camera/FBO/depth-texture allocation), cheap enough to call every frame for an
+    interactively-moving light (e.g. an ImGui-dragged direction). `create()` remains the right call
+    for a light fixed at scene-build time. Call `ShadowSet::sync()` afterward if this map belongs
+    to one.
+  - `ShadowMap::createSpot(position, direction, outerConeAngle, coverage, options={})` — a spot
+    light's map: a **perspective** depth-only camera at the light's position, looking along
+    `direction` (ray travel direction and half-angle in radians, as `LightSet::setSpot()`),
+    covering the outer cone. Near/far bracket the scene bound as seen from the light. Same
+    camera/texture/uniforms as `create()`; perspective depth is non-linear, so a spot map usually
+    wants a smaller `bias` (`osgx-shadow --type spot` uses `0.0005`). `repositionSpot(...)` (same
+    arguments) is its `reposition()`.
+  - `ShadowMap::createPoint(position, coverage, cubeSize=256, options={})` — a point light's map:
+    an omnidirectional distance cube map (`CaptureCubeMap`, six real-time perspective views) since
+    a point light needs visibility in every direction. `repositionPoint(...)` is its
+    `reposition()`.
+- `ShadowSet` — aggregates however many `ShadowMap`s a scene has into the combined uniform arrays
+  and `Hook::ShadowFactor` override `shader` that `PBRScene::Options::shadowSet`/
+  `PBRLightingPass::Options::shadowSet` read:
+  - `ShadowSet::create()` — builds an empty set ready for `add()`.
+  - `add(map)` — registers `map` in the next free slot of whichever array matches its kind (2D for
+    directional/spot, cube for point, auto-detected), writing its current uniform values
+    immediately. Throws if that kind's array is already full or `map` is invalid.
+  - `sync()` — re-reads every already-`add()`ed slot's current uniform values from its own
+    `ShadowMap` — call after `reposition()`/`repositionSpot()`/`repositionPoint()` or any direct
+    `bias`/`normalOffset`/`strength` edit on a member map.
+  - `apply(stateSet)` — adds every uniform to `stateSet` and binds each active texture to its own
+    `osgx::Library`-allocated texture unit. Call once after every `add()` this set will ever
+    receive.
+- `Hook::ShadowFactor` (`Shader.hpp`) — the slot `osgx_ShadowFactorForLight(int lightIndex, vec3
+  worldPos, vec3 N)` fills. `Light.hpp`'s `DIRECT_LIGHTING_HOOK_DEFAULT` always calls it once per
+  light in its loop — there is only one `osgx_DirectLighting()` implementation now, shadowed scenes
+  and unshadowed scenes use the identical lighting loop. The default (no `ShadowSet` given) is a
+  trivial `return 1.0` — zero shadow-map uniforms or samplers. A caller writing a fully custom
+  `Hook::DirectLighting` can still call `osgx_ShadowFactorForLight()` directly (`#pragma
+  osgx::shadow SHADOW_FACTOR_DECL`) — it's an independently linked contract, not bundled inside one
+  all-or-nothing lighting hook.
 
-See `examples/osgx-shadow.cpp` (standalone `LightSet` + `ShadowMap` proof, live-draggable light
-direction) and `examples/osgx-gbuffer.cpp` (the same shadow map plugged into the deferred pipeline
-below).
+See `examples/osgx-shadow.cpp` (standalone `LightSet` + `ShadowMap`/`ShadowSet` proof, live-
+draggable light, `--type {directional,spot,point}`) and `examples/osgx-gbuffer.cpp` (the same
+shadow map plugged into the deferred pipeline below). Gizmos: `osgx::FrustumGizmo` (directional/
+spot — a live wireframe of the shadow camera's actual frustum) and `osgx::CaptureCubeGizmo` (point
+— a wireframe cube at the capture's far-plane range), both in `Gizmos.hpp`, composed at the
+application level alongside `LightGizmos`.
 
 ## `osgx/GBuffer.hpp`
 
@@ -640,10 +669,12 @@ shading each material by whichever light sources are present.
   - `environment` — an `osgx::Environment` (image-based light), attached to the node. Without one
     the environment term is zero and surfaces are lit by the `osgx::LightSet` direct lights
     inherited from the scene graph and their own emissive.
-  - `shadowMap` — shadows the key light (`DIRECT_LIGHTING_HOOK_SHADOWED`; depth texture at the
-    `osgx::shadowMap` slot).
-  - `hooks` — substitutes `Hook::Skinning` (`osgx_ApplySkin()`, e.g. `SKINNING_HOOK_LINEAR_BLEND`)
-    and `Hook::Tonemap` (`osgx_Tonemap()`).
+  - `shadowSet` — an `osgx::ShadowSet` shadowing any mix of this scene's lights (see
+    [Shadow.hpp](#osgxshadowhpp) below).
+  - `hooks` — substitutes `Hook::Skinning` (`osgx_ApplySkin()`, e.g. `SKINNING_HOOK_LINEAR_BLEND`),
+    `Hook::Tonemap` (`osgx_Tonemap()`), `Hook::DirectLighting` (`osgx_DirectLighting()`), and
+    `Hook::ShadowFactor` (`osgx_ShadowFactorForLight()` — `shadowSet` above is the common-case way
+    to set this).
   - `diagnostics` — adds the `debugMode`/`disableNormalMap`/`disableRoughnessMap`/
     `disableSpecularAA` uniforms returned in `PBRScene`.
 - Imported StateSet defines: `OSGX_PBR_ENVIRONMENT` (set when an environment is given),
@@ -673,9 +704,11 @@ textures, then a fullscreen lighting pass running the same `osgx_EvaluateEnviron
     shader's environment term is zero.
   - `tonemap` — `false` leaves the output linear HDR (no curve, no gamma) for further passes.
   - `hooks` — substitutes `Hook::Tonemap` (the `osgx_Tonemap()` definition),
-    `Hook::DirectLighting` (the `osgx_DirectLighting()` definition) or `Hook::DeferredLighting`
-    (the whole fragment `main()`).
-  - `shadowMap` — shadows the key light (`DIRECT_LIGHTING_HOOK_SHADOWED`).
+    `Hook::DirectLighting` (the `osgx_DirectLighting()` definition), `Hook::ShadowFactor` (the
+    `osgx_ShadowFactorForLight()` definition — `shadowSet` below is the common-case way to set
+    this), or `Hook::DeferredLighting` (the whole fragment `main()`).
+  - `shadowSet` — an `osgx::ShadowSet` shadowing any mix of this scene's lights (see
+    [Shadow.hpp](#osgxshadowhpp) below).
   - `aoTexture` — multiplied into the ambient term (e.g. `SSAO`'s output).
   - `diagnostics`.
 - **Call `PBRLightingPass::update(mainCamera)` from a `preDrawCallback` on the first `PRE_RENDER`

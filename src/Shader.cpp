@@ -108,6 +108,7 @@ std::string hookName(Hook hook) {
 		case Hook::Skinning: return "skinningHook";
 		case Hook::DeferredLighting: return "deferredLightingHook";
 		case Hook::DirectLighting: return "directLightingHook";
+		case Hook::ShadowFactor: return "shadowFactorHook";
 	}
 
 	return "hook";

@@ -124,7 +124,6 @@ OSGX_DISABLE_WARNINGS
 
 #include <osg/ArgumentParser>
 #include <osg/ComputeBoundsVisitor>
-#include <osg/DisplaySettings>
 #include <osg/Program>
 #include <osg/Shader>
 #include <osgDB/ReadFile>
@@ -551,10 +550,7 @@ int main(int argc, char** argv) {
 	auto lib = osgx::initialize(args);
 
 	args.getApplicationUsage()->setCommandLineUsage(
-		std::string(args.getApplicationName()) + " <model.gltf> [--samples <count>] [hatch options]"
-	);
-	args.getApplicationUsage()->addCommandLineOption(
-		"--samples <count>", "Request this many default-framebuffer MSAA samples (default: 4)"
+		std::string(args.getApplicationName()) + " <model.gltf> [hatch options]"
 	);
 	args.getApplicationUsage()->addCommandLineOption(
 		"--animation", "Play the model's animation (default: hold the first frame)"
@@ -580,7 +576,6 @@ int main(int argc, char** argv) {
 		"with real-time SSAO), 0..1 (default: 0.5). 0 leaves hatching exactly as shading-band "
 		"density alone produces it; 1 fully masks by AO."
 	);
-	int samples = 4;
 	bool hatchEnabled = true;
 	float hatchDensity = 6.0f;
 	float hatchThickness = 0.18f;
@@ -588,19 +583,17 @@ int main(int argc, char** argv) {
 	float aoMask = 0.5f;
 
 	const bool animation = args.read("--animation");
-	args.read("--samples", samples);
 	args.read("--hatch-density", hatchDensity);
 	args.read("--hatch-thickness", hatchThickness);
 	args.read("--hatch-darken", hatchDarken);
 	args.read("--ao-mask", aoMask);
 
-	if(args.argc() < 2 || samples < 0) {
+	if(args.argc() < 2) {
 		args.getApplicationUsage()->write(std::cerr);
 
 		return 1;
 	}
 
-	osg::DisplaySettings::instance()->setNumMultiSamples(static_cast<unsigned int>(samples));
 	osgViewer::Viewer viewer(args);
 
 	// Dear ImGui's single global context isn't safe to touch from more than one OSG draw thread --

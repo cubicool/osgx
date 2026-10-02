@@ -5,8 +5,8 @@
 // --hdr/--env environment loading osgx-gltf-viewer.cpp/osgx-turntable.cpp already use, plus a
 // THIRD camera proving osgx::shadow fits into the split too: shadow-casting only needs depth,
 // not material data, so it sits alongside the geometry pass rather than inside it, and plugs
-// into the lighting pass via the exact same PBRLightingPass::Options::shadowMap seam
-// PBRScene::Options::shadowMap uses.
+// into the lighting pass via the exact same PBRLightingPass::Options::shadowSet seam
+// PBRScene::Options::shadowSet uses.
 //
 // Press 0-6 to inspect the raw G-buffer channels (0=lit composite, 1=albedo, 2=normal,
 // 3=material(roughness/metallic), 4=emissive, 5=depth, 6=SSAO) - the same diagnostic shape
@@ -46,7 +46,6 @@ OSGX_DISABLE_WARNINGS
 #include <osg/ArgumentParser>
 #include <osg/Camera>
 #include <osg/ComputeBoundsVisitor>
-#include <osg/DisplaySettings>
 #include <osg/GL>
 #include <osg/Geode>
 #include <osg/Geometry>
@@ -360,7 +359,7 @@ int main(int argc, char** argv) {
 
 	args.getApplicationUsage()->setCommandLineUsage(
 		std::string(args.getApplicationName()) +
-		" <model.gltf> (--hdr <path> | --env <manifest.gltf>) [--samples <count>]"
+		" <model.gltf> (--hdr <path> | --env <manifest.gltf>)"
 	);
 	args.getApplicationUsage()->addCommandLineOption(
 		"--hdr <path>",
@@ -372,28 +371,20 @@ int main(int argc, char** argv) {
 		"Pre-baked osgx_environment manifest - no HDR decode/bake at runtime."
 	);
 	args.getApplicationUsage()->addCommandLineOption(
-		"--samples <count>", "Request this many default-framebuffer MSAA samples (default: 4)"
-	);
-	args.getApplicationUsage()->addCommandLineOption(
 		"--animation", "Play the model's animation (default: hold the first frame)"
 	);
 
 	std::string hdrPath, envPath;
-	int samples = 4;
 
 	const bool animation = args.read("--animation");
 	const bool haveHdr = args.read("--hdr", hdrPath);
 	const bool haveEnv = args.read("--env", envPath);
 
-	args.read("--samples", samples);
-
-	if(args.argc() < 2 || (!haveHdr && !haveEnv) || samples < 0) {
+	if(args.argc() < 2 || (!haveHdr && !haveEnv)) {
 		args.getApplicationUsage()->write(std::cerr);
 
 		return 1;
 	}
-
-	osg::DisplaySettings::instance()->setNumMultiSamples(static_cast<unsigned int>(samples));
 	osgViewer::Viewer viewer(args);
 
 #ifdef OSGX_IMGUI
@@ -574,9 +565,19 @@ int main(int argc, char** argv) {
 		return 1;
 	}
 
+	// osgx::ShadowSet aggregates however many ShadowMaps this scene has (just the one directional
+	// key light here) into the combined uniform arrays/Hook::ShadowFactor override
+	// PBRLightingPass::Options::shadowSet reads - see ShadowSet's own comment (Shadow.hpp). Every
+	// shadowMap.reposition()/direct bias/normalOffset/strength edit below needs a matching
+	// shadowSet.sync() afterward, since the shader actually reads ShadowSet's OWN uniform arrays,
+	// not shadowMap's uniforms directly.
+	auto shadowSet = osgx::ShadowSet::create();
+
+	shadowSet.add(shadowMap);
+
 	osgx::PBRLightingPass::Options lightingOptions;
 
-	lightingOptions.shadowMap = &shadowMap;
+	lightingOptions.shadowSet = &shadowSet;
 	lightingOptions.aoTexture = ssao.aoTexture.get();
 
 	// Back to 1.0/1.0 - 11-sketchfab.py's --ibl-diffuse-intensity/--ibl-specular-intensity
@@ -701,7 +702,8 @@ int main(int argc, char** argv) {
 	auto* gui = new osgx::imgui::Widget(viewer, gizmos->getOverlay());
 
 	gui->addSection("Directional Light", [
-		lights, &shadowMap, &lightDir, &lightColor, &lightIntensity, shadowCoverage, &shadowOptions
+		lights, &shadowMap, &shadowSet, &lightDir, &lightColor, &lightIntensity, shadowCoverage,
+		&shadowOptions
 	](osg::RenderInfo&) {
 		bool changed = false;
 
@@ -717,6 +719,7 @@ int main(int argc, char** argv) {
 				lights->setDirectional(0, lightDir, lightColor, lightIntensity);
 
 				shadowMap.reposition(lightDir, shadowCoverage, shadowOptions);
+				shadowSet.sync();
 			}
 
 			else {
@@ -728,7 +731,7 @@ int main(int argc, char** argv) {
 	// Bias and strength are uniforms, so they take effect immediately. Frustum coverage changes
 	// must also re-aim the existing shadow camera, but still avoid rebuilding its FBO or texture.
 	gui->addSection("Shadows", [
-		&shadowMap, &lightDir, shadowCoverage, &shadowOptions
+		&shadowMap, &shadowSet, &lightDir, shadowCoverage, &shadowOptions
 	](osg::RenderInfo&) {
 		float bias = 0.0f, normalOffset = 0.0f, strength = 0.0f;
 
@@ -748,6 +751,7 @@ int main(int argc, char** argv) {
 			shadowMap.bias->set(bias);
 			shadowMap.normalOffset->set(normalOffset);
 			shadowMap.strength->set(strength);
+			shadowSet.sync();
 		}
 
 		// Auto-derived from map coverage/resolution at create()/reposition() time - dragging
@@ -769,6 +773,7 @@ int main(int argc, char** argv) {
 
 		if(frustumChanged && lightDir.length2() > 1e-8f) {
 			shadowMap.reposition(lightDir, shadowCoverage, shadowOptions);
+			shadowSet.sync();
 		}
 	}, osgx::imgui::SectionOptions::create(false, true));
 

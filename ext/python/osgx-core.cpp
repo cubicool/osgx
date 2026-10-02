@@ -682,12 +682,16 @@ void bind_core(py::module_& m) {
 		"entirely - GLSL permits one body per function, so attaching a second definition "
 		"alongside the built-in is a link error, not an override. Tonemap replaces "
 		"osgx_Tonemap(); Skinning replaces osgx_ApplySkin(); DirectLighting replaces "
-		"osgx_DirectLighting(); DeferredLighting replaces the entire fullscreen deferred-lighting shader."
+		"osgx_DirectLighting(); DeferredLighting replaces the entire fullscreen deferred-lighting "
+		"shader; ShadowFactor replaces osgx_ShadowFactorForLight() - see osgx.ShadowSet, which "
+		"owns the real override for this slot (PBRScene.Options.shadowSet/"
+		"PBRLightingPass.Options.shadowSet are the common-case way to set it)."
 	)
 		.value("Tonemap", osgx::Hook::Tonemap)
 		.value("Skinning", osgx::Hook::Skinning)
 		.value("DeferredLighting", osgx::Hook::DeferredLighting)
 		.value("DirectLighting", osgx::Hook::DirectLighting)
+		.value("ShadowFactor", osgx::Hook::ShadowFactor)
 	;
 }
 

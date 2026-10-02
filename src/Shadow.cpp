@@ -1,9 +1,13 @@
 #include "ShaderLibs.hpp"
 
+#include "osgx/Array.hpp"
+#include "osgx/Library.hpp"
 #include "osgx/Shadow.hpp"
 
 OSGX_DISABLE_WARNINGS
 
+#include <osg/BufferIndexBinding>
+#include <osg/BufferObject>
 #include <osg/GL>
 #include <osg/Math>
 #include <osg/Matrix>
@@ -12,11 +16,16 @@ OSGX_DISABLE_WARNINGS
 #include <osg/Program>
 #include <osg/Shader>
 #include <osg/StateSet>
+#include <osg/Texture2D>
+#include <osg/TextureCubeMap>
 
 OSGX_ENABLE_WARNINGS
 
 #include <algorithm>
+#include <bit>
 #include <cmath>
+#include <stdexcept>
+#include <string>
 
 namespace osgx {
 
@@ -523,12 +532,235 @@ void ShadowMap::repositionPoint(
 	repositionPoint(position, coverage, Options{});
 }
 
+namespace {
+
+// A directional/spot map has a real `camera`; a point map doesn't (see ShadowMap::valid()'s own
+// identical discriminant).
+bool isPointShadow(const ShadowMap& map) {
+	return !map.camera.valid();
+}
+
+// Float offsets into one packed osgx_ShadowData2D struct (SHADOW_2D_STRUCT_FLOATS=20 floats/80
+// bytes) - must match SHADOW_UNIFORMS_MULTI's GLSL struct layout comment in Shadow.hpp exactly.
+constexpr std::size_t SHADOW_2D_MATRIX_OFFSET = 0; // mat4, 16 floats
+constexpr std::size_t SHADOW_2D_BIAS_OFFSET = 16;
+constexpr std::size_t SHADOW_2D_NORMAL_OFFSET_OFFSET = 17;
+constexpr std::size_t SHADOW_2D_STRENGTH_OFFSET = 18;
+constexpr std::size_t SHADOW_2D_CASTER_INDEX_OFFSET = 19;
+constexpr std::size_t SHADOW_2D_STRUCT_FLOATS = 20;
+
+// Float offsets into one packed osgx_ShadowDataCube struct (SHADOW_CUBE_STRUCT_FLOATS=8 floats/32
+// bytes) - std140 packs `bias` into the last 4 bytes of `lightPos`'s own 16-byte slot (a scalar's
+// 4-byte alignment lets it follow a vec3 directly); float index 7 is unused tail padding.
+constexpr std::size_t SHADOW_CUBE_LIGHT_POS_OFFSET = 0; // vec3
+constexpr std::size_t SHADOW_CUBE_BIAS_OFFSET = 3;
+constexpr std::size_t SHADOW_CUBE_NORMAL_OFFSET_OFFSET = 4;
+constexpr std::size_t SHADOW_CUBE_STRENGTH_OFFSET = 5;
+constexpr std::size_t SHADOW_CUBE_CASTER_INDEX_OFFSET = 6;
+constexpr std::size_t SHADOW_CUBE_STRUCT_FLOATS = 8;
+
+// Where the cube block starts in ShadowSet::shadowData - right after every 2D slot.
+constexpr std::size_t SHADOW_CUBE_BASE = static_cast<std::size_t>(MAX_SHADOWED_2D) * SHADOW_2D_STRUCT_FLOATS;
+
+// GLSL's `casterIndex` is declared `int` but stored in this float-typed backing array -
+// std::bit_cast reinterprets the bit pattern without UB, matching LightSet's identical trick
+// (Light.cpp's detail::intBitsToFloat/floatBitsToInt) for its own float-backed int fields.
+float intBitsToFloat(int value) { return std::bit_cast<float>(value); }
+
+}
+
+bool ShadowSet::valid() const {
+	return shader.valid() && shadowData.valid() && shadowDataBinding.valid();
+}
+
+ShadowSet ShadowSet::create() {
+	ShadowSet result;
+
+	result.shadowMaps2D = new osg::Uniform(
+		osg::Uniform::SAMPLER_2D, "osgx_shadowMaps2D", MAX_SHADOWED_2D
+	);
+	result.shadowMapsCube = new osg::Uniform(
+		osg::Uniform::SAMPLER_CUBE, "osgx_shadowMapsCube", MAX_SHADOWED_CUBE
+	);
+
+	const auto totalFloats = SHADOW_CUBE_BASE
+		+ static_cast<std::size_t>(MAX_SHADOWED_CUBE) * SHADOW_CUBE_STRUCT_FLOATS;
+
+	result.shadowData = new osgx::FloatArray(totalFloats);
+
+	std::fill(result.shadowData->begin(), result.shadowData->end(), 0.0f);
+	result.shadowData->setBufferObject(new osg::UniformBufferObject());
+
+	// Index 0 until apply() resolves the "osgx::shadow" slot - same deferred-resolution pattern as
+	// LightSet's own "osgx::light" binding (Light.cpp).
+	result.shadowDataBinding = new osg::UniformBufferBinding(
+		0, result.shadowData, 0, static_cast<GLsizeiptr>(result.shadowData->getTotalDataSize())
+	);
+
+	// Every slot starts unused - osgx_ShadowFactorForLight()'s scan never matches a real
+	// osgx_lights[] index against an untouched slot (whose casterIndex would otherwise default to
+	// 0, silently "claiming" light 0 before any map was ever add()ed).
+	for(int i = 0; i < MAX_SHADOWED_2D; i++) {
+		const auto base = static_cast<std::size_t>(i) * SHADOW_2D_STRUCT_FLOATS;
+
+		(*result.shadowData)[base + SHADOW_2D_CASTER_INDEX_OFFSET] = intBitsToFloat(-1);
+	}
+
+	for(int i = 0; i < MAX_SHADOWED_CUBE; i++) {
+		const auto base = SHADOW_CUBE_BASE + static_cast<std::size_t>(i) * SHADOW_CUBE_STRUCT_FLOATS;
+
+		(*result.shadowData)[base + SHADOW_CUBE_CASTER_INDEX_OFFSET] = intBitsToFloat(-1);
+	}
+
+	// Content is identical across every ShadowSet - cachedShader() shares one compiled instance
+	// process-wide instead of recompiling the same text per Program (see Shader.hpp's own comment
+	// on cachedShader()'s intended use: "a library's own default/no-op shader constants ... that's
+	// likely to repeat").
+	result.shader = osgx::cachedShader(
+		osg::Shader::FRAGMENT, resolveShaderLibs(std::string(SHADOW_FACTOR_HOOK_MULTI))
+	);
+	result.shader->setName("osgx_ShadowFactorHookMulti");
+
+	return result;
+}
+
+void ShadowSet::add(const ShadowMap& map) {
+	if(!map.valid()) throw std::invalid_argument("ShadowSet::add(): ShadowMap is not valid");
+
+	if(isPointShadow(map)) {
+		if(_nextCube >= MAX_SHADOWED_CUBE) {
+			throw std::out_of_range("ShadowSet::add(): no free point (cube) shadow slot");
+		}
+
+		_mapsCube[_nextCube++] = &map;
+	}
+
+	else {
+		if(_next2D >= MAX_SHADOWED_2D) {
+			throw std::out_of_range("ShadowSet::add(): no free directional/spot (2D) shadow slot");
+		}
+
+		_maps2D[_next2D++] = &map;
+	}
+
+	sync();
+}
+
+void ShadowSet::sync() {
+	for(int slot = 0; slot < _next2D; slot++) {
+		const ShadowMap* map = _maps2D[slot];
+		const auto base = static_cast<std::size_t>(slot) * SHADOW_2D_STRUCT_FLOATS;
+		osg::Matrixf matrix;
+		float bias = 0.0f, normalOffset = 0.0f, strength = 0.0f;
+		int caster = 0;
+
+		map->shadowMatrix->get(matrix);
+		map->bias->get(bias);
+		map->normalOffset->get(normalOffset);
+		map->strength->get(strength);
+		map->casterIndex->get(caster);
+
+		// Raw memcpy, not a per-component loop - matrix.ptr()'s 16 floats are exactly the bytes
+		// glUniformMatrix4fv(..., GL_FALSE, ptr) used to upload (see osg::Uniform::setElement's own
+		// implementation), which std140's default column_major layout expects verbatim.
+		std::copy(
+			matrix.ptr(),
+			matrix.ptr() + 16,
+			shadowData->begin() + static_cast<std::ptrdiff_t>(base + SHADOW_2D_MATRIX_OFFSET)
+		);
+		(*shadowData)[base + SHADOW_2D_BIAS_OFFSET] = bias;
+		(*shadowData)[base + SHADOW_2D_NORMAL_OFFSET_OFFSET] = normalOffset;
+		(*shadowData)[base + SHADOW_2D_STRENGTH_OFFSET] = strength;
+		(*shadowData)[base + SHADOW_2D_CASTER_INDEX_OFFSET] = intBitsToFloat(caster);
+	}
+
+	for(int slot = 0; slot < _nextCube; slot++) {
+		const ShadowMap* map = _mapsCube[slot];
+		const auto base = SHADOW_CUBE_BASE + static_cast<std::size_t>(slot) * SHADOW_CUBE_STRUCT_FLOATS;
+		osg::Vec3 lightPos;
+		float bias = 0.0f, normalOffset = 0.0f, strength = 0.0f;
+		int caster = 0;
+
+		map->lightPosition->get(lightPos);
+		map->bias->get(bias);
+		map->normalOffset->get(normalOffset);
+		map->strength->get(strength);
+		map->casterIndex->get(caster);
+
+		(*shadowData)[base + SHADOW_CUBE_LIGHT_POS_OFFSET + 0] = lightPos.x();
+		(*shadowData)[base + SHADOW_CUBE_LIGHT_POS_OFFSET + 1] = lightPos.y();
+		(*shadowData)[base + SHADOW_CUBE_LIGHT_POS_OFFSET + 2] = lightPos.z();
+		(*shadowData)[base + SHADOW_CUBE_BIAS_OFFSET] = bias;
+		(*shadowData)[base + SHADOW_CUBE_NORMAL_OFFSET_OFFSET] = normalOffset;
+		(*shadowData)[base + SHADOW_CUBE_STRENGTH_OFFSET] = strength;
+		(*shadowData)[base + SHADOW_CUBE_CASTER_INDEX_OFFSET] = intBitsToFloat(caster);
+	}
+
+	shadowData->dirty();
+}
+
+void ShadowSet::apply(osg::StateSet* stateSet) const {
+	auto& bindings = osgx::Library::instance().bindings();
+
+	// Texture binding needs the StateSet, so it happens here rather than in add() - one named
+	// slot per array element, matching the single-map design's own "osgx::shadowMap" convention,
+	// just N times over, so this can never collide with any other texture the rest of the
+	// pipeline reserves.
+	for(int slot = 0; slot < _next2D; slot++) {
+		const auto unit = bindings.get("osgx::shadowMap2D#" + std::to_string(slot));
+
+		stateSet->setTextureAttributeAndModes(
+			unit, _maps2D[slot]->depthTexture, osg::StateAttribute::ON
+		);
+		shadowMaps2D->setElement(static_cast<unsigned int>(slot), static_cast<int>(unit));
+	}
+
+	for(int slot = 0; slot < _nextCube; slot++) {
+		const auto unit = bindings.get("osgx::shadowMapCube#" + std::to_string(slot));
+
+		stateSet->setTextureAttributeAndModes(
+			unit, _mapsCube[slot]->cubeCapture.texture, osg::StateAttribute::ON
+		);
+		shadowMapsCube->setElement(static_cast<unsigned int>(slot), static_cast<int>(unit));
+	}
+
+	// Any slot beyond what was actually add()ed is provably dead code - osgx_ShadowFactorForLight()
+	// only ever reaches a slot whose casterIndex matches a real osgx_lights[] index, and unused
+	// slots stay at the -1 sentinel forever (ShadowSet::create()) - so nothing GLSL-side ever
+	// samples these. But leaving them at osg::Uniform's zero-initialized default (texture unit 0)
+	// is still a real bug: once a Program actually, dynamically samples BOTH a sampler2D AND a
+	// samplerCube in the same draw call (the whole point of this redesign), NVIDIA's "program
+	// texture usage" validation checks every declared sampler value in the program, reachable or
+	// not - and finds the untouched slots of BOTH arrays pointing at unit 0, which is never safe to
+	// share between two different sampler types (it's osgx::material.baseColor's own preferred
+	// index - see Bindings::unused()'s own comment, Library.hpp, for the full story). One shared
+	// unused() unit covers both arrays at once - nothing is ever bound there, so a sampler2D and a
+	// samplerCube both pointing at it can't disagree about anything.
+	if(_next2D < MAX_SHADOWED_2D || _nextCube < MAX_SHADOWED_CUBE) {
+		const auto unit = static_cast<int>(bindings.unused());
+
+		for(int slot = _next2D; slot < MAX_SHADOWED_2D; slot++) {
+			shadowMaps2D->setElement(static_cast<unsigned int>(slot), unit);
+		}
+
+		for(int slot = _nextCube; slot < MAX_SHADOWED_CUBE; slot++) {
+			shadowMapsCube->setElement(static_cast<unsigned int>(slot), unit);
+		}
+	}
+
+	stateSet->addUniform(shadowMaps2D);
+	stateSet->addUniform(shadowMapsCube);
+
+	shadowDataBinding->setIndex(bindings.get("osgx::shadow"));
+	stateSet->setAttributeAndModes(shadowDataBinding, osg::StateAttribute::ON);
+}
+
 void registerShadowShaderLibs() {
 	static const osgx::ShaderLib libs[] = {
-		{"SHADOW_UNIFORMS", "osgx_shadowMap", SHADOW_UNIFORMS},
-		{"SHADOW_FACTOR", "osgx_ShadowFactor", SHADOW_FACTOR},
-		{"SHADOW_UNIFORMS_POINT", "osgx_shadowCubeMap", SHADOW_UNIFORMS_POINT},
-		{"SHADOW_FACTOR_POINT", "osgx_ShadowFactorPoint", SHADOW_FACTOR_POINT},
+		{"SHADOW_FACTOR_DECL", "osgx_ShadowFactorForLight", SHADOW_FACTOR_DECL},
+		{"SHADOW_UNIFORMS_MULTI", "osgx_shadowMaps2D", SHADOW_UNIFORMS_MULTI},
+		{"SHADOW_FACTOR_2D", "osgx_ShadowFactor2D", SHADOW_FACTOR_2D},
+		{"SHADOW_FACTOR_CUBE", "osgx_ShadowFactorCube", SHADOW_FACTOR_CUBE},
 	};
 
 	::osgx::registerShaderLibs("osgx::shadow", libs);

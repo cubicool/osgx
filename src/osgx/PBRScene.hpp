@@ -19,7 +19,7 @@ namespace osgx {
 // Forward PBR for osgx::Material geometry: one Program (PBR_VERTEX_SHADER plus a fragment shader)
 // shading each material by whichever light sources are present - an osgx::Environment (image-based
 // light), the osgx::LightSet direct lights inherited from the scene graph, and an optional
-// osgx::ShadowMap for the key light. The deferred counterpart is PBRGBuffer/PBRLightingPass
+// osgx::ShadowSet shadowing any mix of them. The deferred counterpart is PBRGBuffer/PBRLightingPass
 // (PBRDeferred.hpp), which takes the same light sources the same way.
 //
 // StateSet defines the fragment shader imports:
@@ -31,10 +31,12 @@ namespace osgx {
 // - `environment`: attached to the node's StateSet. The caller owns it, may share it between
 //   scenes, and adds its getBakeRoot() to the graph if non-null; its intensities and rotation stay
 //   live-tunable.
-// - `shadowMap`: swaps in DIRECT_LIGHTING_HOOK_SHADOWED and binds the depth texture (at the
-//   "osgx::shadowMap" slot) and shadow uniforms. The caller builds the ShadowMap (its light
-//   direction must match the osgx::LightSet light at ShadowMap::casterIndex) and adds its camera to
-//   the scene graph.
+// - `shadowSet`: swaps in the real Hook::ShadowFactor override (osgx::ShadowSet's own `shader`)
+//   and binds its combined depth/cube textures and uniforms - see osgx::ShadowSet's own comment
+//   (Shadow.hpp) for the full design. The caller builds however many osgx::ShadowMaps the scene
+//   needs, osgx::ShadowSet::add()s each (their light directions/positions must match the
+//   osgx::LightSet light at that map's own ShadowMap::casterIndex), and adds each map's own camera
+//   (or cubeCapture.root, for a point map) to the scene graph.
 // - `hooks` (HookList, Shader.hpp) substitutes the Hook::Skinning (osgx_ApplySkin(), e.g.
 //   SKINNING_HOOK_LINEAR_BLEND) and Hook::Tonemap (osgx_Tonemap()) shader objects. Each REPLACES its
 //   built-in; GLSL permits one body per function.
@@ -46,7 +48,7 @@ namespace osgx {
 struct PBRScene {
 	struct Options {
 		osgx::Environment* environment = nullptr;
-		const osgx::ShadowMap* shadowMap = nullptr;
+		const osgx::ShadowSet* shadowSet = nullptr;
 		osgx::HookList hooks = {};
 		bool diagnostics = false;
 	};

@@ -14,53 +14,42 @@ OSGX_ENABLE_WARNINGS
 namespace osgx_python {
 
 void bind_shadow(py::module_& m) {
-	m.attr("SHADOW_UNIFORMS") = osgx::SHADOW_UNIFORMS;
-	m.attr("SHADOW_FACTOR") = osgx::SHADOW_FACTOR;
-	m.attr("DIRECT_LIGHTING_HOOK_SHADOWED") = osgx::DIRECT_LIGHTING_HOOK_SHADOWED;
-	m.attr("SHADOW_UNIFORMS_POINT") = osgx::SHADOW_UNIFORMS_POINT;
-	m.attr("SHADOW_FACTOR_POINT") = osgx::SHADOW_FACTOR_POINT;
-	m.attr("DIRECT_LIGHTING_HOOK_SHADOWED_POINT") = osgx::DIRECT_LIGHTING_HOOK_SHADOWED_POINT;
+	m.attr("SHADOW_FACTOR_DECL") = osgx::SHADOW_FACTOR_DECL;
+	m.attr("SHADOW_FACTOR_HOOK_NONE") = osgx::SHADOW_FACTOR_HOOK_NONE;
+	m.attr("SHADOW_UNIFORMS_MULTI") = osgx::SHADOW_UNIFORMS_MULTI;
+	m.attr("SHADOW_FACTOR_2D") = osgx::SHADOW_FACTOR_2D;
+	m.attr("SHADOW_FACTOR_CUBE") = osgx::SHADOW_FACTOR_CUBE;
+	m.attr("SHADOW_FACTOR_HOOK_MULTI") = osgx::SHADOW_FACTOR_HOOK_MULTI;
+	m.attr("MAX_SHADOWED_2D") = osgx::MAX_SHADOWED_2D;
+	m.attr("MAX_SHADOWED_CUBE") = osgx::MAX_SHADOWED_CUBE;
 
-	// Python-side convenience mirroring osgx.pbr.makeDirectLightingHookShader() - assembles
-	// DIRECT_LIGHTING_HOOK_SHADOWED as a standalone FRAGMENT osg::Shader, ready to add()/append()
-	// onto an osg::Program in place of osgx.pbr.makeDirectLightingHookShader()'s unshadowed one.
+	// makeShadowedDirectLightingHookShader()/makeShadowedPointDirectLightingHookShader() are gone
+	// (2026-10-02) - DIRECT_LIGHTING_HOOK_SHADOWED/_POINT no longer exist; "shadowed or not" is now
+	// the separate Hook.ShadowFactor slot (osgx.ShadowSet owns its real override, see below), and
+	// osgx_DirectLighting() itself is unconditionally osgx.pbr's DIRECT_LIGHTING_HOOK_DEFAULT -
+	// nothing left to build a "shadowed direct-lighting hook" shader FOR.
+
+	// Hook.ShadowFactor's DEFAULT as a standalone shader object - the Python-side convenience
+	// mirroring osgx.makeDirectLightingHookShader() (Light.hpp), for a caller hand-assembling a
+	// Program outside PBRScene/PBRLightingPass (which both already wire this in automatically when
+	// no ShadowSet is given). An osgx.ShadowSet's own `shader` is the override counterpart - no
+	// helper needed there, it is just an ordinary attribute read.
 	m.def(
-		"makeShadowedDirectLightingHookShader",
+		"makeShadowFactorNoneHookShader",
 		[]() {
 			auto* shader = new osg::Shader(
 				osg::Shader::FRAGMENT,
-				osgx::resolveShaderLibs(std::string(osgx::DIRECT_LIGHTING_HOOK_SHADOWED))
+				osgx::resolveShaderLibs(std::string(osgx::SHADOW_FACTOR_HOOK_NONE))
 			);
 
-			// Same bare role name as osgx.pbr.makeDirectLightingHookShader() - this fills the
-			// same logical slot, just with the shadowed implementation.
-			shader->setName("directLightingHook");
+			shader->setName("shadowFactorHook");
 
 			return osg::ref_ptr<osg::Shader>(shader);
 		},
-		"Builds the osgx_DirectLighting() CONTRACT's shadowed-definition FRAGMENT shader object - "
-		"same contract as osgx.pbr.makeDirectLightingHookShader(), but the light at "
-		"osgx_shadowCasterIndex is multiplied by osgx_ShadowFactor()."
-	);
-
-	// The point-light counterpart - identical shape, DIRECT_LIGHTING_HOOK_SHADOWED_POINT instead
-	// (cube-map distance lookup via osgx_ShadowFactorPoint() rather than a 2D shadowMatrix).
-	m.def(
-		"makeShadowedPointDirectLightingHookShader",
-		[]() {
-			auto* shader = new osg::Shader(
-				osg::Shader::FRAGMENT,
-				osgx::resolveShaderLibs(std::string(osgx::DIRECT_LIGHTING_HOOK_SHADOWED_POINT))
-			);
-
-			shader->setName("directLightingHook");
-
-			return osg::ref_ptr<osg::Shader>(shader);
-		},
-		"Builds the osgx_DirectLighting() CONTRACT's point-light-shadowed-definition FRAGMENT "
-		"shader object - same contract as makeDirectLightingHookShader(), but the light at "
-		"osgx_shadowCasterIndex is multiplied by osgx_ShadowFactorPoint() (a distance cube-map "
-		"lookup, for a ShadowMap.createPoint() map)."
+		"Builds Hook.ShadowFactor's default-definition FRAGMENT shader object (always unshadowed, "
+		"no shadow-map uniforms or samplers) - add it to a Program alongside "
+		"osgx.makeDirectLightingHookShader()'s output when hand-assembling a Program with no "
+		"osgx.ShadowSet. An osgx.ShadowSet's own `.shader` is the override counterpart."
 	);
 
 	auto shadowMap = py::class_<osgx::ShadowMap>(
@@ -68,10 +57,11 @@ void bind_shadow(py::module_& m) {
 		"ShadowMap",
 		"A directional (create()), spot (createSpot()), or point (createPoint()) light's shadow "
 		"map. Directional/spot own a single PRE_RENDER depth-only camera plus the uniforms "
-		"DIRECT_LIGHTING_HOOK_SHADOWED reads every frame (world-space, not eye-space - shadowMatrix "
-		"is just lightProj * lightView, no per-frame main-camera dependency); point owns an "
-		"omnidirectional distance CaptureCubeMap instead (see cubeCapture/casters/"
-		"lightPosition), read by DIRECT_LIGHTING_HOOK_SHADOWED_POINT."
+		"osgx.ShadowSet reads every frame (world-space, not eye-space - shadowMatrix is just "
+		"lightProj * lightView, no per-frame main-camera dependency); point owns an omnidirectional "
+		"distance CaptureCubeMap instead (see cubeCapture/casters/lightPosition). Add one or more "
+		"ShadowMaps to an osgx.ShadowSet to actually shadow a scene - this struct alone has no "
+		"shader wiring of its own anymore."
 	);
 
 	py::class_<osgx::ShadowMap::Coverage>(
@@ -298,6 +288,47 @@ void bind_shadow(py::module_& m) {
 			"reposition()/repositionSpot()'s counterpart for a createPoint() map - re-aims the six "
 			"capture cameras at a new position and refreshes their shared far plane/clear value for "
 			"the new distance to the scene."
+		)
+	;
+
+	py::class_<osgx::ShadowSet>(
+		m,
+		"ShadowSet",
+		"Aggregates however many ShadowMaps a scene has (any mix of directional/spot and point, up "
+		"to MAX_SHADOWED_2D/MAX_SHADOWED_CUBE each - module-level constants) into the combined "
+		"uniform arrays and Hook.ShadowFactor override `shader` that PBRScene.Options.shadowSet/"
+		"PBRLightingPass.Options.shadowSet read. Replaces the old single `ShadowMap` field entirely "
+		"- that design could shadow at most one light, ever (directional/spot and point were even "
+		"mutually exclusive)."
+	)
+		.def(py::init<>(), "Constructs an empty, invalid ShadowSet; see ShadowSet.create().")
+		.def_readonly(
+			"shader", &osgx::ShadowSet::shader,
+			"The Hook.ShadowFactor override shader object - set PBRScene.Options.shadowSet/"
+			"PBRLightingPass.Options.shadowSet instead of using this directly unless building a "
+			"fully custom Program."
+		)
+		.def("valid", &osgx::ShadowSet::valid, "True once create()d.")
+		.def_static("create", &osgx::ShadowSet::create, "Builds an empty set ready for add().")
+		.def(
+			"add", &osgx::ShadowSet::add, "map"_a, py::keep_alive<1, 2>(),
+			"Registers `map` in the next free slot of whichever array matches its kind (2D for a "
+			"directional/spot map, cube for a point map, auto-detected), writing its CURRENT "
+			"uniform values immediately. Raises if that kind's array is already full or `map` is "
+			"itself invalid. `map` must outlive this ShadowSet (py::keep_alive enforces this on the "
+			"Python side) - it is not copied, only its current values are, each time."
+		)
+		.def(
+			"sync", &osgx::ShadowSet::sync,
+			"Re-reads every already-add()ed slot's CURRENT uniform values from its own ShadowMap "
+			"and re-uploads them - call after reposition()/repositionSpot()/repositionPoint() on "
+			"any member map so a live-dragged light's shadow stays in sync."
+		)
+		.def(
+			"apply", &osgx::ShadowSet::apply, "stateSet"_a,
+			"Adds every uniform to `stateSet` and binds each active 2D/cube texture to its own "
+			"texture unit. Call once after every add() this ShadowSet will ever receive; sync() "
+			"alone is enough after that for live updates."
 		)
 	;
 }

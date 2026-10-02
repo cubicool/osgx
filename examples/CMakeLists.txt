@@ -12,6 +12,7 @@ set(OSGX_EXAMPLES
 	"ktx2-skybox"
 	"lights"
 	"manipulator"
+	"multishadow"
 	"notifyfilter"
 	"picking"
 	"pixel-text"

@@ -100,11 +100,29 @@ osg::Shader* cachedShader(osg::Shader::Type type, std::string src);
 // that doesn't need osgx_DirectLighting() at all can supply a trivially empty
 // `osg::Shader(FRAGMENT, "#version 460 core\n")` override for THIS slot too, freeing it to declare
 // the underlying BRDF primitives itself with no collision.
+//
+// ShadowFactor (2026-10-02) - the slot that replaced DIRECT_LIGHTING_HOOK_SHADOWED/_POINT
+// (Shadow.hpp) entirely. "Shadowed or not" used to mean swapping the WHOLE DirectLighting
+// implementation for a near-duplicate copy of the same per-light loop (three nearly-identical
+// hook files: default, shadowed-2D, shadowed-point) - one shadowed light maximum, directional/spot
+// and point mutually exclusive since they were different Programs. Factored out instead: there is
+// now exactly ONE osgx_DirectLighting() (DIRECT_LIGHTING_HOOK_DEFAULT, Light.hpp), which always
+// calls a separately-declared `osgx_ShadowFactorForLight(int lightIndex, vec3 worldPos, vec3 N)`
+// per light in its own loop. THIS slot swaps THAT smaller function alone: the default
+// (SHADOW_FACTOR_HOOK_NONE) always returns 1.0 (no shadow maps, no uniforms at all); the real
+// override (osgx::ShadowSet's own shader, built from however many osgx::ShadowMaps a caller has)
+// scans small per-kind slot arrays for a casterIndex match and evaluates whichever kind it finds -
+// directional/spot and point can now coexist in the same scene, and any number up to each array's
+// compile-time cap (osgx::MAX_SHADOWED_2D/MAX_SHADOWED_CUBE, Shadow.hpp). A caller building a
+// genuinely custom DirectLighting (the Hook::DirectLighting slot above) can still call
+// osgx_ShadowFactorForLight() directly from its own code - it is a real, independently linked
+// contract now, not bundled inside DIRECT_LIGHTING_HOOK_DEFAULT's own text.
 enum class Hook {
 	Tonemap,
 	Skinning,
 	DeferredLighting,
 	DirectLighting,
+	ShadowFactor,
 };
 
 // One hook-slot override: which slot, and the shader object substituting the call site's own

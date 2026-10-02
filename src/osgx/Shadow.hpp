@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Array.hpp"
 #include "CaptureCubeMap.hpp"
 #include "Core.hpp"
 #include "RTT.hpp"
@@ -8,9 +9,11 @@
 OSGX_DISABLE_WARNINGS
 
 #include <osg/BoundingSphere>
+#include <osg/BufferIndexBinding>
 #include <osg/Camera>
 #include <osg/Group>
 #include <osg/Matrixd>
+#include <osg/StateSet>
 #include <osg/Texture2D>
 #include <osg/Uniform>
 #include <osg/Vec3>
@@ -21,17 +24,22 @@ OSGX_ENABLE_WARNINGS
 namespace osgx {
 
 // ================================================================================================
-// Directional shadow mapping, shared by any osgx::LightSet-lit scene (nothing here is glTF/PBR-
-// specific). Lives directly under `osgx::`, not its own namespace - it's not a separate opt-in
-// subsystem (its own #include outside the umbrella, its own CMake link target) the way
-// osgx::debug/imgui/platform/gltf/ktx2 are; see TODO.md's namespace-boundary decision. The
-// `"osgx::shadow"` catalog name is the shader-lib registry's conventional tag, unrelated to the
-// C++ namespace. Only ONE light
-// - the key/directional light - is ever shadowed here; point/spot-light shadows need a cubemap
-// and meaningfully different frustum math, and are a separate, later feature. This is the real
+// Shadow mapping for any osgx::LightSet-lit scene (nothing here is glTF/PBR-specific). Lives
+// directly under `osgx::`, not its own namespace - it's not a separate opt-in subsystem (its own
+// #include outside the umbrella, its own CMake link target) the way osgx::debug/imgui/platform/
+// gltf/ktx2 are; see TODO.md's namespace-boundary decision. The `"osgx::shadow"` catalog name is
+// the shader-lib registry's conventional tag, unrelated to the C++ namespace. This is the real
 // osgx home for the shadow_cam/shadowFactor() pattern OpenSceneGraph.py/examples/pyosg-lighting/
 // 08-shadows.py and 09-ibl.py both independently hand-rolled (and, in 08-shadows.py's case,
 // duplicated a second time between the model and floor fragment shaders).
+//
+// Directional, spot, AND point lights can all cast shadows (ShadowMap::create()/createSpot()/
+// createPoint()), and - as of the osgx::ShadowSet/Hook::ShadowFactor redesign below (2026-10-02) -
+// any mix of them SIMULTANEOUSLY, up to MAX_SHADOWED_2D directional/spot maps and
+// MAX_SHADOWED_CUBE point maps at once. Earlier versions could shadow at most one light, ever
+// (directional/spot and point were even mutually exclusive, since each required swapping the
+// ENTIRE osgx_DirectLighting() implementation for a near-duplicate copy of the same per-light
+// loop). See osgx::ShadowSet's own comment for the current design.
 //
 // World-space, not eye-space: osgx::PBRScene's direct-lighting call site (PBRScene.cpp's
 // FULL_PBR_FRAGMENT_SHADER_SRC) already reconstructs a genuine world-space `worldPos` for
@@ -41,6 +49,17 @@ namespace osgx {
 // lightView` - no per-frame main-camera dependency at all - and only needs recomputing
 // (updateMatrix()) if the light itself moves, which no pyosg-lighting example has ever done.
 // ================================================================================================
+
+// Compile-time caps for osgx::ShadowSet's two small per-kind slot arrays (GLSL can't mix
+// sampler2D/samplerCube in one array, so directional/spot and point need separate arrays - see
+// SHADOW_UNIFORMS_MULTI below). Deliberately small, matching osgx::MAX_LIGHTS' own "a small
+// handful, not a general-purpose budget" philosophy (Light.hpp) - raise them if a real scene needs
+// more simultaneously-shadowed lights than this. Real C++ constants (not just GLSL #defines) so
+// osgx::ShadowSet can size its own arrays without hardcoding a number that has to stay in sync by
+// hand - matching MAX_LIGHTS/OSGX_MAX_LIGHTS's own precedent. If either changes,
+// SHADOW_UNIFORMS_MULTI's OSGX_MAX_SHADOWED_2D/OSGX_MAX_SHADOWED_CUBE #defines must change with it.
+inline constexpr int MAX_SHADOWED_2D = 2;
+inline constexpr int MAX_SHADOWED_CUBE = 2;
 
 struct ShadowMap {
 	// The scene-bound pair every create()/createSpot()/createPoint()/reposition*() overload used
@@ -106,7 +125,7 @@ struct ShadowMap {
 		// at a FIXED distance from the scene puts near/far arbitrarily close together for a small
 		// scene and arbitrarily far apart for a large one - Lantern (a ~15-unit-radius glTF model)
 		// hit a ~2870:1 near:far ratio this way, collapsing shadow-map depth precision to nothing (the
-		// depth comparison in osgx_ShadowFactor() never triggers - looks like "no shadow" but is
+		// depth comparison (osgx_ShadowFactorForLight(), below) never triggers - looks like "no shadow" but is
 		// really "no usable depth precision"). Scaling by the scene's own bound keeps near:far bounded
 		// to a healthy ratio regardless of scene scale, with no per-scene tuning.
 		float margin = 1.3f;
@@ -118,10 +137,11 @@ struct ShadowMap {
 	// A directional (create()) or spot (createSpot()) shadow map: owns the PRE_RENDER depth-only
 	// camera (`camera` - add it to the scene graph, e.g. as a sibling of whatever the shadowed
 	// model's own parent is, exactly where the old hand-rolled examples added their own
-	// `shadow_cam`) plus the uniforms DIRECT_LIGHTING_HOOK_SHADOWED reads every frame. Depth-only:
-	// no dummy color attachment needed (the old hand-rolled Python examples worked around a
-	// since-irrelevant pybind11 binding gap - osg::Camera::setDrawBuffer/setReadBuffer are ordinary
-	// C++ calls here).
+	// `shadow_cam`) plus the uniform VALUES osgx::ShadowSet reads into its own combined arrays
+	// (see ShadowSet's own comment below - these are no longer attached directly to a StateSet by
+	// ShadowMap itself; ShadowSet owns that job now). Depth-only: no dummy color attachment needed
+	// (the old hand-rolled Python examples worked around a since-irrelevant pybind11 binding gap -
+	// osg::Camera::setDrawBuffer/setReadBuffer are ordinary C++ calls here).
 	osg::ref_ptr<osg::Camera> camera;
 	osg::ref_ptr<osg::Texture2D> depthTexture;
 
@@ -132,7 +152,7 @@ struct ShadowMap {
 	osg::ref_ptr<osg::Uniform> strength;
 
 	// World-space distance, applied along the receiver's OWN normal to worldPos BEFORE it is
-	// transformed into light space (SHADOW_FACTOR/SHADOW_FACTOR_POINT below) - unlike `bias`
+	// transformed into light space (SHADOW_FACTOR_2D/SHADOW_FACTOR_CUBE below) - unlike `bias`
 	// above, this is not a comparison-space value, so the identical formula works for
 	// directional/spot's non-linear projected depth AND point's linear cube distance alike.
 	// Derived from this map's own texel footprint (coverage / resolution) at create()/
@@ -143,10 +163,12 @@ struct ShadowMap {
 	// alone doesn't fully resolve.
 	osg::ref_ptr<osg::Uniform> normalOffset;
 
-	// Which osgx_lights[] index (osgx::LightSet) this shadow map is cast by/matched against --
-	// DIRECT_LIGHTING_HOOK_SHADOWED multiplies exactly that light's contribution by
-	// osgx_ShadowFactor(); every other light is unaffected. Defaults to 0 (the common "index 0 is
-	// the key light" convention every existing pyosg-lighting example already follows).
+	// Which osgx_lights[] index (osgx::LightSet) this shadow map is cast by/matched against - read
+	// by osgx::ShadowSet::add() at the moment a map is added to a set, and again by sync() after
+	// any reposition*() call, to know which slot of ShadowSet's own casterIndex array to write.
+	// Defaults to 0 (the common "index 0 is the key light" convention every existing
+	// pyosg-lighting example already follows); change it before adding this map to a ShadowSet if
+	// it shadows a different light.
 	osg::ref_ptr<osg::Uniform> casterIndex;
 
 	osg::Matrixd lightView, lightProj;
@@ -222,9 +244,9 @@ struct ShadowMap {
 	// `direction` (ray travel direction, as LightSet::setSpot()), its field of view covering
 	// `outerConeAngle` (radians, half-angle, as LightSet::setSpot()). Near/far bracket the scene
 	// bound (`coverage.radius * options.margin`) as seen from the light; `options.extent` is not
-	// used. Everything else - `camera`, `depthTexture`, the uniforms, DIRECT_LIGHTING_HOOK_SHADOWED
-	// - is the same as create()'s. `bias` is compared in the map's non-linear depth, so a spot
-	// map usually wants a smaller bias than a directional one.
+	// used. Everything else - `camera`, `depthTexture`, the uniforms - is the same as create()'s.
+	// `bias` is compared in the map's non-linear depth, so a spot map usually wants a smaller bias
+	// than a directional one.
 	static ShadowMap createSpot(
 		const osg::Vec3& position,
 		const osg::Vec3& direction,
@@ -288,28 +310,100 @@ struct ShadowMap {
 	);
 };
 
-// GLSL uniform declarations osgx_ShadowFactor() (SHADOW_FACTOR below) and
-// DIRECT_LIGHTING_HOOK_SHADOWED both assume are already in scope. `osgx_shadowMap` is
-// intentionally left for the caller to bind to whatever texture unit it likes (no fixed
-// convention imposed here) - see ShadowMap::depthTexture.
-inline constexpr const char* SHADOW_UNIFORMS = R"GLSL(
-uniform sampler2D osgx_shadowMap;
-uniform mat4 osgx_shadowMatrix;
-uniform float osgx_shadowBias;
-uniform float osgx_shadowNormalOffset;
-uniform float osgx_shadowStrength;
-uniform int osgx_shadowCasterIndex;
+// osgx_ShadowFactorForLight() CONTRACT - the Hook::ShadowFactor slot (Shader.hpp). Registered in
+// the "osgx::shadow" catalog (unlike DIRECT_LIGHTING_DECL, which is only ever concatenated
+// directly by Program-building C++ code) specifically so a genuinely custom osgx_DirectLighting()
+// (a Hook::DirectLighting override) can pull in just this declaration via
+// `#pragma osgx::shadow SHADOW_FACTOR_DECL` and call it directly - the whole point of factoring
+// this out of osgx_DirectLighting() instead of leaving it bundled inside one monolithic hook.
+inline constexpr const char* SHADOW_FACTOR_DECL = R"GLSL(
+float osgx_ShadowFactorForLight(int lightIndex, vec3 worldPos, vec3 N);
 )GLSL";
 
-// PCF 3x3 shadow test, WORLD-space - ported from 08-shadows.py/09-ibl.py's shadowFactor(),
-// generalized from the eye-space `vPosition` those files fed it to a world-space `worldPos`
-// instead (see the file-level comment above for why). `N` offsets worldPos along the receiver's
-// own normal by osgx_shadowNormalOffset BEFORE the light-space transform below - see
-// ShadowMap::normalOffset's own comment for why this is preferred over a larger `osgx_shadowBias`
-// alone. Requires SHADOW_UNIFORMS already in scope.
-inline constexpr const char* SHADOW_FACTOR = R"GLSL(
-float osgx_ShadowFactor(vec3 worldPos, vec3 N) {
-	vec4 sc = osgx_shadowMatrix * vec4(worldPos + N * osgx_shadowNormalOffset, 1.0);
+// Hook::ShadowFactor's DEFAULT - every light unshadowed, no shadow-map uniforms or samplers
+// declared at all. A scene with no osgx::ShadowSet pays nothing for this slot beyond the
+// function-call overhead (optimized away entirely by most drivers for a single `return 1.0`).
+// Self-contained (own #version line) so it compiles as a standalone osg::Shader object, same
+// convention as DIRECT_LIGHTING_HOOK_DEFAULT (Light.hpp) - not spliced by #pragma, so deliberately
+// NOT in the "osgx::shadow" catalog.
+inline constexpr const char* SHADOW_FACTOR_HOOK_NONE = R"GLSL(
+#version 460 core
+
+float osgx_ShadowFactorForLight(int lightIndex, vec3 worldPos, vec3 N) {
+	return 1.0;
+}
+)GLSL";
+
+// Hook::ShadowFactor's REAL override - osgx::ShadowSet's own shader (see ShadowSet's comment
+// below for the C++ side). Two small per-KIND slot arrays, not one combined array: GLSL cannot mix
+// sampler2D and samplerCube in the same array, so directional/spot (2D) and point (cube) need
+// separate arrays, each sized by this file's own MAX_SHADOWED_2D/MAX_SHADOWED_CUBE C++ constants
+// (kept in sync by hand with the #defines below - same precedent as MAX_LIGHTS/OSGX_MAX_LIGHTS in
+// Light.hpp). The per-slot matrix/bias/normalOffset/strength/casterIndex fields live in one
+// std140 uniform block (binding = @osgx::shadow@, same slot-reuse convention as
+// LIGHT_UNIFORMS' "osgx::light" in Light.hpp) - GLSL forbids opaque types (samplers) inside a
+// uniform block, so only the two sampler arrays stay plain uniforms; everything else moved out of
+// per-field arrays here specifically to match LightSet's own UBO precedent instead of a dozen
+// separate osg::Uniform arrays (see ai discussion, 2026-10-02). `casterIndex` is which
+// osgx_lights[] index that slot shadows, or -1 for an unused slot (osgx::ShadowSet leaves every
+// slot beyond however many maps were actually add()ed at -1).
+//
+// Packed layout (std140; must match Shadow.cpp's own float offsets exactly):
+//   osgx_ShadowData2D (20 floats / 80 bytes):
+//     mat4  matrix        offset  0
+//     float bias          offset 64
+//     float normalOffset  offset 68
+//     float strength      offset 72
+//     int   casterIndex   offset 76
+//   osgx_ShadowDataCube (8 floats / 32 bytes - std140 packs `bias` into the last 4 bytes of
+//   `lightPos`'s own 16-byte slot, the same vec3-then-scalar trick LIGHT_UNIFORMS' osgx_Light
+//   struct relies on; byte 28 is unused tail padding up to the struct's own 16-byte alignment):
+//     vec3  lightPos      offset  0
+//     float bias          offset 12
+//     float normalOffset  offset 16
+//     float strength      offset 20
+//     int   casterIndex   offset 24
+inline constexpr const char* SHADOW_UNIFORMS_MULTI = R"GLSL(
+#define OSGX_MAX_SHADOWED_2D 2
+#define OSGX_MAX_SHADOWED_CUBE 2
+
+struct osgx_ShadowData2D {
+	mat4 matrix;
+	float bias;
+	float normalOffset;
+	float strength;
+	int casterIndex;
+};
+
+struct osgx_ShadowDataCube {
+	vec3 lightPos;
+	float bias;
+	float normalOffset;
+	float strength;
+	int casterIndex;
+};
+
+layout(std140, binding = @osgx::shadow@) uniform osgx_ShadowBuffer {
+	osgx_ShadowData2D osgx_shadowData2D[OSGX_MAX_SHADOWED_2D];
+	osgx_ShadowDataCube osgx_shadowDataCube[OSGX_MAX_SHADOWED_CUBE];
+};
+
+uniform sampler2D osgx_shadowMaps2D[OSGX_MAX_SHADOWED_2D];
+uniform samplerCube osgx_shadowMapsCube[OSGX_MAX_SHADOWED_CUBE];
+)GLSL";
+
+// PCF 3x3 shadow test, WORLD-space, for 2D (directional/spot) slot `slot` - the same math the old
+// single-map SHADOW_FACTOR used to do unconditionally, now parameterized by array index. `slot` is
+// a dynamically UNIFORM expression (derived only from a loop counter and uniform data, identical
+// across every fragment in the draw call), which core GLSL 4.00+ permits for sampler-array
+// indexing with no extension. `N` offsets worldPos along the receiver's own normal by
+// osgx_shadowData2D[slot].normalOffset BEFORE the light-space transform - see
+// ShadowMap::normalOffset's own comment for why this is preferred over a larger bias alone.
+// Requires SHADOW_UNIFORMS_MULTI already in scope.
+inline constexpr const char* SHADOW_FACTOR_2D = R"GLSL(
+float osgx_ShadowFactor2D(int slot, vec3 worldPos, vec3 N) {
+	osgx_ShadowData2D d = osgx_shadowData2D[slot];
+	vec4 sc = d.matrix * vec4(worldPos + N * d.normalOffset, 1.0);
 
 	sc /= sc.w;
 
@@ -317,145 +411,142 @@ float osgx_ShadowFactor(vec3 worldPos, vec3 N) {
 
 	if(any(lessThan(uv, vec3(0.0))) || any(greaterThan(uv, vec3(1.0)))) return 1.0;
 
-	vec2 sz = 1.0 / vec2(textureSize(osgx_shadowMap, 0));
+	vec2 sz = 1.0 / vec2(textureSize(osgx_shadowMaps2D[slot], 0));
 	float shadow = 0.0;
 
 	for(int x = -1; x <= 1; x++) {
 		for(int y = -1; y <= 1; y++) {
 			shadow += (
-				uv.z - osgx_shadowBias > texture(osgx_shadowMap, uv.xy + vec2(x, y) * sz).r
+				uv.z - d.bias > texture(osgx_shadowMaps2D[slot], uv.xy + vec2(x, y) * sz).r
 			) ? 1.0 : 0.0;
 		}
 	}
 
-	return mix(1.0, 1.0 - osgx_shadowStrength, shadow / 9.0);
+	return mix(1.0, 1.0 - d.strength, shadow / 9.0);
 }
 )GLSL";
 
-// Shadowed counterpart to osgx::DIRECT_LIGHTING_HOOK_DEFAULT (Light.hpp) - identical per-light
-// loop (both share LIGHT_SAMPLE's osgx_SampleLight() dispatch), except the light at index
-// `osgx_shadowCasterIndex` (default 0, the "index 0 is the key light" convention every existing
-// pyosg-lighting example already follows) has its contribution multiplied by
-// osgx_ShadowFactor(worldPos), computed once per fragment (not once per
-// light - it only depends on position, not which light is being evaluated). A caller with a
-// ShadowMap adds THIS shader object instead of DIRECT_LIGHTING_HOOK_DEFAULT - same hook-swap
-// mechanism (see Light.hpp's DIRECT_LIGHTING_DECL/DIRECT_LIGHTING_HOOK_DEFAULT contract comment),
-// no other shader changes needed: both define osgx_DirectLighting() with the identical (N, V,
-// worldPos, mat) signature DIRECT_LIGHTING_DECL forward-declares. Self-contained (own #version/PI/
-// #pragma lines), so not spliced by name via #pragma osgx::shadow - deliberately NOT in
-// the "osgx::shadow" catalog, same reasoning as DIRECT_LIGHTING_HOOK_DEFAULT itself.
-inline constexpr const char* DIRECT_LIGHTING_HOOK_SHADOWED = R"GLSL(
-#version 460 core
-
-const float PI = 3.14159265359;
-
-#pragma osgx::pbr MATERIAL_STRUCT, D_GGX, G_SCHLICK, G_SMITH, F_SCHLICK
-#pragma osgx::light POINT_LIGHT_RADIANCE, LIGHT_UNIFORMS, DIRECTIONAL_LIGHT_RADIANCE, SPOT_LIGHT_RADIANCE, LIGHT_SAMPLE, SPHERE_LIGHT_SPECULAR
-#pragma osgx::pbr DIRECT_SPECULAR, DIRECT_DIFFUSE, DIRECT_LIGHT, DIRECT_LIGHT_SPHERE
-#pragma osgx::shadow SHADOW_UNIFORMS, SHADOW_FACTOR
-
-vec3 osgx_DirectLighting(vec3 N, vec3 V, vec3 worldPos, osgx_Material mat) {
-	vec3 color = vec3(0.0);
-	float shadow = osgx_ShadowFactor(worldPos, N);
-
-	// Every slot, gated by its `enabled` flag (as DIRECT_LIGHTING_HOOK_DEFAULT in Light.hpp).
-	for(int i = 0; i < OSGX_MAX_LIGHTS; i++) {
-		osgx_Light light = osgx_lights[i];
-
-		if(light.enabled == 0) continue;
-
-		osgx_LightSample s = osgx_SampleLight(light, worldPos);
-		vec3 contribution;
-
-		if(s.sourceRadius > 0.0) {
-			contribution = osgx_DirectLightSphere(N, V, s.L, s.toLight, s.radiance, mat, s.sourceRadius);
-		}
-
-		else {
-			contribution = osgx_DirectLight(N, V, s.L, s.radiance, mat);
-		}
-
-		color += contribution * ((i == osgx_shadowCasterIndex) ? shadow : 1.0);
-	}
-
-	return color;
-}
-)GLSL";
-
-// GLSL uniform declarations osgx_ShadowFactorPoint() (SHADOW_FACTOR_POINT below) and
-// DIRECT_LIGHTING_HOOK_SHADOWED_POINT both assume are already in scope - the point-light
-// counterpart to SHADOW_UNIFORMS above. `osgx_shadowLightPos` is world-space, needed here (unlike
-// the 2D map kinds) since there's no single shadowMatrix to fold the light's position into - the
-// cube lookup direction and the compared distance both have to be rebuilt from it per fragment.
-inline constexpr const char* SHADOW_UNIFORMS_POINT = R"GLSL(
-uniform samplerCube osgx_shadowCubeMap;
-uniform vec3 osgx_shadowLightPos;
-uniform float osgx_shadowBias;
-uniform float osgx_shadowNormalOffset;
-uniform float osgx_shadowStrength;
-uniform int osgx_shadowCasterIndex;
-)GLSL";
-
-// Cube-map distance-compare shadow test - the point-light counterpart to SHADOW_FACTOR. No
-// projection/uv math needed the way the 2D map kinds need: the lookup direction IS
-// worldPos - osgx_shadowLightPos, and the value stored at that direction IS the real linear
-// distance from the light to whatever ShadowMap::createPoint()'s distance-only Program saw there
-// (see its own comment in Shadow.cpp for why no separate light-position uniform was needed to
-// WRITE that cube in the first place). Single-tap, no PCF yet (SHADOW_FACTOR's 3x3 doesn't
-// translate directly to a cube's non-uniform texel spacing) - a starting point, not a final form.
-// Requires SHADOW_UNIFORMS_POINT already in scope.
-inline constexpr const char* SHADOW_FACTOR_POINT = R"GLSL(
-float osgx_ShadowFactorPoint(vec3 worldPos, vec3 N) {
-	vec3 offsetPos = worldPos + N * osgx_shadowNormalOffset;
-	vec3 toFragment = offsetPos - osgx_shadowLightPos;
+// Cube-map distance-compare shadow test for point slot `slot` - the same math the old single-map
+// SHADOW_FACTOR_POINT used to do, parameterized by array index (see SHADOW_FACTOR_2D's own comment
+// on why dynamic array indexing here is safe). No projection/uv math needed the way the 2D kinds
+// need: the lookup direction IS worldPos - d.lightPos, and the value stored at that direction IS
+// the real linear distance from the light to whatever ShadowMap::createPoint()'s distance-only
+// Program saw there. Single-tap, no PCF yet (the 2D kind's 3x3 offset pattern doesn't translate
+// directly to a cube's non-uniform texel spacing at the seams) - a starting point, not a final
+// form. Requires SHADOW_UNIFORMS_MULTI already in scope.
+inline constexpr const char* SHADOW_FACTOR_CUBE = R"GLSL(
+float osgx_ShadowFactorCube(int slot, vec3 worldPos, vec3 N) {
+	osgx_ShadowDataCube d = osgx_shadowDataCube[slot];
+	vec3 offsetPos = worldPos + N * d.normalOffset;
+	vec3 toFragment = offsetPos - d.lightPos;
 	float dist = length(toFragment);
-	float stored = texture(osgx_shadowCubeMap, toFragment).r;
+	float stored = texture(osgx_shadowMapsCube[slot], toFragment).r;
 
-	return (dist - osgx_shadowBias > stored) ? (1.0 - osgx_shadowStrength) : 1.0;
+	return (dist - d.bias > stored) ? (1.0 - d.strength) : 1.0;
 }
 )GLSL";
 
-// DIRECT_LIGHTING_HOOK_SHADOWED's point-light counterpart - identical apart from which shadow
-// catalog entries it splices and which shadow-factor function it calls. A sibling hook rather than
-// a branch inside DIRECT_LIGHTING_HOOK_SHADOWED itself, matching the existing "one shadowed light,
-// one hook" contract (see this file's own header comment on the still-open casterIndex/
-// one-shadowed-light-per-hook limitation) - a caller shadowing a point light adds THIS hook object
-// instead, same hook-swap mechanism as the other two.
-inline constexpr const char* DIRECT_LIGHTING_HOOK_SHADOWED_POINT = R"GLSL(
+// Hook::ShadowFactor's real override shader TEXT - osgx::ShadowSet::shader (built via
+// resolveShaderLibs() in Shadow.cpp) is exactly this. Scans both small slot arrays for a
+// casterIndex match and evaluates whichever kind it finds; a light with no matching slot in
+// either array falls through to 1.0 (unshadowed), identical to Hook::ShadowFactor's own default
+// (SHADOW_FACTOR_HOOK_NONE above) for that one light. Self-contained (own #version line); not
+// itself in the "osgx::shadow" catalog (a caller swaps in osgx::ShadowSet::shader directly via
+// Hook::ShadowFactor, never by name via #pragma), same reasoning as
+// DIRECT_LIGHTING_HOOK_DEFAULT/SHADOW_FACTOR_HOOK_NONE.
+inline constexpr const char* SHADOW_FACTOR_HOOK_MULTI = R"GLSL(
 #version 460 core
 
-const float PI = 3.14159265359;
+#pragma osgx::shadow SHADOW_UNIFORMS_MULTI, SHADOW_FACTOR_2D, SHADOW_FACTOR_CUBE
 
-#pragma osgx::pbr MATERIAL_STRUCT, D_GGX, G_SCHLICK, G_SMITH, F_SCHLICK
-#pragma osgx::light POINT_LIGHT_RADIANCE, LIGHT_UNIFORMS, DIRECTIONAL_LIGHT_RADIANCE, SPOT_LIGHT_RADIANCE, LIGHT_SAMPLE, SPHERE_LIGHT_SPECULAR
-#pragma osgx::pbr DIRECT_SPECULAR, DIRECT_DIFFUSE, DIRECT_LIGHT, DIRECT_LIGHT_SPHERE
-#pragma osgx::shadow SHADOW_UNIFORMS_POINT, SHADOW_FACTOR_POINT
-
-vec3 osgx_DirectLighting(vec3 N, vec3 V, vec3 worldPos, osgx_Material mat) {
-	vec3 color = vec3(0.0);
-	float shadow = osgx_ShadowFactorPoint(worldPos, N);
-
-	for(int i = 0; i < OSGX_MAX_LIGHTS; i++) {
-		osgx_Light light = osgx_lights[i];
-
-		if(light.enabled == 0) continue;
-
-		osgx_LightSample s = osgx_SampleLight(light, worldPos);
-		vec3 contribution;
-
-		if(s.sourceRadius > 0.0) {
-			contribution = osgx_DirectLightSphere(N, V, s.L, s.toLight, s.radiance, mat, s.sourceRadius);
-		}
-
-		else {
-			contribution = osgx_DirectLight(N, V, s.L, s.radiance, mat);
-		}
-
-		color += contribution * ((i == osgx_shadowCasterIndex) ? shadow : 1.0);
+float osgx_ShadowFactorForLight(int lightIndex, vec3 worldPos, vec3 N) {
+	for(int slot = 0; slot < OSGX_MAX_SHADOWED_2D; slot++) {
+		if(osgx_shadowData2D[slot].casterIndex == lightIndex) return osgx_ShadowFactor2D(slot, worldPos, N);
 	}
 
-	return color;
+	for(int slot = 0; slot < OSGX_MAX_SHADOWED_CUBE; slot++) {
+		if(osgx_shadowDataCube[slot].casterIndex == lightIndex) return osgx_ShadowFactorCube(slot, worldPos, N);
+	}
+
+	return 1.0;
 }
 )GLSL";
+
+// Aggregates however many osgx::ShadowMaps a scene has (any mix of directional/spot and point, up
+// to MAX_SHADOWED_2D/MAX_SHADOWED_CUBE each) into the combined uniform arrays
+// SHADOW_FACTOR_HOOK_MULTI reads, and owns that hook's shader object - the Hook::ShadowFactor
+// override a caller passes to applyHooks()/PBRScene::Options::hooks/PBRLightingPass::Options::hooks
+// in place of the slot's SHADOW_FACTOR_HOOK_NONE default. Replaces the old design's one
+// `const ShadowMap*` field entirely: that design could shadow at most ONE light, ever (directional/
+// spot and point were even mutually exclusive, since each needed the ENTIRE osgx_DirectLighting()
+// swapped for a near-duplicate copy of the same per-light loop - see this file's own header
+// comment). A ShadowSet with maps for two different osgx_lights[] indices shadows both at once.
+struct ShadowSet {
+	// The two sampler arrays - plain uniforms, since GLSL forbids opaque types inside a uniform
+	// block (see SHADOW_UNIFORMS_MULTI's own comment on why `shadowData` below can't absorb these
+	// too). apply() assigns each active slot's texture unit into these.
+	osg::ref_ptr<osg::Uniform> shadowMaps2D;
+	osg::ref_ptr<osg::Uniform> shadowMapsCube;
+
+	// The matrix/bias/normalOffset/strength/casterIndex fields for every slot (both kinds), packed
+	// into one std140 buffer bound at the "osgx::shadow" UBO slot - same raw-float-buffer technique
+	// as LightSet's own "osgx::light" buffer (Light.hpp/Light.cpp), not a dozen separate
+	// osg::Uniform arrays. `shadowData`'s exact float layout is Shadow.cpp's own private detail;
+	// see SHADOW_UNIFORMS_MULTI's comment for the byte layout it must match. add() populates the
+	// next free slot of the right kind; sync() re-reads every already-assigned slot's CURRENT
+	// values (call after reposition()/repositionSpot()/repositionPoint() on any member map - same
+	// place those are already called from an `if(changed)` ImGui block in every existing example,
+	// not a per-frame unconditional call).
+	osg::ref_ptr<osgx::FloatArray> shadowData;
+	osg::ref_ptr<osg::UniformBufferBinding> shadowDataBinding;
+
+	// SHADOW_FACTOR_HOOK_MULTI, ready to pass as the Hook::ShadowFactor override.
+	osg::ref_ptr<osg::Shader> shader;
+
+	// True once construct()ed - a default-constructed ShadowSet has none of the above and must not
+	// be add()ed to or apply()'d.
+	bool valid() const;
+
+	// Builds an empty set (all casterIndex slots -1, "unused") ready for add(). `shader` is built
+	// via osgx::cachedShader() (its text never varies across instances, so every ShadowSet shares
+	// one compiled osg::Shader - see Shadow.cpp's own comment).
+	static ShadowSet create();
+
+	// Registers `map` in the next free slot of whichever array matches its kind (2D for a
+	// create()/createSpot() map, cube for createPoint() - detected from `map.camera.valid()`,
+	// matching ShadowMap::valid()'s own discriminant), writing its CURRENT uniform values
+	// (shadowMatrix/bias/normalOffset/strength, and `map.casterIndex`'s value as that slot's
+	// casterIndex) immediately. Throws std::out_of_range if that kind's array is already full
+	// (MAX_SHADOWED_2D/MAX_SHADOWED_CUBE) or std::invalid_argument if `map` is itself invalid.
+	// `map` must outlive every sync() call this ShadowSet makes afterward - it is not copied, only
+	// its current uniform VALUES are, each time.
+	void add(const ShadowMap& map);
+
+	// Re-reads every already-add()ed slot's CURRENT uniform values from its own ShadowMap and
+	// re-uploads them - call after reposition()/repositionSpot()/repositionPoint() on any member
+	// map so a live-dragged light's shadow stays in sync (see `reposition()`'s own comment on
+	// ShadowMap: cheap enough to call on every GUI-slider tick).
+	void sync();
+
+	// Binds each active 2D/cube texture to its own texture unit via
+	// osgx::Library::instance().bindings() (one named slot per array element -
+	// "osgx::shadowMap2D#0".."#1", "osgx::shadowMapCube#0".."#1" - so this never collides with any
+	// other texture the rest of the pipeline reserves), points every slot beyond what was actually
+	// add()ed at Bindings::unused()'s shared placeholder unit (never bound to a real texture -
+	// nothing samples a dead slot - just a real number the allocator guarantees nothing else will
+	// ever also be assigned), adds the two sampler uniforms, and resolves + attaches
+	// `shadowDataBinding` at the "osgx::shadow" UBO slot. Call once after every add() this
+	// ShadowSet will ever receive; sync() alone is enough after that for live updates.
+	void apply(osg::StateSet* stateSet) const;
+
+private:
+	int _next2D = 0;
+	int _nextCube = 0;
+	// Which ShadowMap populated each slot, kept only so sync() has something to re-read from -
+	// not exposed, and not copied (a ShadowSet is a live binding to specific ShadowMap objects,
+	// not a value type).
+	const ShadowMap* _maps2D[MAX_SHADOWED_2D] = {};
+	const ShadowMap* _mapsCube[MAX_SHADOWED_CUBE] = {};
+};
 
 }

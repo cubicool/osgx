@@ -263,6 +263,16 @@ vec3 osgx_DirectLighting(vec3 N, vec3 V, vec3 worldPos, osgx_Material mat);
 // and the pure BRDF snippets from "osgx::pbr" and the rest of its own dependencies from
 // "osgx::light" - two separate pragma lines, since resolveShaderLibs() resolves each line against
 // whichever registered namespace it names, independent of the others.
+//
+// Calls osgx_ShadowFactorForLight() (Hook::ShadowFactor, Shader.hpp; CONTRACT declared by
+// Shadow.hpp's SHADOW_FACTOR_DECL, pulled in below via `#pragma osgx::shadow`) once per light,
+// unconditionally - this is the ONE osgx_DirectLighting() implementation now, shadowed or not
+// (2026-10-02; previously "shadowed" meant an entirely separate, near-duplicate copy of this same
+// loop - Shadow.hpp's now-removed DIRECT_LIGHTING_HOOK_SHADOWED/_POINT). Any Program attaching
+// THIS shader as its Hook::DirectLighting definition must ALSO attach a definition for
+// Hook::ShadowFactor (SHADOW_FACTOR_HOOK_NONE if nothing should be shadowed, or an
+// osgx::ShadowSet's own `shader` otherwise) - same "exactly one definition, never zero" rule
+// applyHooks() already enforces for every other slot (Shader.hpp).
 inline constexpr const char* DIRECT_LIGHTING_HOOK_DEFAULT = R"GLSL(
 #version 460 core
 
@@ -271,6 +281,7 @@ const float PI = 3.14159265359;
 #pragma osgx::pbr MATERIAL_STRUCT, D_GGX, G_SCHLICK, G_SMITH, F_SCHLICK
 #pragma osgx::light POINT_LIGHT_RADIANCE, LIGHT_UNIFORMS, DIRECTIONAL_LIGHT_RADIANCE, SPOT_LIGHT_RADIANCE, LIGHT_SAMPLE, SPHERE_LIGHT_SPECULAR
 #pragma osgx::pbr DIRECT_SPECULAR, DIRECT_DIFFUSE, DIRECT_LIGHT, DIRECT_LIGHT_SPHERE
+#pragma osgx::shadow SHADOW_FACTOR_DECL
 
 vec3 osgx_DirectLighting(vec3 N, vec3 V, vec3 worldPos, osgx_Material mat) {
 	vec3 color = vec3(0.0);
@@ -283,13 +294,14 @@ vec3 osgx_DirectLighting(vec3 N, vec3 V, vec3 worldPos, osgx_Material mat) {
 
 		// LIGHT_SAMPLE zeroes sourceRadius for directional lights, so no separate type check here.
 		osgx_LightSample s = osgx_SampleLight(light, worldPos);
+		float shadow = osgx_ShadowFactorForLight(i, worldPos, N);
 
 		if(s.sourceRadius > 0.0) {
-			color += osgx_DirectLightSphere(N, V, s.L, s.toLight, s.radiance, mat, s.sourceRadius);
+			color += osgx_DirectLightSphere(N, V, s.L, s.toLight, s.radiance, mat, s.sourceRadius) * shadow;
 		}
 
 		else {
-			color += osgx_DirectLight(N, V, s.L, s.radiance, mat);
+			color += osgx_DirectLight(N, V, s.L, s.radiance, mat) * shadow;
 		}
 	}
 

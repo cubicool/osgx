@@ -340,10 +340,12 @@ PBRLightingPass PBRLightingPass::create(
 	// DirectLighting: was attached unconditionally here, OUTSIDE applyHooks() entirely, until this
 	// collided with a real DeferredLighting override that also wanted the same low-level BRDF
 	// primitives (D_GGX/G_Schlick/G_Smith/F_Schlick/DirectSpecular/DirectDiffuse/DirectLight) for
-	// its own use - DIRECT_LIGHTING_HOOK_DEFAULT/_SHADOWED pull those in via their own `#pragma
-	// osgx::pbr` to implement osgx_DirectLighting() itself, so two shader objects ended up defining
-	// the same GLSL functions (a link error). Now a real slot - see Hook::DirectLighting's own
-	// comment (Shader.hpp) for the full incident.
+	// its own use - DIRECT_LIGHTING_HOOK_DEFAULT pulls those in via its own `#pragma osgx::pbr` to
+	// implement osgx_DirectLighting() itself, so two shader objects ended up defining the same GLSL
+	// functions (a link error). Now a real slot - see Hook::DirectLighting's own comment
+	// (Shader.hpp) for the full incident. DIRECT_LIGHTING_HOOK_DEFAULT is the ONLY definition now
+	// (2026-10-02) - "shadowed or not" moved to the separate Hook::ShadowFactor slot just below, see
+	// osgx::ShadowSet's own comment (Shadow.hpp) for why.
 	//
 	// Tonemap: never zero because OSGX_PBR_NO_TONEMAP strips the CALL at render time, but that
 	// define is absent during OSG's realize-time GLObjectsVisitor pre-compile, which would then
@@ -353,6 +355,21 @@ PBRLightingPass PBRLightingPass::create(
 	// cannot "override" by adding a second shader defining osgx_Tonemap() - that is a
 	// duplicate-definition link error. Which is exactly why options.hooks exists: customization
 	// SUBSTITUTES a slot's shader rather than competing with it.
+	//
+	// ShadowFactor's override shader - options.shadowSet's own cached `shader` if given, else the
+	// cached trivial "always unshadowed" stub. A plain if/else into one ref_ptr rather than a
+	// ternary: shadowSet->shader is already an osg::ref_ptr<osg::Shader>, and ref_ptr's implicit
+	// conversions both ways make a ternary between it and a raw osg::Shader* ambiguous.
+	osg::ref_ptr<osg::Shader> shadowFactorShader;
+
+	if(options.shadowSet) shadowFactorShader = options.shadowSet->shader;
+
+	else {
+		shadowFactorShader = osgx::cachedShader(
+			osg::Shader::FRAGMENT, resolveShaderLibs(std::string(osgx::SHADOW_FACTOR_HOOK_NONE))
+		);
+	}
+
 	osgx::applyHooks(prog, options.hooks, {
 		{osgx::Hook::DeferredLighting, new osg::Shader(
 			osg::Shader::FRAGMENT,
@@ -360,18 +377,15 @@ PBRLightingPass PBRLightingPass::create(
 		)},
 		{osgx::Hook::DirectLighting, new osg::Shader(
 			osg::Shader::FRAGMENT,
-			resolveShaderLibs(
-				options.shadowMap
-					? osgx::DIRECT_LIGHTING_HOOK_SHADOWED
-					: osgx::DIRECT_LIGHTING_HOOK_DEFAULT
-			)
+			resolveShaderLibs(osgx::DIRECT_LIGHTING_HOOK_DEFAULT)
 		)},
 		{osgx::Hook::Tonemap, new osg::Shader(
 			osg::Shader::FRAGMENT,
 			resolveShaderLibs(
 				options.tonemap ? osgx::TONEMAP_HOOK_DEFAULT : osgx::TONEMAP_HOOK_IDENTITY
 			)
-		)}
+		)},
+		{osgx::Hook::ShadowFactor, shadowFactorShader}
 	});
 
 	auto quad = osg::createTexturedQuadGeometry(
@@ -459,14 +473,7 @@ PBRLightingPass PBRLightingPass::create(
 		ss->setDefine("OSGX_PBR_AO");
 	}
 
-	if(options.shadowMap) {
-		bindInput("osgx::shadowMap", options.shadowMap->depthTexture, "osgx_shadowMap");
-		ss->addUniform(options.shadowMap->shadowMatrix);
-		ss->addUniform(options.shadowMap->bias);
-		ss->addUniform(options.shadowMap->normalOffset);
-		ss->addUniform(options.shadowMap->strength);
-		ss->addUniform(options.shadowMap->casterIndex);
-	}
+	if(options.shadowSet) options.shadowSet->apply(ss);
 
 	result.node = cam;
 

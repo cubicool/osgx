@@ -158,27 +158,27 @@ void bind_pbr(py::module_& m) {
 	py::class_<osgx::PBRScene::Options>(
 		pbrScene,
 		"Options",
-		"PBRScene.create() inputs, each optional: environment (an osgx.Environment), shadowMap (an "
-		"osgx.ShadowMap for the key light), hooks, diagnostics."
+		"PBRScene.create() inputs, each optional: environment (an osgx.Environment), shadowSet (an "
+		"osgx.ShadowSet shadowing any mix of lights), hooks, diagnostics."
 	)
 		.def(
 			py::init([](
 				osgx::Environment* environment,
-				const osgx::ShadowMap* shadowMap,
+				const osgx::ShadowSet* shadowSet,
 				py::object hooks,
 				bool diagnostics
 			) {
 				osgx::PBRScene::Options options;
 
 				options.environment = environment;
-				options.shadowMap = shadowMap;
+				options.shadowSet = shadowSet;
 				options.hooks = pyx::unpack_one_or_many<osgx::HookList::value_type>(hooks);
 				options.diagnostics = diagnostics;
 
 				return options;
 			}),
 			"environment"_a=nullptr,
-			"shadowMap"_a=nullptr,
+			"shadowSet"_a=nullptr,
 			"hooks"_a=py::dict(),
 			"diagnostics"_a=false,
 			"Constructs the options; every argument is optional."
@@ -188,8 +188,8 @@ void bind_pbr(py::module_& m) {
 			"The osgx.Environment lighting the scene; None leaves the environment term at zero."
 		)
 		.def_readwrite(
-			"shadowMap", &osgx::PBRScene::Options::shadowMap,
-			"An osgx.ShadowMap shadowing the key/directional light; None is unshadowed."
+			"shadowSet", &osgx::PBRScene::Options::shadowSet,
+			"An osgx.ShadowSet shadowing any mix of this scene's lights; None is unshadowed."
 		)
 		.def_property(
 			"hooks",
@@ -327,7 +327,7 @@ void bind_pbr(py::module_& m) {
 				osgx::Environment* environment,
 				bool tonemap,
 				py::object hooks,
-				const osgx::ShadowMap* shadowMap,
+				const osgx::ShadowSet* shadowSet,
 				osg::Texture2D* aoTexture,
 				bool diagnostics
 			) {
@@ -336,7 +336,7 @@ void bind_pbr(py::module_& m) {
 				options.environment = environment;
 				options.tonemap = tonemap;
 				options.hooks = pyx::unpack_one_or_many<osgx::HookList::value_type>(hooks);
-				options.shadowMap = shadowMap;
+				options.shadowSet = shadowSet;
 				options.aoTexture = aoTexture;
 				options.diagnostics = diagnostics;
 
@@ -345,7 +345,7 @@ void bind_pbr(py::module_& m) {
 			"environment"_a=nullptr,
 			"tonemap"_a=true,
 			"hooks"_a=py::dict(),
-			"shadowMap"_a=nullptr,
+			"shadowSet"_a=nullptr,
 			"aoTexture"_a=nullptr,
 			"diagnostics"_a=false,
 			"Constructs the options; every argument is optional."
@@ -375,12 +375,13 @@ void bind_pbr(py::module_& m) {
 			"Substitutes this pass's built-in shader for a slot - a dict of "
 			"{osgx.Hook: osg.Shader} (preferred), a list of (osgx.Hook, osg.Shader) pairs, or a "
 			"single bare (osgx.Hook, osg.Shader) pair are all accepted. osgx.Hook.DeferredLighting "
-			"(the whole fragment main()), osgx.Hook.DirectLighting, and osgx.Hook.Tonemap are "
-			"supported. Each REPLACES its default, it does not add alongside it."
+			"(the whole fragment main()), osgx.Hook.DirectLighting, osgx.Hook.ShadowFactor, and "
+			"osgx.Hook.Tonemap are supported. Each REPLACES its default, it does not add alongside "
+			"it."
 		)
 		.def_readwrite(
-			"shadowMap", &osgx::PBRLightingPass::Options::shadowMap,
-			"An osgx.ShadowMap shadowing the key/directional light; None is unshadowed."
+			"shadowSet", &osgx::PBRLightingPass::Options::shadowSet,
+			"An osgx.ShadowSet shadowing any mix of this scene's lights; None is unshadowed."
 		)
 		.def_readwrite(
 			"aoTexture", &osgx::PBRLightingPass::Options::aoTexture,

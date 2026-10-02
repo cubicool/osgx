@@ -1,6 +1,6 @@
 // vimrun! ./examples/osgx-shadow
 //
-// A standalone proof that osgx::DIRECT_LIGHTING_HOOK_SHADOWED(_POINT) actually shadows: one of
+// A standalone proof that osgx::ShadowSet/Hook::ShadowFactor actually shadows: one of
 // several small osgx::Cube-based test scenes sitting on a flat floor quad, lit by one
 // osgx::LightSet light whose shadow is cast via osgx::ShadowMap: `--type directional` (default,
 // ShadowMap::create(), orthographic), `--type spot` (ShadowMap::createSpot(), perspective from the
@@ -18,13 +18,14 @@
 // rather than an osgx::Light.hpp primitive.
 //
 // Deliberately NOT osgx::PBRScene - no glTF asset, no IBL environment, nothing but the
-// generic osgx::pbr direct-lighting hook contract plus the new shadow one, mirroring
+// generic osgx::pbr direct-lighting hook contract plus the shadow-factor one, mirroring
 // osgx-lights.cpp's own "load nothing, just press a key" shape as closely as possible: the
 // fragment shader here is IDENTICAL to osgx-lights.cpp's (only DIRECT_LIGHTING_DECL + a call
-// site) - the only difference is which hook shader object makeProgram() adds alongside it
-// (DIRECT_LIGHTING_HOOK_SHADOWED instead of DIRECT_LIGHTING_HOOK_DEFAULT) and the extra
-// shadow-map texture/uniforms wired onto the StateSet. That's the whole point: proving the hook
-// swap is really a drop-in, no other shader change needed.
+// site) - osgx_DirectLighting() itself (DIRECT_LIGHTING_HOOK_DEFAULT) never changes; the only
+// difference is which Hook::ShadowFactor shader object makeProgram() adds alongside it
+// (osgx::ShadowSet's own override instead of SHADOW_FACTOR_HOOK_NONE) and the extra shadow-map
+// texture/uniforms wired onto the StateSet via ShadowSet::apply(). That's the whole point: proving
+// the hook swap is really a drop-in, no other shader change needed.
 //
 // Scene-graph shape (avoids a shadow-texture read/write feedback loop, same pattern the old
 // hand-rolled pyosg-lighting/08-shadows.py used): root -> [shadowMap.camera (PRE_RENDER, renders
@@ -159,24 +160,32 @@ void main() {
 }
 )GLSL";
 
-// `shadowed` selects DIRECT_LIGHTING_HOOK_SHADOWED(_POINT) vs. plain DIRECT_LIGHTING_HOOK_DEFAULT -
-// the 's'-key toggle in main() rebuilds the Program via this same function, swapping only that one
-// shader object. `pointShadow` picks the cube-map-sampling sibling hook for --type point; ignored
-// when !shadowed.
-osg::ref_ptr<osg::Program> makeProgram(bool shadowed, bool pointShadow) {
+// osgx_DirectLighting() is unconditionally DIRECT_LIGHTING_HOOK_DEFAULT now - "shadowed or not" is
+// the SEPARATE Hook::ShadowFactor slot instead (see osgx::ShadowSet's own comment, Shadow.hpp):
+// `shadowSet` non-null swaps in ITS real override shader; null swaps in the trivial
+// "always unshadowed" stub (SHADOW_FACTOR_HOOK_NONE). The 's'-key toggle in main() rebuilds the
+// Program via this same function, passing &shadowSet or nullptr. No more separate point-vs-2D
+// branch here either - ShadowSet's own hook scans both kinds, so this function no longer needs to
+// know which kind (or how many) shadow maps are actually in play.
+osg::ref_ptr<osg::Program> makeProgram(const osgx::ShadowSet* shadowSet) {
 	auto program = osgx::make_nref<osg::Program>(
-		shadowed ? "osgx_shadow_demo_shadowed" : "osgx_shadow_demo_unshadowed"
+		shadowSet ? "osgx_shadow_demo_shadowed" : "osgx_shadow_demo_unshadowed"
 	);
 	auto fragmentSrc = osgx::resolveShaderLibs(std::string(FRAGMENT_SHADER));
-	auto hookSrc = osgx::resolveShaderLibs(std::string(
-		!shadowed ? osgx::DIRECT_LIGHTING_HOOK_DEFAULT :
-		pointShadow ? osgx::DIRECT_LIGHTING_HOOK_SHADOWED_POINT :
-		osgx::DIRECT_LIGHTING_HOOK_SHADOWED
-	));
+	auto directLightingSrc = osgx::resolveShaderLibs(std::string(osgx::DIRECT_LIGHTING_HOOK_DEFAULT));
 
 	program->addShader(new osg::Shader(osg::Shader::VERTEX, std::string(VERTEX_SHADER)));
 	program->addShader(new osg::Shader(osg::Shader::FRAGMENT, fragmentSrc));
-	program->addShader(new osg::Shader(osg::Shader::FRAGMENT, hookSrc));
+	program->addShader(new osg::Shader(osg::Shader::FRAGMENT, directLightingSrc));
+
+	if(shadowSet) program->addShader(shadowSet->shader);
+
+	else {
+		program->addShader(osgx::cachedShader(
+			osg::Shader::FRAGMENT, osgx::resolveShaderLibs(std::string(osgx::SHADOW_FACTOR_HOOK_NONE))
+		));
+	}
+
 	program->addBindAttribLocation("position", 0);
 	program->addBindAttribLocation("normal", 1);
 
@@ -572,6 +581,17 @@ int main(int argc, char** argv) {
 
 	else shadowMap = osgx::ShadowMap::create(lightDir, sceneCoverage, shadowOptions);
 
+	// osgx::ShadowSet aggregates shadowMap (just the one light here) into the combined uniform
+	// arrays/Hook::ShadowFactor override makeProgram() below reads - see ShadowSet's own comment
+	// (Shadow.hpp). Every shadowMap.reposition*()/direct bias/normalOffset/strength edit anywhere
+	// in this file needs a matching shadowSet.sync() afterward, since the shader actually reads
+	// ShadowSet's OWN uniform arrays, not shadowMap's uniforms directly. apply() (which actually
+	// binds the StateSet) happens further down, where every other mainSS texture/uniform wiring
+	// for this example already lives.
+	auto shadowSet = osgx::ShadowSet::create();
+
+	shadowSet.add(shadowMap);
+
 	// Seeds the directional panel's slider from the real auto-derived value create()/createSpot()
 	// just computed, rather than starting it at 0 and surprising the first drag.
 	float shadowNormalOffset = 0.0f;
@@ -620,6 +640,7 @@ int main(int argc, char** argv) {
 
 			flickerRig->reposition = [
 				&shadowMap,
+				&shadowSet,
 				&spotDirection,
 				&spotOuterDegrees,
 				sceneCoverage,
@@ -632,6 +653,7 @@ int main(int argc, char** argv) {
 					sceneCoverage,
 					shadowOptions
 				);
+				shadowSet.sync();
 			};
 		}
 
@@ -642,10 +664,11 @@ int main(int argc, char** argv) {
 				lights->setPoint(0, pos, lightColor, intensity);
 			};
 
-			flickerRig->reposition = [&shadowMap, sceneCoverage, shadowOptions] (
+			flickerRig->reposition = [&shadowMap, &shadowSet, sceneCoverage, shadowOptions] (
 				const osg::Vec3& pos
 			) {
 				shadowMap.repositionPoint(pos, sceneCoverage, shadowOptions);
+				shadowSet.sync();
 			};
 		}
 
@@ -676,32 +699,14 @@ int main(int argc, char** argv) {
 		mainGroup->addChild(fanTransform.get());
 	}
 
-	// Shadow texture unit 0 - this demo has no other textures. `shadowMap`'s own bias/strength/
-	// casterIndex uniforms are added as-is (their defaults already match ShadowMap::Options above).
-	// A point map has no shadowMatrix (SHADOW_FACTOR_POINT rebuilds direction/distance straight
-	// from osgx_shadowLightPos instead - see Shadow.hpp) but does need that light-position uniform.
-	if(point) {
-		mainSS->setTextureAttributeAndModes(
-			0, shadowMap.cubeCapture.texture.get(), osg::StateAttribute::ON
-		);
-		mainSS->addUniform(new osg::Uniform("osgx_shadowCubeMap", 0));
-		mainSS->addUniform(shadowMap.lightPosition.get());
-	}
-
-	else {
-		mainSS->setTextureAttributeAndModes(0, shadowMap.depthTexture.get(), osg::StateAttribute::ON);
-		mainSS->addUniform(new osg::Uniform("osgx_shadowMap", 0));
-		mainSS->addUniform(shadowMap.shadowMatrix.get());
-	}
-
-	mainSS->addUniform(shadowMap.bias.get());
-	mainSS->addUniform(shadowMap.normalOffset.get());
-	mainSS->addUniform(shadowMap.strength.get());
-	mainSS->addUniform(shadowMap.casterIndex.get());
+	// Binds shadowSet's combined uniform arrays + depth/cube texture to mainSS - auto-detects
+	// point vs. 2D internally (ShadowSet::add()'s own discriminant), no if(point) branch needed
+	// here anymore.
+	shadowSet.apply(mainSS);
 
 	bool shadowed = true;
 
-	mainSS->setAttributeAndModes(makeProgram(shadowed, point).get(), osg::StateAttribute::ON);
+	mainSS->setAttributeAndModes(makeProgram(&shadowSet).get(), osg::StateAttribute::ON);
 
 	// minMarkerRadius/spotConeLength stay at their unit-scene-scale library defaults - this
 	// scene's own objects/floor are already close to unit scale, unlike osgx-lights.cpp's object.
@@ -744,10 +749,12 @@ int main(int argc, char** argv) {
 	viewer.setThreadingModel(osgViewer::Viewer::SingleThreaded);
 #endif
 
-	viewer.addEventHandler(new osgx::LambdaKeyHandler('s', [mainSS, &shadowed, point](auto&, auto&) {
+	viewer.addEventHandler(new osgx::LambdaKeyHandler('s', [mainSS, &shadowed, &shadowSet](auto&, auto&) {
 		shadowed = !shadowed;
 
-		mainSS->setAttributeAndModes(makeProgram(shadowed, point).get(), osg::StateAttribute::ON);
+		mainSS->setAttributeAndModes(
+			makeProgram(shadowed ? &shadowSet : nullptr).get(), osg::StateAttribute::ON
+		);
 
 		std::cout << "osgx-shadow: shadow " << (shadowed ? "ON" : "OFF") << std::endl;
 
@@ -778,6 +785,7 @@ int main(int argc, char** argv) {
 
 	if(spot) gui->addSection("Spot Light", [
 		&shadowMap,
+		&shadowSet,
 		&spotPosition,
 		&spotDirection,
 		&spotInnerDegrees,
@@ -815,6 +823,7 @@ int main(int argc, char** argv) {
 				sceneCoverage,
 				shadowOptions
 			);
+			shadowSet.sync();
 
 			if(flickerRig) {
 				flickerRig->baseIntensity = lightIntensity;
@@ -826,6 +835,7 @@ int main(int argc, char** argv) {
 	else if(point) gui->addSection("Point Light", [
 		lights,
 		&shadowMap,
+		&shadowSet,
 		&pointPosition,
 		&lightColor,
 		&lightIntensity,
@@ -845,6 +855,7 @@ int main(int argc, char** argv) {
 			lights->setPoint(0, pointPosition, lightColor, lightIntensity);
 
 			shadowMap.repositionPoint(pointPosition, sceneCoverage, shadowOptions);
+			shadowSet.sync();
 
 			if(flickerRig) {
 				flickerRig->baseIntensity = lightIntensity;
@@ -856,6 +867,7 @@ int main(int argc, char** argv) {
 	else gui->addSection("Directional Light", [
 		lights,
 		&shadowMap,
+		&shadowSet,
 		&lightDir,
 		&lightColor,
 		&lightIntensity,
@@ -873,12 +885,14 @@ int main(int argc, char** argv) {
 
 		if(ImGui::SliderFloat("Shadow Bias", &shadowBias, 0.0f, 0.05f, "%.5f")) {
 			shadowMap.bias->set(shadowBias);
+			shadowSet.sync();
 		}
 
 		if(ImGui::SliderFloat(
 			"Normal Offset", &shadowNormalOffset, 0.0f, std::max(0.01f, sceneCoverage.radius * 0.1f), "%.5f"
 		)) {
 			shadowMap.normalOffset->set(shadowNormalOffset);
+			shadowSet.sync();
 		}
 
 		if(changed) {
@@ -891,6 +905,7 @@ int main(int argc, char** argv) {
 				lights->setDirectional(0, lightDir, lightColor, lightIntensity);
 
 				shadowMap.reposition(lightDir, sceneCoverage, shadowOptions);
+				shadowSet.sync();
 
 				// reposition() recomputes normalOffset's own derived default (coverage changed),
 				// unlike bias - resync the slider's tracked value so it doesn't go stale.

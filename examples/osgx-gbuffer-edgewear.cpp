@@ -44,7 +44,6 @@
 
 OSGX_DISABLE_WARNINGS
 
-#include <osg/DisplaySettings>
 #include <osg/Geode>
 #include <osg/Group>
 #include <osg/Program>
@@ -273,7 +272,6 @@ void main() {
 int main() {
 	auto lib = osgx::initialize();
 
-	osg::DisplaySettings::instance()->setNumMultiSamples(4);
 	osgViewer::Viewer viewer;
 
 	viewer.setThreadingModel(osgViewer::Viewer::SingleThreaded);

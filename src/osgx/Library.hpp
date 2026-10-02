@@ -71,6 +71,21 @@ class Bindings {
 		// name.
 		unsigned int get(std::string_view name);
 
+		// A single, shared, process-wide texture unit reserved for "I need a real number the
+		// allocator guarantees nothing else will ever also be assigned, but I will never actually
+		// bind anything there." For a declared-but-provably-dead sampler array slot (e.g.
+		// osgx::ShadowSet's unused shadow-map slots, Shadow.cpp) - GLSL forbids leaving a sampler
+		// uniform at its C++-side default (texture unit 0) once TWO DIFFERENT sampler TYPES are
+		// both genuinely sampled somewhere in the same draw call, even if the specific array
+		// element holding that default is itself unreachable - see Shadow.cpp's own comment on
+		// ShadowSet::apply() for the full writeup, and the confirmed-by-direct-experiment finding
+		// that texture unit 0 specifically is the one value that's never safe to share this way
+		// (it's osgx::material.baseColor's own preferred index), while any OTHER value shared
+		// between two different sampler types at an otherwise-untouched unit is fine. One shared
+		// unit covers every caller and every sampler kind at once - nothing is ever bound there,
+		// so there is nothing for two different types to disagree about.
+		unsigned int unused();
+
 		struct SlotInfo {
 			Type type;
 			std::string name;

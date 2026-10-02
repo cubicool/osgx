@@ -60,7 +60,6 @@ OSGX_DISABLE_WARNINGS
 #include <osg/ArgumentParser>
 #include <osg/BlendFunc>
 #include <osg/ComputeBoundsVisitor>
-#include <osg/DisplaySettings>
 #include <osg/Geode>
 #include <osg/Program>
 #include <osg/Shader>
@@ -296,10 +295,7 @@ int main(int argc, char** argv) {
 
 	args.getApplicationUsage()->setCommandLineUsage(
 		std::string(args.getApplicationName()) +
-		" <model.gltf> | --shape <name> [--samples <count>] [blueprint options]"
-	);
-	args.getApplicationUsage()->addCommandLineOption(
-		"--samples <count>", "Request this many default-framebuffer MSAA samples (default: 4)"
+		" <model.gltf> | --shape <name> [blueprint options]"
 	);
 	args.getApplicationUsage()->addCommandLineOption(
 		"--animation", "Play the model's animation (default: hold the first frame)"
@@ -329,7 +325,6 @@ int main(int argc, char** argv) {
 	args.getApplicationUsage()->addCommandLineOption(
 		"--translucency <fraction>", "Minimum interior opacity, 0..1 (default: 0.25)."
 	);
-	int samples = 4;
 	float fresnelPower = 2.5f;
 	float contourDensity = 1.0f;
 	float contourWidth = 0.08f;
@@ -338,7 +333,6 @@ int main(int argc, char** argv) {
 	std::string shapeName;
 
 	const bool animation = args.read("--animation");
-	args.read("--samples", samples);
 	args.read("--fresnel-power", fresnelPower);
 	args.read("--contour-density", contourDensity);
 	args.read("--contour-width", contourWidth);
@@ -346,13 +340,12 @@ int main(int argc, char** argv) {
 	args.read("--translucency", translucency);
 	args.read("--shape", shapeName);
 
-	if((args.argc() < 2 && shapeName.empty()) || samples < 0) {
+	if(args.argc() < 2 && shapeName.empty()) {
 		args.getApplicationUsage()->write(std::cerr);
 
 		return 1;
 	}
 
-	osg::DisplaySettings::instance()->setNumMultiSamples(static_cast<unsigned int>(samples));
 	osgViewer::Viewer viewer(args);
 
 	// Dear ImGui's single global context isn't safe to touch from more than one OSG draw thread --

@@ -139,10 +139,15 @@ osg::ref_ptr<osg::Program> makeProgram() {
 	// out for a different one (defining osgx_DirectLighting() differently) to override direct-light
 	// shading without touching fragmentSrc at all - see Light.hpp's DIRECT_LIGHTING_DECL comment.
 	auto hookSrc = osgx::resolveShaderLibs(std::string(osgx::DIRECT_LIGHTING_HOOK_DEFAULT));
+	// DIRECT_LIGHTING_HOOK_DEFAULT now calls osgx_ShadowFactorForLight() (see Light.hpp), which
+	// needs its own linked definition - a separate Hook::ShadowFactor contract (Shadow.hpp). This
+	// demo has no ShadowMap/ShadowSet at all, so it links the no-op "always lit" implementation.
+	auto shadowFactorSrc = osgx::resolveShaderLibs(std::string(osgx::SHADOW_FACTOR_HOOK_NONE));
 
 	program->addShader(new osg::Shader(osg::Shader::VERTEX, std::string(VERTEX_SHADER)));
 	program->addShader(new osg::Shader(osg::Shader::FRAGMENT, fragmentSrc));
 	program->addShader(new osg::Shader(osg::Shader::FRAGMENT, hookSrc));
+	program->addShader(osgx::cachedShader(osg::Shader::FRAGMENT, shadowFactorSrc));
 	program->addBindAttribLocation("position", 0);
 	program->addBindAttribLocation("normal", 1);
 

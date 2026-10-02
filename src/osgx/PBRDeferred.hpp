@@ -81,14 +81,19 @@ struct PBRGBuffer {
 // - `hooks` (HookList, Shader.hpp) substitutes a built-in shader object per slot:
 //   - Hook::Tonemap: THE definition of osgx_Tonemap(), taking precedence over `tonemap`.
 //   - Hook::DirectLighting: THE definition of osgx_DirectLighting().
+//   - Hook::ShadowFactor: THE definition of osgx_ShadowFactorForLight() - see osgx::ShadowSet's own
+//     comment (Shadow.hpp). `shadowSet` below is the common-case way to set this; pass a HookList
+//     entry directly only for something that isn't an osgx::ShadowSet at all.
 //   - Hook::DeferredLighting: REPLACES the pass's entire fragment main(). A custom shader pulls
 //     `#pragma osgx::gbuffer DEFERRED_LIGHTING_INPUTS, GET_GBUFFER` plus whatever other catalogs
 //     it wants, and must be passed through resolveShaderLibs() before wrapping it in an
 //     osg::Shader (see examples/osgx-gbuffer-comic.cpp).
 //   Each is a substitution: GLSL permits one body per function (and one main()), so the pass always
 //   attaches exactly one shader object per slot.
-// - `shadowMap` (nullptr = unshadowed) swaps in DIRECT_LIGHTING_HOOK_SHADOWED and binds its depth
-//   texture (at the "osgx::shadowMap" slot) and uniforms.
+// - `shadowSet` (nullptr = unshadowed) swaps in the real Hook::ShadowFactor override
+//   (osgx::ShadowSet's own `shader`) and binds its combined depth/cube textures and uniforms -
+//   see osgx::ShadowSet's own comment (Shadow.hpp) for the full design; any mix of directional/
+//   spot/point lights, not just one.
 // - `aoTexture`, if set, is multiplied into the ambient term (osgx::SSAO::create()'s output, or any
 //   other occlusion source).
 struct PBRLightingPass {
@@ -96,7 +101,7 @@ struct PBRLightingPass {
 		osgx::Environment* environment = nullptr;
 		bool tonemap = true;
 		osgx::HookList hooks = {};
-		const osgx::ShadowMap* shadowMap = nullptr;
+		const osgx::ShadowSet* shadowSet = nullptr;
 		osg::Texture2D* aoTexture = nullptr;
 		bool diagnostics = false;
 	};

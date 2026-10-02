@@ -122,8 +122,10 @@ by concern:
   `OrbitLightRig`.
 - `osgx/Gizmos.hpp` — `LightMarkers`/`LightGizmos` scene-space visualizations for `LightSet`
   lights (depth-tested markers for point/sphere/spot, plus a directional-only overlay camera).
-- `osgx/Shadow.hpp` — single-light directional shadow mapping (`ShadowMap::create()`), a drop-in
-  `DIRECT_LIGHTING_HOOK_SHADOWED` swap for `Light.hpp`'s default direct-lighting hook.
+- `osgx/Shadow.hpp` — directional/spot/point shadow mapping (`ShadowMap::create()`/`createSpot()`/
+  `createPoint()`), aggregated by `ShadowSet` into the `Hook::ShadowFactor` slot
+  `Light.hpp`'s default direct-lighting hook always calls - any mix of lights can be shadowed at
+  once, up to `ShadowSet`'s own compile-time caps.
 - `osgx/IBL.hpp` — environment-map loading, BRDF-LUT baking (including the process-wide
   `SharedBRDFLUT::create()` cache), SH9/Lambertian diffuse irradiance, and cubemap readback helpers
   (`readCubeMapFaces()`, `BRDFLUTReadback`).

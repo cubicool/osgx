@@ -184,7 +184,7 @@ PBRScene PBRScene::create(osg::Node* node, const Options& options) {
 
 	if(!node) return pis;
 
-	const auto* shadowMap = options.shadowMap;
+	const auto* shadowSet = options.shadowSet;
 
 	pis.node = node;
 
@@ -228,30 +228,32 @@ PBRScene PBRScene::create(osg::Node* node, const Options& options) {
 	fragmentShader->setName(prog->getName() + ".fragment");
 	prog->addShader(fragmentShader);
 
-	// osgx_DirectLighting() CONTRACT's definition - a second, separately compiled FRAGMENT shader
-	// object with no main() of its own; GLSL cross-shader-object linking resolves the
-	// FULL_PBR_FRAGMENT_SHADER_SRC's forward-declared osgx_DirectLighting() call against this at
-	// Program-link time. See Light.hpp's DIRECT_LIGHTING_DECL/DIRECT_LIGHTING_HOOK_DEFAULT comment.
-	// `shadowMap` swaps in the shadowed variant (Shadow.hpp's DIRECT_LIGHTING_HOOK_SHADOWED) --
-	// same contract/call signature, so nothing else in this shader changes either way. Not routed
-	// through applyHooks() (unlike Skinning/Tonemap just below) - `shadowMap` picks between two
-	// built-ins directly, there's no caller-override HookList slot for it here - so it needs its
-	// own explicit setName() rather than picking one up from applyHooks() automatically.
-	auto* directLightingShader = new osg::Shader(
-		osg::Shader::FRAGMENT,
-		resolveShaderLibs(
-			shadowMap ? osgx::DIRECT_LIGHTING_HOOK_SHADOWED : osgx::DIRECT_LIGHTING_HOOK_DEFAULT
-		)
-	);
+	// Hook::ShadowFactor's override shader - shadowSet's own cached `shader` (osgx::ShadowSet,
+	// Shadow.hpp) if given, else the cached trivial "always unshadowed" stub. A plain if/else into
+	// one ref_ptr rather than a ternary: shadowSet->shader is already an osg::ref_ptr<osg::Shader>,
+	// and ref_ptr's implicit conversions both ways make a ternary between it and a raw osg::Shader*
+	// ambiguous.
+	osg::ref_ptr<osg::Shader> shadowFactorShader;
 
-	directLightingShader->setName(prog->getName() + ".directLightingHook");
-	prog->addShader(directLightingShader);
-	// osgx_ApplySkin()/osgx_Tonemap() CONTRACTS' default definitions - each a separately
-	// compiled shader object with no main() of its own. See PBR.hpp's TONEMAP_DECL/
-	// TONEMAP_HOOK_DEFAULT comment and Skinning.hpp for the full rationale. `hooks` SUBSTITUTES a
-	// slot's default shader object, it is never attached alongside it - see applyHooks()'s own
-	// comment (Shader.hpp) for the exactly-one-definition invariant this preserves, the same one
-	// osgx::PBRLightingPass::create() relies on.
+	if(shadowSet) shadowFactorShader = shadowSet->shader;
+
+	else {
+		shadowFactorShader = osgx::cachedShader(
+			osg::Shader::FRAGMENT, resolveShaderLibs(std::string(osgx::SHADOW_FACTOR_HOOK_NONE))
+		);
+	}
+
+	// osgx_ApplySkin()/osgx_Tonemap()/osgx_DirectLighting()/osgx_ShadowFactorForLight() CONTRACTS'
+	// default definitions - each a separately compiled shader object with no main() of its own.
+	// See PBR.hpp's TONEMAP_DECL/TONEMAP_HOOK_DEFAULT comment, Skinning.hpp, Light.hpp's
+	// DIRECT_LIGHTING_DECL/DIRECT_LIGHTING_HOOK_DEFAULT comment, and Shadow.hpp's
+	// SHADOW_FACTOR_DECL/osgx::ShadowSet comment for the full rationale on each. `hooks`
+	// SUBSTITUTES a slot's default shader object, it is never attached alongside it - see
+	// applyHooks()'s own comment (Shader.hpp) for the exactly-one-definition invariant this
+	// preserves, the same one osgx::PBRLightingPass::create() relies on. DirectLighting now goes
+	// through applyHooks() too (previously hardcoded here, unlike PBRLightingPass's own equivalent
+	// block) - nothing left to pick between since ShadowFactor absorbed that distinction, so this
+	// slot is purely a real override point now, same as every other one.
 	osgx::applyHooks(prog, options.hooks, {
 		{osgx::Hook::Skinning, new osg::Shader(
 			osg::Shader::VERTEX,
@@ -260,7 +262,12 @@ PBRScene PBRScene::create(osg::Node* node, const Options& options) {
 		{osgx::Hook::Tonemap, new osg::Shader(
 			osg::Shader::FRAGMENT,
 			resolveShaderLibs(osgx::TONEMAP_HOOK_DEFAULT)
-		)}
+		)},
+		{osgx::Hook::DirectLighting, new osg::Shader(
+			osg::Shader::FRAGMENT,
+			resolveShaderLibs(osgx::DIRECT_LIGHTING_HOOK_DEFAULT)
+		)},
+		{osgx::Hook::ShadowFactor, shadowFactorShader}
 	});
 
 	// resolveShaderLibs() preserves OSG's import_defines pragma; OSG builds each define variant from
@@ -276,16 +283,7 @@ PBRScene PBRScene::create(osg::Node* node, const Options& options) {
 		ss->setDefine("OSGX_PBR_ENVIRONMENT");
 	}
 
-	if(shadowMap) {
-		const auto unit = osgx::Library::instance().bindings().get("osgx::shadowMap");
-
-		ss->setTextureAttributeAndModes(unit, shadowMap->depthTexture, osg::StateAttribute::ON);
-		ss->addUniform(new osg::Uniform("osgx_shadowMap", static_cast<int>(unit)));
-		ss->addUniform(shadowMap->shadowMatrix);
-		ss->addUniform(shadowMap->bias);
-		ss->addUniform(shadowMap->strength);
-		ss->addUniform(shadowMap->casterIndex);
-	}
+	if(shadowSet) shadowSet->apply(ss);
 
 	if(options.diagnostics) {
 		pis.debugMode = new osg::Uniform("debugMode", 0);
