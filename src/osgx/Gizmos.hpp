@@ -15,6 +15,9 @@ OSGX_DISABLE_WARNINGS
 
 OSGX_ENABLE_WARNINGS
 
+#include <functional>
+#include <utility>
+
 namespace osgx {
 
 // Debug visualization for osgx::LightSet lights - deliberately not part of osgx::debug, which is
@@ -118,6 +121,117 @@ public:
 private:
 	osg::ref_ptr<LightMarkers> _markers;
 	osg::ref_ptr<osg::Camera> _overlay;
+};
+
+// Depth-tested wireframe box reconstructed every update traversal from a live view/projection
+// pair, via `ndcCorner * inverse(view * projection)` unprojection - `osg::Vec3 * osg::Matrixd`
+// already performs the homogeneous divide (`Matrixd::preMult()`), so the SAME code correctly
+// handles an ORTHOGRAPHIC frustum (osgx::ShadowMap::create()'s directional camera) and a
+// PERSPECTIVE one (ShadowMap::createSpot()'s spot camera) - no light-kind-specific branch anywhere
+// in this class. NOT tied to osgx::ShadowMap or osgx::LightSet at all - compose it alongside
+// LightGizmos at the application level, same "composition stays at the app level" choice as
+// osgx::platform::PointerCapture + OrbitAxisManipulator (see Cursor.hpp's own header comment for
+// the full rationale) - and see this file's own header comment for why that composition choice is
+// NOT the same split as "light gizmo vs. shadow gizmo": a light's own marker/cone/arrow (LightSet
+// data) exists independently of whether that light has a ShadowMap at all, while this class draws
+// the SHADOW CAMERA's own setup, which only exists once one has actually been built for it.
+class FrustumGizmo: public osg::Group {
+public:
+	OSGX_META_Object(osgx_gizmo, FrustumGizmo)
+
+	// Returns {view, projection} fresh each call - the generic customization point: ANY live
+	// source of a view/projection pair can drive this gizmo, not just a real osg::Camera (a
+	// hand-built culling volume, a portal/mirror plane, a frustum never actually attached to a
+	// real rendering camera at all). Returns BY VALUE rather than by-reference out-params
+	// specifically so this signature also works as a Python callable - pybind11's std::function
+	// caster can correctly marshal a Python function's RETURN value, but cannot propagate
+	// mutations to C++ reference out-params back across the boundary.
+	using MatrixSource = std::function<std::pair<osg::Matrixd, osg::Matrixd>()>;
+
+	FrustumGizmo() = default;
+	explicit FrustumGizmo(MatrixSource source, const osg::Vec3& color=osg::Vec3(1.0f, 1.0f, 1.0f));
+	// Convenience overload for the common case - a real osg::Camera (most often
+	// ShadowMap::camera). Tracks `camera` live, re-reading its matrices every update traversal, so
+	// it stays correct across ShadowMap::reposition()/repositionSpot() calls with no extra wiring.
+	explicit FrustumGizmo(osg::Camera* camera, const osg::Vec3& color=osg::Vec3(1.0f, 1.0f, 1.0f));
+	FrustumGizmo(const FrustumGizmo& rhs, const osg::CopyOp& co=osg::CopyOp::SHALLOW_COPY):
+	osg::Group(rhs, co) {}
+
+	// Contributes nothing to any ancestor's bounding sphere - same reasoning as LightGizmos'/
+	// LightMarkers' own computeBound() override (see LightGizmos' own comment): a gizmo annotates a
+	// scene, it must never influence how that scene is framed or clipped, and the frustum this
+	// draws is frequently LARGER than the scene it shadows.
+	osg::BoundingSphere computeBound() const override { return osg::BoundingSphere(); }
+
+private:
+	class UpdateCallback: public osg::NodeCallback {
+	public:
+		UpdateCallback(MatrixSource source, const osg::Vec3& color):
+		_source(std::move(source)), _color(color) {}
+
+		void operator()(osg::Node* node, osg::NodeVisitor* nv) override;
+
+	private:
+		MatrixSource _source;
+		osg::Vec3 _color;
+	};
+
+	void rebuild(const osg::Matrixd& view, const osg::Matrixd& proj, const osg::Vec3& color);
+
+	osg::ref_ptr<osg::Geometry> _geometry;
+};
+
+// Depth-tested wireframe AXIS-ALIGNED CUBE visualizing a point light's shadow CAPTURE range - not
+// its illumination falloff (physically boundless/inverse-square, no hard edge to draw), but the
+// real hard boundary osgx::CaptureCubeMap enforces: geometry beyond the shared far plane is never
+// rendered into any of the six faces at all, so nothing out there can ever cast a shadow regardless
+// of how bright the light is. Same "light gizmo vs. shadow gizmo" split as FrustumGizmo's own
+// header comment - this only exists once a CaptureCubeMap has actually been built, not a property
+// of the point light itself.
+class CaptureCubeGizmo: public osg::Group {
+public:
+	OSGX_META_Object(osgx_gizmo, CaptureCubeGizmo)
+
+	// Returns {center, halfSize} fresh each call - the same "any live source, not just a real
+	// osg::Camera" customization point as FrustumGizmo::MatrixSource, and for the identical
+	// reason: return-by-value so this signature also works as a Python callable. `halfSize <= 0`
+	// skips that update's rebuild entirely (used by the osg::Camera convenience overload below
+	// while its projection matrix isn't yet a valid perspective one to decompose).
+	using RangeSource = std::function<std::pair<osg::Vec3, float>()>;
+
+	CaptureCubeGizmo() = default;
+	explicit CaptureCubeGizmo(
+		RangeSource source, const osg::Vec3& color=osg::Vec3(1.0f, 1.0f, 1.0f)
+	);
+	// Convenience overload for the common case - any single face camera from a CaptureCubeMap,
+	// e.g. `shadowMap.cubeCapture.cameras[0]`; center/halfSize are decomposed from it live every
+	// update traversal via Matrixd::getLookAt()/getPerspective() (all six faces share the same eye
+	// position and far plane, only their look direction differs, so any one works).
+	explicit CaptureCubeGizmo(
+		osg::Camera* cubeFaceCamera, const osg::Vec3& color=osg::Vec3(1.0f, 1.0f, 1.0f)
+	);
+	CaptureCubeGizmo(const CaptureCubeGizmo& rhs, const osg::CopyOp& co=osg::CopyOp::SHALLOW_COPY):
+	osg::Group(rhs, co) {}
+
+	// See FrustumGizmo::computeBound()'s own comment - identical reasoning.
+	osg::BoundingSphere computeBound() const override { return osg::BoundingSphere(); }
+
+private:
+	class UpdateCallback: public osg::NodeCallback {
+	public:
+		UpdateCallback(RangeSource source, const osg::Vec3& color):
+		_source(std::move(source)), _color(color) {}
+
+		void operator()(osg::Node* node, osg::NodeVisitor* nv) override;
+
+	private:
+		RangeSource _source;
+		osg::Vec3 _color;
+	};
+
+	void rebuild(const osg::Vec3& center, float halfSize, const osg::Vec3& color);
+
+	osg::ref_ptr<osg::Geometry> _geometry;
 };
 
 }

@@ -68,6 +68,11 @@ void bind_capturecubemap(py::module_& m) {
 		.def(py::init<>(), "Constructs an empty, invalid capture; see CaptureCubeMap.create().")
 		.def_readonly("root", &osgx::CaptureCubeMap::root, "The six capture cameras; add to a rendered scene graph.")
 		.def_readonly(
+			"cameras", &osgx::CaptureCubeMap::cameras,
+			"The same six capture cameras as `root`'s children, directly indexable (cameras[0]..[5]) "
+			"- fixed at exactly six for this object's whole lifetime, never resized after create()."
+		)
+		.def_readonly(
 			"texture", &osgx::CaptureCubeMap::texture,
 			"The captured TextureCubeMap - Radiance or Distance content, per whichever "
 			"CaptureCubeMap.Options.format create() was given."

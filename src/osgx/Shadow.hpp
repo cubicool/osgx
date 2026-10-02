@@ -7,6 +7,7 @@
 
 OSGX_DISABLE_WARNINGS
 
+#include <osg/BoundingSphere>
 #include <osg/Camera>
 #include <osg/Group>
 #include <osg/Matrixd>
@@ -42,6 +43,46 @@ namespace osgx {
 // ================================================================================================
 
 struct ShadowMap {
+	// The scene-bound pair every create()/createSpot()/createPoint()/reposition*() overload used
+	// to take as two separate positional arguments (`sceneBoundCenter`, `sceneBoundRadius`) -
+	// bundled here per the "too many long position-order-dependent positional arguments" complaint
+	// in ai/todo-shadow.md, then grown to carry the Codex Overview's own `ShadowCoverage` idea
+	// (caster bounds distinct from requested receiver bounds - see `receiverCenter`/
+	// `receiverRadius`/`bound()` below). Deliberately NOT folded into Options itself - unlike
+	// Options, which is genuinely shared verbatim across repositioning calls, `position`/
+	// `direction`/`outerConeAngle` stay their own light-kind-specific arguments outside of either.
+	struct Coverage {
+		// What must be RENDERED into the depth map - geometry outside this bound may be clipped
+		// out of the shadow camera's own cull pass and simply never cast at all.
+		osg::Vec3 center;
+		float radius = 1.0f;
+
+		// What must be able to SAMPLE the depth map correctly - e.g. a floor/room extending well
+		// past the casting model's own bound. 0 (default, `receiverRadius` unset) means "receivers
+		// never extend past the caster bound itself," matching every existing caller exactly -
+		// same 0-is-auto sentinel convention as Options::extent. Left UNSET rather than defaulted
+		// to the caster bound, so bound() below can tell "no receiver given" apart from "receiver
+		// happens to equal the caster." See ai/todo-shadow.md's "chopped off" writeup for why a
+		// receiver outside the caster-only bound silently reads as unshadowed rather than erroring.
+		osg::Vec3 receiverCenter;
+		float receiverRadius = 0.0f;
+
+		// The single sphere every create()/reposition*() fitting call actually sizes its frustum/
+		// far-plane against - the caster bound, expanded to also enclose the receiver bound when
+		// one was given. A directional/spot map's single frustum has to contain BOTH: casting
+		// geometry that isn't rendered into the map can't cast at all (see `center`/`radius`
+		// above), and a receiver point outside the map's coverage silently reads as unshadowed
+		// (see `receiverCenter`/`receiverRadius` above) - there is no second frustum to split the
+		// two needs across yet (that's what directional cascades would eventually be for).
+		osg::BoundingSphere bound() const {
+			osg::BoundingSphere b(center, radius);
+
+			if(receiverRadius > 0.0f) b.expandBy(osg::BoundingSphere(receiverCenter, receiverRadius));
+
+			return b;
+		}
+	};
+
 	struct Options {
 		int size = 1024;
 
@@ -51,14 +92,16 @@ struct ShadowMap {
 		// coverage; a perspective frustum here would make the light behave like a nearby spotlight
 		// whose rays diverge, which visibly disagrees with a direct-lighting term that (correctly)
 		// treats every point in the scene as lit from the same direction. 0 (the default) derives the
-		// extent from `sceneBoundRadius * margin`, matching every existing caller's coverage exactly;
-		// set explicitly to cover more than the casting geometry itself - e.g. a floor/room that
-		// needs to receive shadows well past the model's own bound (ported from
-		// OpenSceneGraph.py's 11-sketchfab.py, which computed this by hand as
-		// `max(bound_radius * margin, floor_size)` before this became a real option).
+		// extent from `coverage.bound().radius() * margin` (the caster bound, or the caster+receiver
+		// merged bound when Coverage::receiverRadius is set - see Coverage's own comment), matching
+		// every existing caller's coverage exactly. Prefer Coverage::receiverCenter/receiverRadius
+		// over setting this directly when the real need is "a floor/room must receive shadows well
+		// past the model's own bound" - this raw override remains for anything that still needs to
+		// bypass the derivation entirely (ported from OpenSceneGraph.py's 11-sketchfab.py, which
+		// computed this by hand as `max(bound_radius * margin, floor_size)` before either existed).
 		float extent = 0.0f;
 
-		// Multiplies sceneBoundRadius both when deriving a default `extent` above and when sizing
+		// Multiplies coverage.bound().radius() both when deriving a default `extent` above and when sizing
 		// near/far planes. Ported directly from 09-ibl.py's own investigation: a shadow camera placed
 		// at a FIXED distance from the scene puts near/far arbitrarily close together for a small
 		// scene and arbitrarily far apart for a large one - Lantern (a ~15-unit-radius glTF model)
@@ -123,8 +166,8 @@ struct ShadowMap {
 
 	// Builds `camera` - an ORTHOGRAPHIC depth-only camera, the physically-correct frustum shape
 	// for a directional (parallel-ray) light - looking from a point `2 * extent` away from
-	// `sceneBoundCenter` (`extent` per Options::extent), back along `lightDirection`,
-	// toward `sceneBoundCenter`. `lightDirection` is the ray TRAVEL direction, matching
+	// `coverage.center` (`extent` per Options::extent), back along `lightDirection`,
+	// toward `coverage.center`. `lightDirection` is the ray TRAVEL direction, matching
 	// osgx::LightSet::setDirectional()'s own convention - the camera looks the opposite way,
 	// toward where the light is coming FROM, same as any physical shadow-casting light would.
 	//
@@ -141,14 +184,12 @@ struct ShadowMap {
 	// alpha-aware (no existing pyosg-lighting example needs this yet).
 	static ShadowMap create(
 		const osg::Vec3& lightDirection,
-		const osg::Vec3& sceneBoundCenter,
-		float sceneBoundRadius,
+		const Coverage& coverage,
 		const Options& options
 	);
 	static ShadowMap create(
 		const osg::Vec3& lightDirection,
-		const osg::Vec3& sceneBoundCenter,
-		float sceneBoundRadius
+		const Coverage& coverage
 	);
 
 	// Recomputes `shadowMatrix` from `lightView`/`lightProj` - call after mutating either
@@ -169,20 +210,18 @@ struct ShadowMap {
 	// recomputed.
 	void reposition(
 		const osg::Vec3& lightDirection,
-		const osg::Vec3& sceneBoundCenter,
-		float sceneBoundRadius,
+		const Coverage& coverage,
 		const Options& options
 	);
 	void reposition(
 		const osg::Vec3& lightDirection,
-		const osg::Vec3& sceneBoundCenter,
-		float sceneBoundRadius
+		const Coverage& coverage
 	);
 
 	// A spot light's shadow map: a PERSPECTIVE depth-only camera at `position` looking along
 	// `direction` (ray travel direction, as LightSet::setSpot()), its field of view covering
 	// `outerConeAngle` (radians, half-angle, as LightSet::setSpot()). Near/far bracket the scene
-	// bound (`sceneBoundRadius * options.margin`) as seen from the light; `options.extent` is not
+	// bound (`coverage.radius * options.margin`) as seen from the light; `options.extent` is not
 	// used. Everything else - `camera`, `depthTexture`, the uniforms, DIRECT_LIGHTING_HOOK_SHADOWED
 	// - is the same as create()'s. `bias` is compared in the map's non-linear depth, so a spot
 	// map usually wants a smaller bias than a directional one.
@@ -190,16 +229,14 @@ struct ShadowMap {
 		const osg::Vec3& position,
 		const osg::Vec3& direction,
 		float outerConeAngle,
-		const osg::Vec3& sceneBoundCenter,
-		float sceneBoundRadius,
+		const Coverage& coverage,
 		const Options& options
 	);
 	static ShadowMap createSpot(
 		const osg::Vec3& position,
 		const osg::Vec3& direction,
 		float outerConeAngle,
-		const osg::Vec3& sceneBoundCenter,
-		float sceneBoundRadius
+		const Coverage& coverage
 	);
 
 	// reposition()'s counterpart for a createSpot() map.
@@ -207,16 +244,14 @@ struct ShadowMap {
 		const osg::Vec3& position,
 		const osg::Vec3& direction,
 		float outerConeAngle,
-		const osg::Vec3& sceneBoundCenter,
-		float sceneBoundRadius,
+		const Coverage& coverage,
 		const Options& options
 	);
 	void repositionSpot(
 		const osg::Vec3& position,
 		const osg::Vec3& direction,
 		float outerConeAngle,
-		const osg::Vec3& sceneBoundCenter,
-		float sceneBoundRadius
+		const Coverage& coverage
 	);
 
 	// A point light's shadow: an omnidirectional distance CUBE MAP (CaptureCubeMap, six
@@ -228,15 +263,13 @@ struct ShadowMap {
 	// plane the same way createSpot() does.
 	static ShadowMap createPoint(
 		const osg::Vec3& position,
-		const osg::Vec3& sceneBoundCenter,
-		float sceneBoundRadius,
+		const Coverage& coverage,
 		int cubeSize,
 		const Options& options
 	);
 	static ShadowMap createPoint(
 		const osg::Vec3& position,
-		const osg::Vec3& sceneBoundCenter,
-		float sceneBoundRadius,
+		const Coverage& coverage,
 		int cubeSize=256
 	);
 
@@ -246,14 +279,12 @@ struct ShadowMap {
 	// light directly - see this method's own .cpp comment).
 	void repositionPoint(
 		const osg::Vec3& position,
-		const osg::Vec3& sceneBoundCenter,
-		float sceneBoundRadius,
+		const Coverage& coverage,
 		const Options& options
 	);
 	void repositionPoint(
 		const osg::Vec3& position,
-		const osg::Vec3& sceneBoundCenter,
-		float sceneBoundRadius
+		const Coverage& coverage
 	);
 };
 

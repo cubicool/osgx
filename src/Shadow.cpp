@@ -112,22 +112,22 @@ constexpr float NORMAL_OFFSET_TEXELS = 1.5f;
 // math, not the math itself.
 void computeDirectionalShadowMatrices(
 	const osg::Vec3& lightDirection,
-	const osg::Vec3& sceneBoundCenter,
-	float sceneBoundRadius,
+	const ShadowMap::Coverage& coverage,
 	const ShadowMap::Options& options,
 	osg::Matrixd& lightView,
 	osg::Matrixd& lightProj,
 	double& outExtent
 ) {
+	const osg::BoundingSphere bound = coverage.bound();
 	osg::Vec3 dir = lightDirection;
 
 	dir.normalize();
 
 	const double extent = options.extent > 0.0f
 		? double(options.extent)
-		: double(sceneBoundRadius) * double(options.margin);
+		: double(bound.radius()) * double(options.margin);
 	const double distance = extent * 2.0;
-	const osg::Vec3 lightPos = sceneBoundCenter - dir * float(distance);
+	const osg::Vec3 lightPos = bound.center() - dir * float(distance);
 
 	// Up hint must not be nearly parallel to dir, or lookAt()'s basis degenerates - the classic
 	// failure mode is a light aligned with world-up ((0,0,1) in this Z-up engine), which is why
@@ -144,7 +144,7 @@ void computeDirectionalShadowMatrices(
 		? osg::Vec3(0.0, 1.0, 0.0)
 		: osg::Vec3(0.0, 0.0, 1.0);
 
-	lightView = osg::Matrix::lookAt(lightPos, sceneBoundCenter, up);
+	lightView = osg::Matrix::lookAt(lightPos, bound.center(), up);
 
 	const double near_ = std::max(0.01, distance - extent);
 	const double far_ = distance + extent;
@@ -163,13 +163,13 @@ void computeSpotShadowMatrices(
 	const osg::Vec3& position,
 	const osg::Vec3& direction,
 	float outerConeAngle,
-	const osg::Vec3& sceneBoundCenter,
-	float sceneBoundRadius,
+	const ShadowMap::Coverage& coverage,
 	const ShadowMap::Options& options,
 	osg::Matrixd& lightView,
 	osg::Matrixd& lightProj,
 	double& outDistance
 ) {
+	const osg::BoundingSphere bound = coverage.bound();
 	osg::Vec3 dir = direction;
 
 	dir.normalize();
@@ -179,8 +179,8 @@ void computeSpotShadowMatrices(
 
 	lightView = osg::Matrix::lookAt(position, position + dir, up);
 
-	const double reach = double(sceneBoundRadius) * double(options.margin);
-	const double distance = double((sceneBoundCenter - position).length());
+	const double reach = double(bound.radius()) * double(options.margin);
+	const double distance = double((bound.center() - position).length());
 	const double far_ = distance + reach;
 	const double near_ = std::max(far_ * 0.001, distance - reach);
 	const double fovy = std::min(
@@ -277,16 +277,13 @@ ShadowMap makeShadowMap(
 
 ShadowMap ShadowMap::create(
 	const osg::Vec3& lightDirection,
-	const osg::Vec3& sceneBoundCenter,
-	float sceneBoundRadius,
+	const ShadowMap::Coverage& coverage,
 	const ShadowMap::Options& options
 ) {
 	osg::Matrixd lightView, lightProj;
 	double extent = 0.0;
 
-	computeDirectionalShadowMatrices(
-		lightDirection, sceneBoundCenter, sceneBoundRadius, options, lightView, lightProj, extent
-	);
+	computeDirectionalShadowMatrices(lightDirection, coverage, options, lightView, lightProj, extent);
 
 	const float texelWorldSize = float(extent * 2.0 / double(options.size));
 
@@ -297,18 +294,16 @@ ShadowMap ShadowMap::create(
 
 ShadowMap ShadowMap::create(
 	const osg::Vec3& lightDirection,
-	const osg::Vec3& sceneBoundCenter,
-	float sceneBoundRadius
+	const ShadowMap::Coverage& coverage
 ) {
-	return create(lightDirection, sceneBoundCenter, sceneBoundRadius, Options{});
+	return create(lightDirection, coverage, Options{});
 }
 
 ShadowMap ShadowMap::createSpot(
 	const osg::Vec3& position,
 	const osg::Vec3& direction,
 	float outerConeAngle,
-	const osg::Vec3& sceneBoundCenter,
-	float sceneBoundRadius,
+	const ShadowMap::Coverage& coverage,
 	const ShadowMap::Options& options
 ) {
 	osg::Matrixd lightView, lightProj;
@@ -318,8 +313,7 @@ ShadowMap ShadowMap::createSpot(
 		position,
 		direction,
 		outerConeAngle,
-		sceneBoundCenter,
-		sceneBoundRadius,
+		coverage,
 		options,
 		lightView,
 		lightProj,
@@ -343,10 +337,9 @@ ShadowMap ShadowMap::createSpot(
 	const osg::Vec3& position,
 	const osg::Vec3& direction,
 	float outerConeAngle,
-	const osg::Vec3& sceneBoundCenter,
-	float sceneBoundRadius
+	const ShadowMap::Coverage& coverage
 ) {
-	return createSpot(position, direction, outerConeAngle, sceneBoundCenter, sceneBoundRadius, Options{});
+	return createSpot(position, direction, outerConeAngle, coverage, Options{});
 }
 
 void ShadowMap::updateMatrix() {
@@ -360,17 +353,14 @@ void ShadowMap::updateMatrix() {
 
 void ShadowMap::reposition(
 	const osg::Vec3& lightDirection,
-	const osg::Vec3& sceneBoundCenter,
-	float sceneBoundRadius,
+	const ShadowMap::Coverage& coverage,
 	const ShadowMap::Options& options
 ) {
 	if(!camera) return;
 
 	double extent = 0.0;
 
-	computeDirectionalShadowMatrices(
-		lightDirection, sceneBoundCenter, sceneBoundRadius, options, lightView, lightProj, extent
-	);
+	computeDirectionalShadowMatrices(lightDirection, coverage, options, lightView, lightProj, extent);
 
 	camera->setViewMatrix(lightView);
 	camera->setProjectionMatrix(lightProj);
@@ -384,18 +374,16 @@ void ShadowMap::reposition(
 
 void ShadowMap::reposition(
 	const osg::Vec3& lightDirection,
-	const osg::Vec3& sceneBoundCenter,
-	float sceneBoundRadius
+	const ShadowMap::Coverage& coverage
 ) {
-	reposition(lightDirection, sceneBoundCenter, sceneBoundRadius, Options{});
+	reposition(lightDirection, coverage, Options{});
 }
 
 void ShadowMap::repositionSpot(
 	const osg::Vec3& position,
 	const osg::Vec3& direction,
 	float outerConeAngle,
-	const osg::Vec3& sceneBoundCenter,
-	float sceneBoundRadius,
+	const ShadowMap::Coverage& coverage,
 	const ShadowMap::Options& options
 ) {
 	if(!camera) return;
@@ -406,8 +394,7 @@ void ShadowMap::repositionSpot(
 		position,
 		direction,
 		outerConeAngle,
-		sceneBoundCenter,
-		sceneBoundRadius,
+		coverage,
 		options,
 		lightView,
 		lightProj,
@@ -431,23 +418,22 @@ void ShadowMap::repositionSpot(
 	const osg::Vec3& position,
 	const osg::Vec3& direction,
 	float outerConeAngle,
-	const osg::Vec3& sceneBoundCenter,
-	float sceneBoundRadius
+	const ShadowMap::Coverage& coverage
 ) {
-	repositionSpot(position, direction, outerConeAngle, sceneBoundCenter, sceneBoundRadius, Options{});
+	repositionSpot(position, direction, outerConeAngle, coverage, Options{});
 }
 
 ShadowMap ShadowMap::createPoint(
 	const osg::Vec3& position,
-	const osg::Vec3& sceneBoundCenter,
-	float sceneBoundRadius,
+	const ShadowMap::Coverage& coverage,
 	int cubeSize,
 	const ShadowMap::Options& options
 ) {
 	ShadowMap result;
 
-	const double reach = double(sceneBoundRadius) * double(options.margin);
-	const double farPlane = double((sceneBoundCenter - position).length()) + reach;
+	const osg::BoundingSphere bound = coverage.bound();
+	const double reach = double(bound.radius()) * double(options.margin);
+	const double farPlane = double((bound.center() - position).length()) + reach;
 
 	result.casters = osgx::make_nref<osg::Group>("osgx_shadow_PointCasters");
 
@@ -478,7 +464,7 @@ ShadowMap ShadowMap::createPoint(
 	// 2*distance/cubeSize - no cone-angle term needed, unlike createSpot()'s equivalent.
 	result.normalOffset = new osg::Uniform(
 		"osgx_shadowNormalOffset",
-		float(2.0 * (double((sceneBoundCenter - position).length())) / double(cubeOptions.cubeSize))
+		float(2.0 * (double((bound.center() - position).length())) / double(cubeOptions.cubeSize))
 			* NORMAL_OFFSET_TEXELS
 	);
 	result.strength = new osg::Uniform("osgx_shadowStrength", options.strength);
@@ -490,27 +476,27 @@ ShadowMap ShadowMap::createPoint(
 
 ShadowMap ShadowMap::createPoint(
 	const osg::Vec3& position,
-	const osg::Vec3& sceneBoundCenter,
-	float sceneBoundRadius,
+	const ShadowMap::Coverage& coverage,
 	int cubeSize
 ) {
-	return createPoint(position, sceneBoundCenter, sceneBoundRadius, cubeSize, Options{});
+	return createPoint(position, coverage, cubeSize, Options{});
 }
 
 void ShadowMap::repositionPoint(
 	const osg::Vec3& position,
-	const osg::Vec3& sceneBoundCenter,
-	float sceneBoundRadius,
+	const ShadowMap::Coverage& coverage,
 	const ShadowMap::Options& options
 ) {
 	if(!cubeCapture.recapture(osg::Vec3d(position))) return;
+
+	const osg::BoundingSphere bound = coverage.bound();
 
 	// recapture() only re-aims the six cameras' VIEW matrices (a moved light) - the far plane/clear
 	// value also need refreshing here, unlike the 2D map kinds: createPoint()'s far plane was sized
 	// for the ORIGINAL position, and a light now moved closer to (or past) the scene than that
 	// bound would silently clip real casters out of the capture otherwise.
-	const double reach = double(sceneBoundRadius) * double(options.margin);
-	const double farPlane = double((sceneBoundCenter - position).length()) + reach;
+	const double reach = double(bound.radius()) * double(options.margin);
+	const double farPlane = double((bound.center() - position).length()) + reach;
 	const osg::Vec4 clearColor(float(farPlane) * 2.0f, 0.0f, 0.0f, 1.0f);
 
 	for(auto& faceCamera: cubeCapture.cameras) {
@@ -523,7 +509,7 @@ void ShadowMap::repositionPoint(
 	if(lightPosition) lightPosition->set(position);
 
 	if(normalOffset && cubeCapture.texture.valid()) {
-		const double distance = (sceneBoundCenter - position).length();
+		const double distance = (bound.center() - position).length();
 		const double cubeSize = std::max(1, cubeCapture.texture->getTextureWidth());
 
 		normalOffset->set(float(2.0 * distance / cubeSize) * NORMAL_OFFSET_TEXELS);
@@ -532,10 +518,9 @@ void ShadowMap::repositionPoint(
 
 void ShadowMap::repositionPoint(
 	const osg::Vec3& position,
-	const osg::Vec3& sceneBoundCenter,
-	float sceneBoundRadius
+	const ShadowMap::Coverage& coverage
 ) {
-	repositionPoint(position, sceneBoundCenter, sceneBoundRadius, Options{});
+	repositionPoint(position, coverage, Options{});
 }
 
 void registerShadowShaderLibs() {

@@ -74,6 +74,46 @@ void bind_shadow(py::module_& m) {
 		"lightPosition), read by DIRECT_LIGHTING_HOOK_SHADOWED_POINT."
 	);
 
+	py::class_<osgx::ShadowMap::Coverage>(
+		shadowMap,
+		"Coverage",
+		"The scene-bound pair every create()/createSpot()/createPoint()/reposition*() call needs - "
+		"bundled here instead of separate positional arguments. `center`/`radius` is the CASTER "
+		"bound (what must be rendered into the depth map); `receiverCenter`/`receiverRadius` is an "
+		"optional, separate RECEIVER bound (what must be able to sample it correctly, e.g. a floor "
+		"extending past the casting model) - leave receiverRadius at 0 (default) if receivers never "
+		"extend past the caster bound itself."
+	)
+		.def(
+			py::init<>(),
+			"Constructs default coverage (center=(0,0,0), radius=1, no separate receiver bound)."
+		)
+		.def(
+			py::init<const osg::Vec3&, float>(),
+			"center"_a,
+			"radius"_a,
+			"Constructs coverage from an explicit caster center/radius, no separate receiver bound."
+		)
+		.def_readwrite("center", &osgx::ShadowMap::Coverage::center, "World-space caster-bound center.")
+		.def_readwrite("radius", &osgx::ShadowMap::Coverage::radius, "World-space caster-bound radius.")
+		.def_readwrite(
+			"receiverCenter", &osgx::ShadowMap::Coverage::receiverCenter,
+			"World-space receiver-bound center - only meaningful when receiverRadius > 0."
+		)
+		.def_readwrite(
+			"receiverRadius", &osgx::ShadowMap::Coverage::receiverRadius,
+			"World-space receiver-bound radius. 0 (default) means receivers never extend past the "
+			"caster bound above."
+		)
+		.def(
+			"bound",
+			&osgx::ShadowMap::Coverage::bound,
+			"The single osg.BoundingSphere every create()/reposition*() fitting call actually sizes "
+			"its frustum/far-plane against - the caster bound, expanded to also enclose the receiver "
+			"bound when receiverRadius > 0."
+		)
+	;
+
 	py::class_<osgx::ShadowMap::Options>(
 		shadowMap,
 		"Options",
@@ -91,11 +131,12 @@ void bind_shadow(py::module_& m) {
 		.def_readwrite(
 			"extent", &osgx::ShadowMap::Options::extent,
 			"Half-width, in world units, of the orthographic shadow frustum's box. 0 (default) "
-			"derives it from sceneBoundRadius * margin."
+			"derives it from coverage.bound().radius() * margin - prefer Coverage.receiverCenter/"
+			"receiverRadius over setting this directly."
 		)
 		.def_readwrite(
 			"margin", &osgx::ShadowMap::Options::margin,
-			"Multiplies sceneBoundRadius both when deriving a default `extent` and when sizing "
+			"Multiplies coverage.bound().radius() both when deriving a default `extent` and when sizing "
 			"near/far planes, keeping near:far depth precision bounded regardless of scene scale."
 		)
 		.def_readwrite(
@@ -170,11 +211,10 @@ void bind_shadow(py::module_& m) {
 		.def_static(
 			"create",
 			static_cast<osgx::ShadowMap (*) (
-				const osg::Vec3&, const osg::Vec3&, float, const osgx::ShadowMap::Options&
+				const osg::Vec3&, const osgx::ShadowMap::Coverage&, const osgx::ShadowMap::Options&
 			)>(&osgx::ShadowMap::create),
 			"lightDirection"_a,
-			"sceneBoundCenter"_a,
-			"sceneBoundRadius"_a,
+			"coverage"_a,
 			"options"_a=osgx::ShadowMap::Options{},
 			"Builds a directional shadow map (PRE_RENDER depth camera + shadow-matrix uniform) sized "
 			"and placed to keep near:far depth precision sane regardless of scene scale. `camera` "
@@ -190,11 +230,10 @@ void bind_shadow(py::module_& m) {
 		.def(
 			"reposition",
 			static_cast<void (osgx::ShadowMap::*) (
-				const osg::Vec3&, const osg::Vec3&, float, const osgx::ShadowMap::Options&
+				const osg::Vec3&, const osgx::ShadowMap::Coverage&, const osgx::ShadowMap::Options&
 			)>(&osgx::ShadowMap::reposition),
 			"lightDirection"_a,
-			"sceneBoundCenter"_a,
-			"sceneBoundRadius"_a,
+			"coverage"_a,
 			"options"_a=osgx::ShadowMap::Options{},
 			"Repositions this EXISTING ShadowMap for a new light direction/scene bound, in place - "
 			"no new camera/FBO/depth-texture allocation, just recomputed view/projection matrices. "
@@ -204,14 +243,13 @@ void bind_shadow(py::module_& m) {
 		.def_static(
 			"createSpot",
 			static_cast<osgx::ShadowMap (*) (
-				const osg::Vec3&, const osg::Vec3&, float, const osg::Vec3&, float,
+				const osg::Vec3&, const osg::Vec3&, float, const osgx::ShadowMap::Coverage&,
 				const osgx::ShadowMap::Options&
 			)>(&osgx::ShadowMap::createSpot),
 			"position"_a,
 			"direction"_a,
 			"outerConeAngle"_a,
-			"sceneBoundCenter"_a,
-			"sceneBoundRadius"_a,
+			"coverage"_a,
 			"options"_a=osgx::ShadowMap::Options{},
 			"Builds a spot light's shadow map: a PERSPECTIVE depth camera at `position` looking "
 			"along `direction`, covering `outerConeAngle` (radians, half-angle, as "
@@ -221,25 +259,23 @@ void bind_shadow(py::module_& m) {
 		.def(
 			"repositionSpot",
 			static_cast<void (osgx::ShadowMap::*) (
-				const osg::Vec3&, const osg::Vec3&, float, const osg::Vec3&, float,
+				const osg::Vec3&, const osg::Vec3&, float, const osgx::ShadowMap::Coverage&,
 				const osgx::ShadowMap::Options&
 			)>(&osgx::ShadowMap::repositionSpot),
 			"position"_a,
 			"direction"_a,
 			"outerConeAngle"_a,
-			"sceneBoundCenter"_a,
-			"sceneBoundRadius"_a,
+			"coverage"_a,
 			"options"_a=osgx::ShadowMap::Options{},
 			"reposition()'s counterpart for a createSpot() map."
 		)
 		.def_static(
 			"createPoint",
 			static_cast<osgx::ShadowMap (*) (
-				const osg::Vec3&, const osg::Vec3&, float, int, const osgx::ShadowMap::Options&
+				const osg::Vec3&, const osgx::ShadowMap::Coverage&, int, const osgx::ShadowMap::Options&
 			)>(&osgx::ShadowMap::createPoint),
 			"position"_a,
-			"sceneBoundCenter"_a,
-			"sceneBoundRadius"_a,
+			"coverage"_a,
 			"cubeSize"_a=256,
 			"options"_a=osgx::ShadowMap::Options{},
 			"Builds a point light's shadow map: an omnidirectional distance CUBE MAP (six "
@@ -254,11 +290,10 @@ void bind_shadow(py::module_& m) {
 		.def(
 			"repositionPoint",
 			static_cast<void (osgx::ShadowMap::*) (
-				const osg::Vec3&, const osg::Vec3&, float, const osgx::ShadowMap::Options&
+				const osg::Vec3&, const osgx::ShadowMap::Coverage&, const osgx::ShadowMap::Options&
 			)>(&osgx::ShadowMap::repositionPoint),
 			"position"_a,
-			"sceneBoundCenter"_a,
-			"sceneBoundRadius"_a,
+			"coverage"_a,
 			"options"_a=osgx::ShadowMap::Options{},
 			"reposition()/repositionSpot()'s counterpart for a createPoint() map - re-aims the six "
 			"capture cameras at a new position and refreshes their shared far plane/clear value for "

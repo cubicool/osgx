@@ -484,8 +484,14 @@ int main(int argc, char** argv) {
 	// scene that its inverse-square falloff and 90 degree-per-face cube coverage both stay visible.
 	osg::Vec3 pointPosition(1.2f, -1.5f, 1.8f);
 
-	const osg::Vec3 sceneBoundCenter = scene->boundCenter;
-	const float sceneBoundRadius = scene->boundRadius;
+	// Caster bound is the scene's own objects; receiver bound is the (much larger) floor square
+	// beneath them, centered at the origin per makeFloor() below - sqrt(2) covers the square's own
+	// corners. Every scene's floorHalfSize (6.0) comfortably exceeds boundRadius*margin (~2.9-4.6
+	// by default), so without this the floor's outer ring would silently read as unshadowed - see
+	// ai/todo-shadow.md's "chopped off" writeup, case (a).
+	const osgx::ShadowMap::Coverage sceneCoverage{
+		scene->boundCenter, scene->boundRadius, osg::Vec3(), scene->floorHalfSize * 1.42f
+	};
 
 	auto root = osgx::make_ref<osg::Group>();
 	auto casters = osgx::make_ref<osg::Group>();
@@ -553,19 +559,18 @@ int main(int argc, char** argv) {
 			spotPosition,
 			spotDirection,
 			osg::DegreesToRadians(spotOuterDegrees),
-			sceneBoundCenter,
-			sceneBoundRadius,
+			sceneCoverage,
 			shadowOptions
 		);
 	}
 
 	else if(point) {
 		shadowMap = osgx::ShadowMap::createPoint(
-			pointPosition, sceneBoundCenter, sceneBoundRadius, 256, shadowOptions
+			pointPosition, sceneCoverage, 256, shadowOptions
 		);
 	}
 
-	else shadowMap = osgx::ShadowMap::create(lightDir, sceneBoundCenter, sceneBoundRadius, shadowOptions);
+	else shadowMap = osgx::ShadowMap::create(lightDir, sceneCoverage, shadowOptions);
 
 	// Seeds the directional panel's slider from the real auto-derived value create()/createSpot()
 	// just computed, rather than starting it at 0 and surprising the first drag.
@@ -617,16 +622,14 @@ int main(int argc, char** argv) {
 				&shadowMap,
 				&spotDirection,
 				&spotOuterDegrees,
-				sceneBoundCenter,
-				sceneBoundRadius,
+				sceneCoverage,
 				shadowOptions
 			] (const osg::Vec3& pos) {
 				shadowMap.repositionSpot(
 					pos,
 					spotDirection,
 					osg::DegreesToRadians(spotOuterDegrees),
-					sceneBoundCenter,
-					sceneBoundRadius,
+					sceneCoverage,
 					shadowOptions
 				);
 			};
@@ -639,10 +642,10 @@ int main(int argc, char** argv) {
 				lights->setPoint(0, pos, lightColor, intensity);
 			};
 
-			flickerRig->reposition = [&shadowMap, sceneBoundCenter, sceneBoundRadius, shadowOptions] (
+			flickerRig->reposition = [&shadowMap, sceneCoverage, shadowOptions] (
 				const osg::Vec3& pos
 			) {
-				shadowMap.repositionPoint(pos, sceneBoundCenter, sceneBoundRadius, shadowOptions);
+				shadowMap.repositionPoint(pos, sceneCoverage, shadowOptions);
 			};
 		}
 
@@ -712,6 +715,20 @@ int main(int argc, char** argv) {
 
 	else root->addChild(shadowMap.camera.get());
 
+	// Shadow-frustum visualization - composed here at the application level, same as LightGizmos
+	// itself, NOT built into either ShadowMap or LightGizmos (see FrustumGizmo's own header
+	// comment). Directional/spot get the real wireframe frustum (orthographic box or perspective
+	// pyramid, same reconstruction code either way); point gets a wireframe cube at the shadow
+	// capture's own far-plane range instead - six pyramids would be visual noise, and a point
+	// light's illumination has no hard edge to draw in the first place, only its CAPTURE range does.
+	if(point) {
+		root->addChild(
+			new osgx::CaptureCubeGizmo(shadowMap.cubeCapture.cameras[0].get(), lightColor)
+		);
+	}
+
+	else root->addChild(new osgx::FrustumGizmo(shadowMap.camera.get(), lightColor));
+
 	root->addChild(mainGroup.get());
 	root->addChild(gizmos.get());
 
@@ -769,8 +786,7 @@ int main(int argc, char** argv) {
 		&lightIntensity,
 		setSpotLight,
 		flickerRig,
-		sceneBoundCenter,
-		sceneBoundRadius,
+		sceneCoverage,
 		shadowOptions
 	] (osg::RenderInfo&) {
 		bool changed = false;
@@ -796,8 +812,7 @@ int main(int argc, char** argv) {
 				spotPosition,
 				spotDirection,
 				osg::DegreesToRadians(spotOuterDegrees),
-				sceneBoundCenter,
-				sceneBoundRadius,
+				sceneCoverage,
 				shadowOptions
 			);
 
@@ -815,8 +830,7 @@ int main(int argc, char** argv) {
 		&lightColor,
 		&lightIntensity,
 		flickerRig,
-		sceneBoundCenter,
-		sceneBoundRadius,
+		sceneCoverage,
 		shadowOptions
 	] (osg::RenderInfo&) {
 		bool changed = false;
@@ -830,7 +844,7 @@ int main(int argc, char** argv) {
 		if(changed) {
 			lights->setPoint(0, pointPosition, lightColor, lightIntensity);
 
-			shadowMap.repositionPoint(pointPosition, sceneBoundCenter, sceneBoundRadius, shadowOptions);
+			shadowMap.repositionPoint(pointPosition, sceneCoverage, shadowOptions);
 
 			if(flickerRig) {
 				flickerRig->baseIntensity = lightIntensity;
@@ -848,8 +862,7 @@ int main(int argc, char** argv) {
 		flickerRig,
 		&shadowBias,
 		&shadowNormalOffset,
-		sceneBoundCenter,
-		sceneBoundRadius,
+		sceneCoverage,
 		shadowOptions
 	] (osg::RenderInfo&) {
 		bool changed = false;
@@ -863,7 +876,7 @@ int main(int argc, char** argv) {
 		}
 
 		if(ImGui::SliderFloat(
-			"Normal Offset", &shadowNormalOffset, 0.0f, std::max(0.01f, sceneBoundRadius * 0.1f), "%.5f"
+			"Normal Offset", &shadowNormalOffset, 0.0f, std::max(0.01f, sceneCoverage.radius * 0.1f), "%.5f"
 		)) {
 			shadowMap.normalOffset->set(shadowNormalOffset);
 		}
@@ -877,7 +890,7 @@ int main(int argc, char** argv) {
 			if(lightDir.length2() > 1e-8f) {
 				lights->setDirectional(0, lightDir, lightColor, lightIntensity);
 
-				shadowMap.reposition(lightDir, sceneBoundCenter, sceneBoundRadius, shadowOptions);
+				shadowMap.reposition(lightDir, sceneCoverage, shadowOptions);
 
 				// reposition() recomputes normalOffset's own derived default (coverage changed),
 				// unlike bias - resync the slider's tracked value so it doesn't go stale.

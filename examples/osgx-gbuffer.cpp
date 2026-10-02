@@ -492,6 +492,27 @@ int main(int argc, char** argv) {
 	const auto& bounds = boundsVisitor.getBoundingBox();
 	const osg::Vec3 boundCenter = bounds.valid() ? bounds.center() : osg::Vec3();
 	const float boundRadius = bounds.valid() ? bounds.radius() : 1.0f;
+
+	// Floor placement, computed here (ahead of shadowCoverage below) purely as numbers - the
+	// actual floor NODE isn't built until after the shadow map, see further down. Resting plane at
+	// the model's own true bottom (zMin, not the light rig's arbitrary center), centered under the
+	// model's actual XY position (not the world origin - a model loaded off-center still needs a
+	// floor under IT), half-size generous enough to catch the shadow's tilt-driven overhang
+	// regardless of model shape (lightDir's ~26.6 degree tilt off vertical puts that overhang at
+	// roughly half the model's height above the floor; radius*3 comfortably covers that without
+	// exact trig).
+	const float floorZ = bounds.valid() ? bounds.zMin() : 0.0f;
+	const float floorHalfSize = boundRadius * 3.0f;
+	const osg::Vec3 floorCenter(boundCenter.x(), boundCenter.y(), floorZ);
+
+	// Caster bound is the model itself; receiver bound is the (much larger) floor square below it
+	// - sqrt(2) covers the square's own corners, the furthest points from floorCenter. Without
+	// this, the floor extends well past the shadow frustum's model-sized default coverage
+	// (extent ~= boundRadius * margin, margin 1.3 by default) and the outer ring of the floor
+	// silently reads as unshadowed - see ai/todo-shadow.md's "chopped off" writeup, case (a).
+	const osgx::ShadowMap::Coverage shadowCoverage{
+		boundCenter, boundRadius, floorCenter, floorHalfSize * 1.42f
+	};
 	// Moderate ~45 degree angle - offset enough to cast a clearly visible shadow without the
 	// extreme grazing angles that stress-test the shadow frustum's tight, model-sized coverage.
 	// (A straight-overhead default briefly lived here while diagnosing low-poly faceted self-
@@ -506,19 +527,13 @@ int main(int argc, char** argv) {
 	osgx::ShadowMap::Options shadowOptions;
 
 	auto shadowMap = osgx::ShadowMap::create(
-		lightDir, boundCenter, boundRadius, shadowOptions
+		lightDir, shadowCoverage, shadowOptions
 	);
 
 	shadowMap.camera->addChild(model);
 
-	// Floor - sized/placed off the same bound: resting plane at the model's own true bottom
-	// (zMin, not the light rig's arbitrary center), centered under the model's actual XY
-	// position (not the world origin - a model loaded off-center still needs a floor under IT),
-	// half-size generous enough to catch the shadow's tilt-driven overhang regardless of model
-	// shape (lightDir's ~26.6 degree tilt off vertical puts that overhang at roughly half the
-	// model's height above the floor; radius*3 comfortably covers that without exact trig).
-	const float floorZ = bounds.valid() ? bounds.zMin() : 0.0f;
-	const float floorHalfSize = boundRadius * 3.0f;
+	// Floor node - placement numbers (floorZ/floorHalfSize/floorCenter) computed above, ahead of
+	// shadowCoverage.
 	auto floor = makeFloor(boundCenter, floorHalfSize, floorZ);
 
 	// Receiver, not caster - added to the geometry pass, never the shadow camera.
@@ -623,6 +638,12 @@ int main(int argc, char** argv) {
 	root->addChild(ssao.blurCamera);
 	root->addChild(lighting.node);
 	root->addChild(gizmos);
+	// Shadow-frustum visualization - composed here, same as `gizmos` itself, NOT built into either
+	// ShadowMap or LightGizmos (see FrustumGizmo's own header comment on the "light gizmo vs.
+	// shadow gizmo" split). Tracks shadowMap.camera live, so it stays correct across the
+	// "Directional Light"/"Shadows" ImGui sections' own reposition() calls below with no extra
+	// wiring.
+	root->addChild(new osgx::FrustumGizmo(shadowMap.camera.get(), lightColor));
 
 	osg::Uniform* debugChannelMode = nullptr;
 	auto debugCamera = makeDebugBlitCamera(debugChannelMode);
@@ -680,7 +701,7 @@ int main(int argc, char** argv) {
 	auto* gui = new osgx::imgui::Widget(viewer, gizmos->getOverlay());
 
 	gui->addSection("Directional Light", [
-		lights, &shadowMap, &lightDir, &lightColor, &lightIntensity, boundCenter, boundRadius, &shadowOptions
+		lights, &shadowMap, &lightDir, &lightColor, &lightIntensity, shadowCoverage, &shadowOptions
 	](osg::RenderInfo&) {
 		bool changed = false;
 
@@ -695,7 +716,7 @@ int main(int argc, char** argv) {
 			if(lightDir.length2() > 1e-8f) {
 				lights->setDirectional(0, lightDir, lightColor, lightIntensity);
 
-				shadowMap.reposition(lightDir, boundCenter, boundRadius, shadowOptions);
+				shadowMap.reposition(lightDir, shadowCoverage, shadowOptions);
 			}
 
 			else {
@@ -707,7 +728,7 @@ int main(int argc, char** argv) {
 	// Bias and strength are uniforms, so they take effect immediately. Frustum coverage changes
 	// must also re-aim the existing shadow camera, but still avoid rebuilding its FBO or texture.
 	gui->addSection("Shadows", [
-		&shadowMap, &lightDir, boundCenter, boundRadius, &shadowOptions
+		&shadowMap, &lightDir, shadowCoverage, &shadowOptions
 	](osg::RenderInfo&) {
 		float bias = 0.0f, normalOffset = 0.0f, strength = 0.0f;
 
@@ -719,7 +740,7 @@ int main(int argc, char** argv) {
 
 		changed |= ImGui::SliderFloat("Raw Bias (debug)", &bias, 0.0f, 0.05f, "%.6f");
 		changed |= ImGui::SliderFloat(
-			"Normal Offset", &normalOffset, 0.0f, std::max(0.01f, boundRadius * 0.1f), "%.6f"
+			"Normal Offset", &normalOffset, 0.0f, std::max(0.01f, shadowCoverage.radius * 0.1f), "%.6f"
 		);
 		changed |= ImGui::SliderFloat("Strength", &strength, 0.0f, 1.0f);
 
@@ -742,12 +763,12 @@ int main(int argc, char** argv) {
 		bool frustumChanged = false;
 
 		frustumChanged |= ImGui::SliderFloat(
-			"Frustum Extent", &shadowOptions.extent, 0.0f, std::max(1.0f, boundRadius * 10.0f)
+			"Frustum Extent", &shadowOptions.extent, 0.0f, std::max(1.0f, shadowCoverage.radius * 10.0f)
 		);
 		frustumChanged |= ImGui::SliderFloat("Frustum Margin", &shadowOptions.margin, 1.0f, 5.0f);
 
 		if(frustumChanged && lightDir.length2() > 1e-8f) {
-			shadowMap.reposition(lightDir, boundCenter, boundRadius, shadowOptions);
+			shadowMap.reposition(lightDir, shadowCoverage, shadowOptions);
 		}
 	}, osgx::imgui::SectionOptions::create(false, true));
 

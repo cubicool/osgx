@@ -6,6 +6,7 @@ OSGX_DISABLE_WARNINGS
 #include <osg/Geode>
 #include <osg/LineWidth>
 #include <osg/Math>
+#include <osg/Matrixd>
 #include <osg/Program>
 #include <osg/Shader>
 #include <osg/Vec2>
@@ -113,6 +114,73 @@ void appendCircle(
 	}
 
 	geom->addPrimitiveSet(new osg::DrawArrays(GL_LINE_LOOP, static_cast<GLint>(start), segments));
+}
+
+// 12 edges * 2 verts/edge (GL_LINES, no index buffer - matches this file's existing
+// rebuild-raw-vertex-array-every-frame convention, see appendCircle() above).
+constexpr int BOX_EDGE_VERTS = 24;
+constexpr std::size_t BOX_EDGE_VERTS_SZ = static_cast<std::size_t>(BOX_EDGE_VERTS);
+
+// Appends a 12-edge wireframe box from 8 corners, shared by FrustumGizmo (corners reconstructed
+// via inverse-viewProj unprojection, so may describe either an orthographic or perspective
+// frustum) and CaptureCubeGizmo (corners computed directly from center +/- halfSize, no
+// camera-matrix inversion needed for an axis-aligned box). `corners` index order: 0-3 one face
+// (CCW as seen from outside), 4-7 the opposite face in the SAME winding (corners[i] and
+// corners[i+4] are the two ends of one connecting edge).
+void appendBoxWireframe(
+	std::span<osg::Vec3> verts,
+	std::span<osg::Vec3> colors,
+	osg::Geometry* geom,
+	std::size_t start,
+	const osg::Vec3 (&corners)[8],
+	const osg::Vec3& color
+) {
+	static constexpr int EDGES[12][2] = {
+		{0, 1}, {1, 2}, {2, 3}, {3, 0},
+		{4, 5}, {5, 6}, {6, 7}, {7, 4},
+		{0, 4}, {1, 5}, {2, 6}, {3, 7},
+	};
+
+	for(int i = 0; i < 12; i++) {
+		auto idx = static_cast<std::size_t>(i) * 2;
+
+		verts[idx] = corners[EDGES[i][0]];
+		verts[idx + 1] = corners[EDGES[i][1]];
+		colors[idx] = color;
+		colors[idx + 1] = color;
+	}
+
+	geom->addPrimitiveSet(new osg::DrawArrays(GL_LINES, static_cast<GLint>(start), BOX_EDGE_VERTS));
+}
+
+// Lazily builds the single-box geometry both FrustumGizmo and CaptureCubeGizmo rebuild in place
+// every update traversal - identical setup, just factored out since neither class's own geometry
+// has any of LightMarkers'/the directional overlay's per-light-slot indexing to worry about (each
+// instance draws exactly one box).
+osg::ref_ptr<osg::Geometry> makeBoxGeometry() {
+	auto verts = osgx::make_ref<osgx::Vec3Array>(BOX_EDGE_VERTS_SZ);
+	auto colors = osgx::make_ref<osgx::Vec3Array>(BOX_EDGE_VERTS_SZ);
+
+	verts->setBinding(osg::Array::BIND_PER_VERTEX);
+	colors->setBinding(osg::Array::BIND_PER_VERTEX);
+	verts->setDataVariance(osg::Object::DYNAMIC);
+	colors->setDataVariance(osg::Object::DYNAMIC);
+
+	auto geometry = osgx::make_ref<osg::Geometry>();
+
+	geometry->setUseVertexBufferObjects(true);
+	geometry->setDataVariance(osg::Object::DYNAMIC);
+	geometry->setVertexArray(verts);
+	geometry->setVertexAttribArray(0, verts);
+	geometry->setVertexAttribArray(1, colors);
+	geometry->setCullingActive(false);
+
+	auto* ss = geometry->getOrCreateStateSet();
+
+	ss->setAttributeAndModes(createGizmoProgram(), osg::StateAttribute::ON);
+	ss->setAttributeAndModes(new osg::LineWidth(2.0f), osg::StateAttribute::ON);
+
+	return geometry;
 }
 
 // Point/sphere marker: three orthogonal wireframe circles (XY/XZ/YZ great circles) at `position`,
@@ -435,6 +503,135 @@ LightGizmos::LightGizmos(
 
 	addChild(_markers);
 	addChild(_overlay);
+}
+
+FrustumGizmo::FrustumGizmo(MatrixSource source, const osg::Vec3& color) {
+	setUpdateCallback(new UpdateCallback(std::move(source), color));
+	setCullingActive(false);
+}
+
+FrustumGizmo::FrustumGizmo(osg::Camera* camera, const osg::Vec3& color):
+FrustumGizmo(
+	[cam = osg::ref_ptr<osg::Camera>(camera)]() -> std::pair<osg::Matrixd, osg::Matrixd> {
+		return {cam->getViewMatrix(), cam->getProjectionMatrix()};
+	},
+	color
+) {}
+
+void FrustumGizmo::UpdateCallback::operator()(osg::Node* node, osg::NodeVisitor* nv) {
+	if(auto* gizmo = dynamic_cast<FrustumGizmo*>(node); gizmo && _source) {
+		auto [view, proj] = _source();
+
+		gizmo->rebuild(view, proj, _color);
+	}
+
+	traverse(node, nv);
+}
+
+void FrustumGizmo::rebuild(const osg::Matrixd& view, const osg::Matrixd& proj, const osg::Vec3& color) {
+	if(!_geometry) {
+		_geometry = detail::makeBoxGeometry();
+
+		auto geode = osgx::make_ref<osg::Geode>();
+
+		geode->addDrawable(_geometry);
+		addChild(geode);
+	}
+
+	osg::Matrixd invViewProj;
+
+	// OSG row-vector convention (see Shadow.hpp's own file-level comment): forward is
+	// worldPos * (view * proj), so the inverse of that SAME product unprojects NDC back to world.
+	invViewProj.invert(view * proj);
+
+	// The 8 corners of NDC space, in the winding appendBoxWireframe()'s EDGES table expects: 0-3
+	// the near face, 4-7 the far face.
+	static constexpr float NDC[8][3] = {
+		{-1.0f, -1.0f, -1.0f}, {1.0f, -1.0f, -1.0f}, {1.0f, 1.0f, -1.0f}, {-1.0f, 1.0f, -1.0f},
+		{-1.0f, -1.0f, 1.0f}, {1.0f, -1.0f, 1.0f}, {1.0f, 1.0f, 1.0f}, {-1.0f, 1.0f, 1.0f},
+	};
+	osg::Vec3 corners[8];
+
+	// osg::Vec3 * osg::Matrixd (Matrixd::preMult()) performs a true homogeneous transform AND
+	// divide - the standard unprojection technique, correct for both an orthographic matrix
+	// (divisor is always 1, a no-op) and a perspective one (divisor varies per corner).
+	for(int i = 0; i < 8; i++) corners[i] = osg::Vec3(NDC[i][0], NDC[i][1], NDC[i][2]) * invViewProj;
+
+	auto* verts = static_cast<osgx::Vec3Array*>(_geometry->getVertexArray());
+	auto* colors = static_cast<osgx::Vec3Array*>(_geometry->getVertexAttribArray(1));
+
+	_geometry->removePrimitiveSet(0, _geometry->getNumPrimitiveSets());
+	detail::appendBoxWireframe(
+		verts->span(0, detail::BOX_EDGE_VERTS_SZ), colors->span(0, detail::BOX_EDGE_VERTS_SZ),
+		_geometry, 0, corners, detail::gizmoColor(color)
+	);
+	verts->dirty();
+	colors->dirty();
+	_geometry->dirtyBound();
+}
+
+CaptureCubeGizmo::CaptureCubeGizmo(RangeSource source, const osg::Vec3& color) {
+	setUpdateCallback(new UpdateCallback(std::move(source), color));
+	setCullingActive(false);
+}
+
+CaptureCubeGizmo::CaptureCubeGizmo(osg::Camera* cubeFaceCamera, const osg::Vec3& color):
+CaptureCubeGizmo(
+	[camera = osg::ref_ptr<osg::Camera>(cubeFaceCamera)]() -> std::pair<osg::Vec3, float> {
+		osg::Vec3 eye, center, up;
+		double fovy = 0.0, aspect = 0.0, zNear = 0.0, zFar = 0.0;
+
+		camera->getViewMatrix().getLookAt(eye, center, up);
+
+		if(!camera->getProjectionMatrix().getPerspective(fovy, aspect, zNear, zFar)) return {eye, 0.0f};
+
+		return {eye, float(zFar)};
+	},
+	color
+) {}
+
+void CaptureCubeGizmo::UpdateCallback::operator()(osg::Node* node, osg::NodeVisitor* nv) {
+	if(auto* gizmo = dynamic_cast<CaptureCubeGizmo*>(node); gizmo && _source) {
+		auto [center, halfSize] = _source();
+
+		if(halfSize > 0.0f) gizmo->rebuild(center, halfSize, _color);
+	}
+
+	traverse(node, nv);
+}
+
+void CaptureCubeGizmo::rebuild(const osg::Vec3& center, float halfSize, const osg::Vec3& color) {
+	if(!_geometry) {
+		_geometry = detail::makeBoxGeometry();
+
+		auto geode = osgx::make_ref<osg::Geode>();
+
+		geode->addDrawable(_geometry);
+		addChild(geode);
+	}
+
+	osg::Vec3 corners[8] = {
+		center + osg::Vec3(-halfSize, -halfSize, -halfSize),
+		center + osg::Vec3(halfSize, -halfSize, -halfSize),
+		center + osg::Vec3(halfSize, halfSize, -halfSize),
+		center + osg::Vec3(-halfSize, halfSize, -halfSize),
+		center + osg::Vec3(-halfSize, -halfSize, halfSize),
+		center + osg::Vec3(halfSize, -halfSize, halfSize),
+		center + osg::Vec3(halfSize, halfSize, halfSize),
+		center + osg::Vec3(-halfSize, halfSize, halfSize),
+	};
+
+	auto* verts = static_cast<osgx::Vec3Array*>(_geometry->getVertexArray());
+	auto* colors = static_cast<osgx::Vec3Array*>(_geometry->getVertexAttribArray(1));
+
+	_geometry->removePrimitiveSet(0, _geometry->getNumPrimitiveSets());
+	detail::appendBoxWireframe(
+		verts->span(0, detail::BOX_EDGE_VERTS_SZ), colors->span(0, detail::BOX_EDGE_VERTS_SZ),
+		_geometry, 0, corners, detail::gizmoColor(color)
+	);
+	verts->dirty();
+	colors->dirty();
+	_geometry->dirtyBound();
 }
 
 }
