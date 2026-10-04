@@ -7,16 +7,13 @@
 OSGX_DISABLE_WARNINGS
 
 #include <osg/Array>
+#include <osg/BufferIndexBinding>
 #include <osg/Image>
 #include <osg/StateAttribute>
 #include <osg/Texture2D>
 #include <osg/Vec4>
 
 OSGX_ENABLE_WARNINGS
-
-namespace osg {
-	class UniformBufferBinding;
-}
 
 // osgx::SDF - two things sharing one namespace of GLSL: (1) a small catalog of pure, closed-form
 // 2D signed-distance functions (negative = inside, matching every other SDF convention in this

@@ -4,6 +4,8 @@
 
 OSGX_DISABLE_WARNINGS
 
+#include <osg/Image>
+#include <osg/TextureCubeMap>
 #include <osgDB/ReaderWriter>
 
 OSGX_ENABLE_WARNINGS
@@ -12,11 +14,6 @@ OSGX_ENABLE_WARNINGS
 #include <cstdint>
 #include <functional>
 #include <string>
-
-namespace osg {
-class Image;
-class TextureCubeMap;
-}
 
 namespace osgx::ktx2 {
 

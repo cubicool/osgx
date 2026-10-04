@@ -8,6 +8,7 @@ OSGX_DISABLE_WARNINGS
 
 #include <osg/BlendFunc>
 #include <osg/Array>
+#include <osg/BufferIndexBinding>
 #include <osg/Camera>
 #include <osg/Geode>
 #include <osg/Geometry>
@@ -16,10 +17,6 @@ OSGX_DISABLE_WARNINGS
 #include <osg/StateAttribute>
 
 OSGX_ENABLE_WARNINGS
-
-namespace osg {
-	class UniformBufferBinding;
-}
 
 namespace osgx {
 

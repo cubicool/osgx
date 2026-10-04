@@ -6,6 +6,7 @@ OSGX_DISABLE_WARNINGS
 
 #include <osg/Program>
 #include <osg/Shader>
+#include <osg/StateSet>
 #include <osg/ref_ptr>
 
 OSGX_ENABLE_WARNINGS
@@ -15,10 +16,6 @@ OSGX_ENABLE_WARNINGS
 #include <string_view>
 #include <utility>
 #include <vector>
-
-namespace osg {
-	class StateSet;
-}
 
 namespace osgx {
 

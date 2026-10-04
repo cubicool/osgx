@@ -6,12 +6,11 @@ OSGX_DISABLE_WARNINGS
 
 #include <osg/Camera>
 #include <osg/Group>
+#include <osg/Image>
 #include <osg/Texture2D>
 #include <osg/TextureCubeMap>
 
 OSGX_ENABLE_WARNINGS
-
-namespace osg { class Image; }
 
 namespace osgx {
 

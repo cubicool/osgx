@@ -1,10 +1,16 @@
 #pragma once
 
+#include "Warnings.hpp"
+
+OSGX_DISABLE_WARNINGS
+
+#include <osg/Camera>
+#include <osgViewer/Viewer>
+
+OSGX_ENABLE_WARNINGS
+
 #include <string>
 #include <vector>
-
-namespace osg { class Camera; }
-namespace osgViewer { class Viewer; }
 
 namespace osgx::platform {
 

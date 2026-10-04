@@ -9,6 +9,7 @@
 
 OSGX_DISABLE_WARNINGS
 
+#include <osg/BufferIndexBinding>
 #include <osg/Group>
 #include <osg/Image>
 #include <osg/Quat>
@@ -19,10 +20,6 @@ OSGX_DISABLE_WARNINGS
 OSGX_ENABLE_WARNINGS
 
 #include <array>
-
-namespace osg {
-	class UniformBufferBinding;
-}
 
 namespace osgx {
 

@@ -8,8 +8,10 @@
 OSGX_DISABLE_WARNINGS
 
 #include <osg/Array>
+#include <osg/BufferIndexBinding>
 #include <osg/StateAttribute>
 #include <osg/StateSet>
+#include <osg/Texture2D>
 #include <osg/Uniform>
 #include <osg/Vec4>
 
@@ -17,11 +19,6 @@ OSGX_ENABLE_WARNINGS
 
 #include <array>
 #include <string>
-
-namespace osg {
-	class UniformBufferBinding;
-	class Texture2D;
-}
 
 namespace osgx {
 

@@ -4,8 +4,10 @@
 
 OSGX_DISABLE_WARNINGS
 
+#include <osg/Image>
 #include <osg/Texture2D>
 #include <osg/ref_ptr>
+#include <osgDB/Options>
 
 OSGX_ENABLE_WARNINGS
 
@@ -13,8 +15,6 @@ OSGX_ENABLE_WARNINGS
 #include <string>
 #include <unordered_map>
 
-namespace osg { class Image; }
-namespace osgDB { class Options; }
 struct tg3_model;
 
 namespace osgx::gltf::detail {

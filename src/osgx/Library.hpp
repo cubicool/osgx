@@ -5,6 +5,7 @@
 OSGX_DISABLE_WARNINGS
 
 #include <osg/ArgumentParser>
+#include <osg/BufferIndexBinding>
 #include <osg/ref_ptr>
 
 OSGX_ENABLE_WARNINGS
@@ -18,10 +19,6 @@ OSGX_ENABLE_WARNINGS
 #include <string_view>
 #include <typeinfo>
 #include <vector>
-
-namespace osg {
-	class BufferIndexBinding;
-}
 
 namespace osgx {
 

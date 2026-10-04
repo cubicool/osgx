@@ -8,6 +8,7 @@
 OSGX_DISABLE_WARNINGS
 
 #include <osg/Array>
+#include <osg/BufferIndexBinding>
 #include <osg/NodeCallback>
 #include <osg/NodeVisitor>
 #include <osg/StateAttribute>
@@ -20,10 +21,6 @@ OSGX_ENABLE_WARNINGS
 #include <cmath>
 #include <string>
 #include <vector>
-
-namespace osg {
-	class UniformBufferBinding;
-}
 
 namespace osgx {
 
