@@ -1,6 +1,7 @@
 #include "osgx/LambertianBake.hpp"
 #include "osgx/IBL.hpp"
 #include "osgx/RTT.hpp"
+#include "osgx/Shader.hpp"
 
 OSGX_DISABLE_WARNINGS
 
@@ -141,7 +142,7 @@ osg::ref_ptr<osg::Program> makeProgram() {
 	auto program = new osg::Program();
 
 	program->setName("osgx_ibl_lambertianBake");
-	program->addShader(new osg::Shader(osg::Shader::VERTEX, FULLSCREEN_VERT));
+	program->addShader(osgx::cachedShader(osg::Shader::VERTEX, FULLSCREEN_VERT));
 	program->addShader(new osg::Shader(osg::Shader::FRAGMENT, LAMBERTIAN_FRAG));
 
 	return program;

@@ -257,9 +257,8 @@ PBRGBuffer PBRGBuffer::create(osg::Node* node, int width, int height, const Hook
 
 	// PBR_VERTEX_SHADER calls osgx_ApplySkin().
 	osgx::applyHooks(prog, hooks, {
-		{osgx::Hook::Skinning, new osg::Shader(
-			osg::Shader::VERTEX,
-			resolveShaderLibs(osgx::SKINNING_HOOK_IDENTITY)
+		{osgx::Hook::Skinning, osgx::cachedShader(
+			osg::Shader::VERTEX, resolveShaderLibs(osgx::SKINNING_HOOK_IDENTITY)
 		)}
 	});
 
@@ -319,7 +318,7 @@ PBRLightingPass PBRLightingPass::create(
 
 	auto prog = osgx::make_nref<osg::Program>("osgx_PBRLightingPass");
 
-	auto* vertexShader = new osg::Shader(osg::Shader::VERTEX, osgx::FULLSCREEN_VERT);
+	auto* vertexShader = osgx::cachedShader(osg::Shader::VERTEX, osgx::FULLSCREEN_VERT);
 
 	vertexShader->setName(prog->getName() + ".vertex");
 	prog->addShader(vertexShader);
@@ -371,15 +370,13 @@ PBRLightingPass PBRLightingPass::create(
 	}
 
 	osgx::applyHooks(prog, options.hooks, {
-		{osgx::Hook::DeferredLighting, new osg::Shader(
-			osg::Shader::FRAGMENT,
-			resolveShaderLibs(LIGHTING_FRAGMENT_SHADER_SRC)
+		{osgx::Hook::DeferredLighting, osgx::cachedShader(
+			osg::Shader::FRAGMENT, resolveShaderLibs(LIGHTING_FRAGMENT_SHADER_SRC)
 		)},
-		{osgx::Hook::DirectLighting, new osg::Shader(
-			osg::Shader::FRAGMENT,
-			resolveShaderLibs(osgx::DIRECT_LIGHTING_HOOK_DEFAULT)
+		{osgx::Hook::DirectLighting, osgx::cachedShader(
+			osg::Shader::FRAGMENT, resolveShaderLibs(osgx::DIRECT_LIGHTING_HOOK_DEFAULT)
 		)},
-		{osgx::Hook::Tonemap, new osg::Shader(
+		{osgx::Hook::Tonemap, osgx::cachedShader(
 			osg::Shader::FRAGMENT,
 			resolveShaderLibs(
 				options.tonemap ? osgx::TONEMAP_HOOK_DEFAULT : osgx::TONEMAP_HOOK_IDENTITY

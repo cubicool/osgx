@@ -1,6 +1,7 @@
 #include "osgx/GGXPrefilter.hpp"
 #include "osgx/IBL.hpp"
 #include "osgx/RTT.hpp"
+#include "osgx/Shader.hpp"
 
 OSGX_DISABLE_WARNINGS
 
@@ -156,7 +157,7 @@ osg::ref_ptr<osg::Geode> makeFullscreenQuad() {
 osg::ref_ptr<osg::Program> makeProgram(const char* vert, const char* frag) {
 	auto* p = new osg::Program();
 
-	p->addShader(new osg::Shader(osg::Shader::VERTEX, vert));
+	p->addShader(osgx::cachedShader(osg::Shader::VERTEX, vert));
 	p->addShader(new osg::Shader(osg::Shader::FRAGMENT, frag));
 
 	return p;

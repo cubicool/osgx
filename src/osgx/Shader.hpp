@@ -16,6 +16,10 @@ OSGX_ENABLE_WARNINGS
 #include <utility>
 #include <vector>
 
+namespace osg {
+	class StateSet;
+}
+
 namespace osgx {
 
 struct ShaderLib {
@@ -52,15 +56,58 @@ std::string resolveShaderLibs(std::string src);
 // cachedShader() makes sharing the outcome by default for source that's likely to repeat.
 // ================================================================================================
 
-// Returns a cached osg::Shader for (type, src), compiling a new instance only the first time this
-// exact (type, source text) pair is requested; every later call with the same pair returns the
-// SAME instance, so Program::apply() finds it already compiled. Process-wide and never evicted --
-// same tradeoff as the shaderLibCatalogs() registry above - which is fine for the intended use (a
-// library's own default/no-op shader constants, or caller-supplied hook text that happens to
-// repeat across call sites), but wrong for source built fresh with caller-specific data baked in
-// as a literal every call: that source never actually repeats, so caching it only grows the map
-// forever for no benefit.
-osg::Shader* cachedShader(osg::Shader::Type type, std::string src);
+// Returns a cached osg::Shader for (type, tag, src), compiling a new instance only the first time
+// this exact (type, tag, source text) triple is requested; every later call with the same triple
+// returns the SAME instance, so Program::apply() finds it already compiled. Process-wide and never
+// evicted -- same tradeoff as the shaderLibCatalogs() registry above - which is fine for the
+// intended use (a library's own default/no-op shader constants, or caller-supplied hook text that
+// happens to repeat across call sites), but wrong for source built fresh with caller-specific data
+// baked in as a literal every call: that source never actually repeats, so caching it only grows
+// the map forever for no benefit. `tag` joins the cache key as an independent sharing group (e.g.
+// HUD labels vs. world labels, cached separately so editing one group's shader in a live-reload
+// tool never touches the other) - it is not an opt-out; a caller that wants no sharing at all
+// simply doesn't call cachedShader().
+osg::Shader* cachedShader(osg::Shader::Type type, std::string src, std::string tag = {});
+
+// ================================================================================================
+// Program-object caching: osg::Program INSTANCE dedup, one level up from cachedShader() above.
+// Sharing a Shader instance across Programs dedupes the GL compile; sharing the PROGRAM ITSELF
+// additionally dedupes the GL link and collapses N scene-graph instances onto one real GL program
+// object (fewer glUseProgram switches; one entry instead of N identical ones in an introspection
+// tool like pyside6-glsl.py's Program tree).
+// ================================================================================================
+
+// One shader to attach when building a cachedProgram(). `role` names the shader for introspection
+// ("<name>.<role>", matching every other osgx Program-builder's naming convention - PBRScene.cpp/
+// IBL.cpp's plain setName() calls are the other half) - defaults from `type` ("vertex"/"fragment"/
+// ...), with a numeric suffix for a second shader of the same type in the same Program.
+struct ProgramShader {
+	osg::Shader::Type type;
+	std::string src;
+	std::string typeName = {};
+};
+
+// Returns a cached osg::Program for (name, tag, shaders), building (and, implicitly, linking at
+// first use) a new instance only the first time this exact combination is requested; every later
+// call returns the SAME instance. Unlike cachedShader(), the returned Program's shaders are its
+// OWN new instances (not individually shared via cachedShader() - the whole Program is the shared
+// unit here), named "<name>.<role>". `tag` has the same independent-sharing-group meaning as
+// cachedShader()'s. Process-wide and never evicted, same tradeoff as cachedShader() above.
+//
+// IMPORTANT: every osg::StateSet that installs a cachedProgram() result shares the SAME Program
+// object. Editing it later - through live shader-reload tooling (pyside6-glsl.py), or by mutating
+// `label.stateSet`'s Program from Python - changes EVERY instance sharing it, not just the one the
+// caller meant to touch. Call detachProgram() first to get a private clone to edit instead.
+osg::Program* cachedProgram(std::string name, std::span<const ProgramShader> shaders, std::string tag = {});
+
+// Replaces `stateSet`'s Program attribute (if any) with a private deep copy - cloning every Shader
+// it holds too, not just the Program object itself (osg::Program's copy constructor with
+// osg::CopyOp::DEEP_COPY_STATEATTRIBUTES; verified against OSG 3.6.5's own Program.cpp) - and
+// re-installs it at the same ON/OVERRIDE/PROTECTED value the shared one had. Returns the new
+// Program, or nullptr if `stateSet` has none. The escape hatch for editing one instance of a
+// cachedProgram()-shared Program (PixelText, Grid, ...) without touching every other instance
+// sharing it. A free function, not a method: osg::StateSet is a foreign type.
+osg::Program* detachProgram(osg::StateSet* stateSet);
 
 // ================================================================================================
 // Hook points: shader-object SUBSTITUTION, the counterpart to registerShaderLibs()/

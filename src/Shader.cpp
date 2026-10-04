@@ -1,5 +1,12 @@
 #include "LibraryState.hpp"
 
+OSGX_DISABLE_WARNINGS
+
+#include <osg/CopyOp>
+#include <osg/StateSet>
+
+OSGX_ENABLE_WARNINGS
+
 #include <algorithm>
 #include <cctype>
 #include <map>
@@ -82,21 +89,102 @@ void registerShaderLibs(std::string_view namespaceName, std::span<const ShaderLi
 	}
 }
 
-osg::Shader* cachedShader(osg::Shader::Type type, std::string src) {
+osg::Shader* cachedShader(osg::Shader::Type type, std::string src, std::string tag) {
 	auto& cache = detail::libraryState().shaderCache;
-	auto key = std::make_pair(type, std::move(src));
+	auto key = std::make_tuple(type, std::move(tag), std::move(src));
 	const auto found = cache.find(key);
 
 	if(found != cache.end()) return found->second.get();
 
-	auto* shader = new osg::Shader(type, key.second);
+	auto* shader = new osg::Shader(type, std::get<2>(key));
 
 	return cache.emplace(std::move(key), shader).first->second.get();
 }
 
 namespace {
 
-// "<programName>.<hookName>Hook" is applyHooks()'s own half of the "<programName>.<role>" shader-
+// cachedProgram()'s default shader type name, before any duplicate-type suffix - the other half of
+// the "<programName>.<type>" naming convention hookName() (below) implements for hook slots, and
+// PBRScene.cpp/IBL.cpp's plain setName() calls implement for everything else.
+std::string_view shaderTypeName(osg::Shader::Type type) {
+	switch(type) {
+		case osg::Shader::VERTEX: return "vertex";
+		case osg::Shader::FRAGMENT: return "fragment";
+		case osg::Shader::GEOMETRY: return "geometry";
+		case osg::Shader::TESSCONTROL: return "tessControl";
+		case osg::Shader::TESSEVALUATION: return "tessEvaluation";
+		case osg::Shader::COMPUTE: return "compute";
+		case osg::Shader::UNDEFINED: break;
+	}
+
+	return "shader";
+}
+
+}
+
+osg::Program* cachedProgram(std::string name, std::span<const ProgramShader> shaders, std::string tag) {
+	auto& cache = detail::libraryState().programCache;
+	std::string key = name;
+
+	key += '\x01';
+	key += tag;
+
+	for(const auto& shader : shaders) {
+		key += '\x01';
+		key += std::to_string(static_cast<int>(shader.type));
+		key += '\x01';
+		key += shader.typeName;
+		key += '\x01';
+		key += shader.src;
+	}
+
+	if(const auto found = cache.find(key); found != cache.end()) return found->second.get();
+
+	auto program = make_nref<osg::Program>(name);
+	std::map<osg::Shader::Type, int> typeCounts;
+
+	for(const auto& shader : shaders) typeCounts[shader.type]++;
+
+	std::map<osg::Shader::Type, int> typeSeen;
+
+	for(const auto& spec : shaders) {
+		auto* shaderObject = new osg::Shader(spec.type, spec.src);
+		std::string typeName = spec.typeName;
+
+		if(typeName.empty()) {
+			typeName = std::string(shaderTypeName(spec.type));
+
+			if(typeCounts[spec.type] > 1) typeName += std::to_string(++typeSeen[spec.type]);
+		}
+
+		shaderObject->setName(name + "." + typeName);
+		program->addShader(shaderObject);
+	}
+
+	cache.emplace(std::move(key), program);
+
+	return program.get();
+}
+
+osg::Program* detachProgram(osg::StateSet* stateSet) {
+	if(!stateSet) return nullptr;
+
+	auto* pair = stateSet->getAttributePair(osg::StateAttribute::PROGRAM);
+
+	if(!pair || !pair->first.valid()) return nullptr;
+
+	auto* clone = new osg::Program(
+		static_cast<const osg::Program&>(*pair->first), osg::CopyOp::DEEP_COPY_STATEATTRIBUTES
+	);
+
+	stateSet->setAttributeAndModes(clone, pair->second);
+
+	return clone;
+}
+
+namespace {
+
+// "<programName>.<hookName>Hook" is applyHooks()'s own half of the "<programName>.<type>" shader-
 // naming convention every osgx Program-builder follows (see PBRScene.cpp/IBL.cpp's plain
 // setName() calls for the other half, on shaders that aren't hook slots) - so a shader shows up
 // meaningfully in introspection/debug UIs (e.g. pyside6-glsl.py's tree/tab view) instead of a

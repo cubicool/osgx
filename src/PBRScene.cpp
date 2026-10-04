@@ -255,17 +255,14 @@ PBRScene PBRScene::create(osg::Node* node, const Options& options) {
 	// block) - nothing left to pick between since ShadowFactor absorbed that distinction, so this
 	// slot is purely a real override point now, same as every other one.
 	osgx::applyHooks(prog, options.hooks, {
-		{osgx::Hook::Skinning, new osg::Shader(
-			osg::Shader::VERTEX,
-			resolveShaderLibs(osgx::SKINNING_HOOK_IDENTITY)
+		{osgx::Hook::Skinning, osgx::cachedShader(
+			osg::Shader::VERTEX, resolveShaderLibs(osgx::SKINNING_HOOK_IDENTITY)
 		)},
-		{osgx::Hook::Tonemap, new osg::Shader(
-			osg::Shader::FRAGMENT,
-			resolveShaderLibs(osgx::TONEMAP_HOOK_DEFAULT)
+		{osgx::Hook::Tonemap, osgx::cachedShader(
+			osg::Shader::FRAGMENT, resolveShaderLibs(osgx::TONEMAP_HOOK_DEFAULT)
 		)},
-		{osgx::Hook::DirectLighting, new osg::Shader(
-			osg::Shader::FRAGMENT,
-			resolveShaderLibs(osgx::DIRECT_LIGHTING_HOOK_DEFAULT)
+		{osgx::Hook::DirectLighting, osgx::cachedShader(
+			osg::Shader::FRAGMENT, resolveShaderLibs(osgx::DIRECT_LIGHTING_HOOK_DEFAULT)
 		)},
 		{osgx::Hook::ShadowFactor, shadowFactorShader}
 	});

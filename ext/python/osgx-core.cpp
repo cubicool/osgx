@@ -661,9 +661,53 @@ void bind_core(py::module_& m) {
 		&osgx::cachedShader,
 		"type"_a,
 		"src"_a,
-		"Return the process-wide cached osg.Shader for this (type, source) pair. Repeated calls "
-		"with identical arguments return the same shader object, allowing OSG to reuse its compiled "
-		"per-context shader."
+		"tag"_a="",
+		"Return the process-wide cached osg.Shader for this (type, tag, source) triple. Repeated "
+		"calls with identical arguments return the same shader object, allowing OSG to reuse its "
+		"compiled per-context shader. `tag` is an independent sharing group, not an opt-out."
+	);
+
+	m.def(
+		"cachedProgram",
+		[](const std::string& name, const std::vector<py::tuple>& shaders, const std::string& tag) {
+			std::vector<osgx::ProgramShader> specs;
+
+			specs.reserve(shaders.size());
+
+			for(const auto& shader : shaders) {
+				if(shader.size() != 2 && shader.size() != 3) {
+					throw py::value_error(
+						"cachedProgram: each shader must be a (type, src) or (type, src, typeName) tuple"
+					);
+				}
+
+				osgx::ProgramShader spec{shader[0].cast<osg::Shader::Type>(), shader[1].cast<std::string>()};
+
+				if(shader.size() == 3) spec.typeName = shader[2].cast<std::string>();
+
+				specs.push_back(std::move(spec));
+			}
+
+			return osgx::cachedProgram(name, specs, tag);
+		},
+		"name"_a,
+		"shaders"_a,
+		"tag"_a="",
+		"Return the process-wide cached osg.Program for (name, tag, shaders), building (and "
+		"linking) a new one only the first time this combination is requested. `shaders` is a list "
+		"of (type, src) or (type, src, typeName) tuples - typeName defaults from type, with a numeric "
+		"suffix for a second shader of the same type. Every osg.StateSet that installs the result "
+		"shares the SAME Program - call osgx.detachProgram() first to edit one instance privately."
+	);
+
+	m.def(
+		"detachProgram",
+		&osgx::detachProgram,
+		"stateSet"_a,
+		"Replace `stateSet`'s Program attribute (if any) with a private deep copy - cloning every "
+		"attached Shader too - at the same ON/OVERRIDE/PROTECTED value, and return it; None if "
+		"`stateSet` carries no Program. The escape hatch for editing one instance of a "
+		"cachedProgram()-shared Program without touching every other instance sharing it."
 	);
 
 	// Shader-object substitution hook slots, the counterpart to resolveShaderLibs()' text

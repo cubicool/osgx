@@ -1,6 +1,7 @@
 #include "osgx/Aura.hpp"
 #include "osgx/IBL.hpp"
 #include "osgx/RTT.hpp"
+#include "osgx/Shader.hpp"
 
 OSGX_DISABLE_WARNINGS
 
@@ -211,10 +212,11 @@ Aura Aura::create(int width, int height, int radiusPixels) {
 	result.expanded = makeTexture(width, height, GL_RGBA16F, GL_RGBA, GL_FLOAT);
 	result.radius = new osg::Uniform("auraRadius", std::clamp(radiusPixels, 0, 64));
 
-	auto program = osgx::make_nref<osg::Program>("osgx_aura_SelectionMask");
-
-	program->addShader(new osg::Shader(osg::Shader::VERTEX, SELECTION_VERTEX_SHADER));
-	program->addShader(new osg::Shader(osg::Shader::FRAGMENT, SELECTION_FRAGMENT_SHADER));
+	const std::array<osgx::ProgramShader, 2> selectionShaders = {{
+		{osg::Shader::VERTEX, SELECTION_VERTEX_SHADER},
+		{osg::Shader::FRAGMENT, SELECTION_FRAGMENT_SHADER}
+	}};
+	auto* program = osgx::cachedProgram("osgx_aura_SelectionMask", selectionShaders);
 
 	// RELATIVE_RF (RTT's non-default reference frame - see RTT.hpp's own comment): this camera
 	// never sets its own view/projection, so it renders the selected node from exactly the same

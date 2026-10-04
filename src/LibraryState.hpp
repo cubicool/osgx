@@ -8,6 +8,7 @@
 
 OSGX_DISABLE_WARNINGS
 
+#include <osg/Program>
 #include <osg/Referenced>
 #include <osg/Shader>
 #include <osg/Texture2D>
@@ -17,6 +18,7 @@ OSGX_ENABLE_WARNINGS
 
 #include <map>
 #include <string>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -34,8 +36,11 @@ struct LibraryState: public osg::Referenced {
 	// registerShaderLibs() writes, resolveShaderLibs() reads.
 	std::vector<ShaderLibCatalog> shaderLibCatalogs;
 
-	// cachedShader(), keyed by (type, source text).
-	std::map<std::pair<osg::Shader::Type, std::string>, osg::ref_ptr<osg::Shader>> shaderCache;
+	// cachedShader(), keyed by (type, tag, source text).
+	std::map<std::tuple<osg::Shader::Type, std::string, std::string>, osg::ref_ptr<osg::Shader>> shaderCache;
+
+	// cachedProgram(), keyed by a serialized (name, tag, shaders) string - see Shader.cpp.
+	std::map<std::string, osg::ref_ptr<osg::Program>> programCache;
 
 	// SharedBRDFLUT::create(), keyed by LUT size.
 	std::map<int, osg::ref_ptr<osg::Texture2D>> brdfLUTs;

@@ -1,4 +1,5 @@
 #include "osgx/Gizmos.hpp"
+#include "osgx/Shader.hpp"
 
 OSGX_DISABLE_WARNINGS
 
@@ -14,6 +15,7 @@ OSGX_DISABLE_WARNINGS
 OSGX_ENABLE_WARNINGS
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 
 namespace osgx {
@@ -59,10 +61,13 @@ void main() {
 )GLSL";
 
 osg::ref_ptr<osg::Program> createGizmoProgram() {
-	auto program = osgx::make_nref<osg::Program>("osgx_gizmo");
+	const std::array<osgx::ProgramShader, 2> shaders = {{
+		{osg::Shader::VERTEX, GIZMO_VERTEX_SHADER},
+		{osg::Shader::FRAGMENT, GIZMO_FRAGMENT_SHADER}
+	}};
+	auto* program = osgx::cachedProgram("osgx_Gizmo", shaders);
 
-	program->addShader(new osg::Shader(osg::Shader::VERTEX, GIZMO_VERTEX_SHADER));
-	program->addShader(new osg::Shader(osg::Shader::FRAGMENT, GIZMO_FRAGMENT_SHADER));
+	// Idempotent against the shared instance - every caller sets the same two locations.
 	program->addBindAttribLocation("osgx_gizmo_Vertex", 0);
 	program->addBindAttribLocation("osgx_gizmo_Color", 1);
 

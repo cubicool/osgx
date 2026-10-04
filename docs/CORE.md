@@ -32,9 +32,9 @@ subsystems (each with its own C++ namespace), see [DEBUG.md](DEBUG.md), [IMGUI.m
 ## `osgx/Library.hpp`
 
 `osgx::Library` owns libosgx's process-wide state: the shader-lib catalogs (registered by its
-constructor), the `cachedShader()` cache, the `SharedBRDFLUT` textures, and the `PixelText` atlas.
-The state is created by the constructor and released by the destructor, so none of it is left for
-static destruction at process exit.
+constructor), the `cachedShader()`/`cachedProgram()` caches, the `SharedBRDFLUT` textures, and the
+`PixelText` atlas. The state is created by the constructor and released by the destructor, so none
+of it is left for static destruction at process exit.
 
 ```cpp
 auto lib = osgx::initialize(arguments); // before the viewer, so the viewer is destroyed first
@@ -42,8 +42,8 @@ osgViewer::Viewer viewer(arguments);
 ```
 
 - Exactly one may be alive; constructing a second throws `std::logic_error`.
-- `resolveShaderLibs()`, `registerShaderLibs()`, `cachedShader()`, `SharedBRDFLUT::create()`, and
-  `PixelText` throw `std::logic_error` while no Library is alive.
+- `resolveShaderLibs()`, `registerShaderLibs()`, `cachedShader()`, `cachedProgram()`,
+  `SharedBRDFLUT::create()`, and `PixelText` throw `std::logic_error` while no Library is alive.
 - Libraries built on osgx subclass it (`class Library: public osgx::Library`), which initializes
   osgx first and releases the subclass's state first. `Library::instance<T>()` returns the live
   Library as `T`.
@@ -348,6 +348,31 @@ via one shared enum/mechanism instead of each call site growing its own `osg::Sh
 someHook=nullptr` parameter. `applyHooks()` guarantees exactly one shader ends up attached per
 supported slot, always — never zero, never two (GLSL permits one body per function, so an override
 substitutes the built-in rather than competing with it).
+
+### Shader/Program compile caching
+
+OSG dedupes a `Shader`'s real GL compile (and a `Program`'s GL link) by *instance identity*, not
+source content: N `Program`s each holding their own freshly-`new`'d `Shader` with byte-identical
+source recompile independently every time, and N `StateSet`s each holding their own `Program` link
+independently too. `cachedShader(type, src, tag="")` and `cachedProgram(name, shaders, tag="")`
+make sharing the outcome the default for source that's likely to repeat — a library's own default/
+no-op shader constants (`Shadow.cpp`'s `osgx_ShadowFactorHookMulti`, `PBRScene`/`PBRDeferred`'s
+hook-default fallbacks), or a whole static Program with no caller-supplied customization
+(`PixelText`, `Grid`, gizmos, `ShadowMap`'s depth/distance-only Programs). Both are process-wide and
+never evicted, same tradeoff as the `shaderLibCatalogs()` registry above; wrong for source built
+fresh with caller-specific data baked in as a literal, since that text never actually repeats.
+`tag` joins the cache key as an independent sharing group — not an opt-out, a caller wanting no
+sharing simply doesn't call these.
+
+`cachedProgram()` returns the SAME `Program` object to every caller for a given (name, tag,
+shaders) — editing it later (live shader-reload tooling, or mutating `label.stateSet`'s Program
+from Python) changes every instance sharing it. `detachProgram(stateSet)` is the escape hatch:
+it replaces a `StateSet`'s Program with a private deep copy (every attached `Shader` cloned too,
+via `osg::CopyOp::DEEP_COPY_STATEATTRIBUTES`) at the same ON/OVERRIDE/PROTECTED value, for editing
+one instance without touching the others.
+
+Python: `osgx.cachedShader(type, src, tag="")`; `osgx.cachedProgram(name, shaders, tag="")` where
+`shaders` is a list of `(type, src)` or `(type, src, role)` tuples; `osgx.detachProgram(stateSet)`.
 
 ## `osgx/Skinning.hpp`
 

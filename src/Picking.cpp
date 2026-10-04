@@ -10,6 +10,7 @@
 
 #include <osg/Notify>
 
+#include <array>
 #include <cstring>
 
 namespace osgx {
@@ -154,18 +155,35 @@ osg::ref_ptr<osg::Camera> makePickCamera(
 	auto* ss = cam->getOrCreateStateSet();
 
 	if(installProgram) {
-		auto prog = make_nref<osg::Program>("pickProgram");
+		osg::ref_ptr<osg::Program> prog;
 
-		auto* vc = new osg::Shader(osg::Shader::VERTEX, PICK_VERT_CORE);
-		auto* vh = vertHook ? vertHook : new osg::Shader(osg::Shader::VERTEX, PICK_VERT_HOOK_NOOP);
-		auto* fc = new osg::Shader(osg::Shader::FRAGMENT, PICK_FRAG_CORE);
-		auto* fh = fragHook ? fragHook : new osg::Shader(osg::Shader::FRAGMENT, PICK_FRAG_HOOK_UNIFORM);
+		// No caller-supplied hooks: the whole Program is byte-identical across every call, so the
+		// whole thing (not just its shaders) is shared - see Shader.hpp's cachedProgram() comment.
+		if(!vertHook && !fragHook) {
+			const std::array<ProgramShader, 4> shaders = {{
+				{osg::Shader::VERTEX, PICK_VERT_CORE, "pickVertCore"},
+				{osg::Shader::VERTEX, PICK_VERT_HOOK_NOOP, "pickVertHook"},
+				{osg::Shader::FRAGMENT, PICK_FRAG_CORE, "pickFragCore"},
+				{osg::Shader::FRAGMENT, PICK_FRAG_HOOK_UNIFORM, "pickFragHook"}
+			}};
 
-		vc->setName("pickVertCore"); vh->setName("pickVertHook");
-		fc->setName("pickFragCore"); fh->setName("pickFragHook");
+			prog = cachedProgram("pickProgram", shaders);
+		}
 
-		prog->addShader(vc); prog->addShader(vh);
-		prog->addShader(fc); prog->addShader(fh);
+		else {
+			prog = make_nref<osg::Program>("pickProgram");
+
+			auto* vc = cachedShader(osg::Shader::VERTEX, PICK_VERT_CORE);
+			auto* vh = vertHook ? vertHook : cachedShader(osg::Shader::VERTEX, PICK_VERT_HOOK_NOOP);
+			auto* fc = cachedShader(osg::Shader::FRAGMENT, PICK_FRAG_CORE);
+			auto* fh = fragHook ? fragHook : cachedShader(osg::Shader::FRAGMENT, PICK_FRAG_HOOK_UNIFORM);
+
+			vc->setName("pickVertCore"); vh->setName("pickVertHook");
+			fc->setName("pickFragCore"); fh->setName("pickFragHook");
+
+			prog->addShader(vc); prog->addShader(vh);
+			prog->addShader(fc); prog->addShader(fh);
+		}
 
 		ss->setAttributeAndModes(prog, osg::StateAttribute::ON | osg::StateAttribute::OVERRIDE);
 	}
@@ -219,18 +237,35 @@ osg::ref_ptr<osg::Camera> makePickCamera(
 	auto* ss = cam->getOrCreateStateSet();
 
 	if(installProgram) {
-		auto prog = make_nref<osg::Program>("pickProgram");
+		osg::ref_ptr<osg::Program> prog;
 
-		auto* vc = new osg::Shader(osg::Shader::VERTEX, PICK_VERT_CORE);
-		auto* vh = vertHook ? vertHook : new osg::Shader(osg::Shader::VERTEX, PICK_VERT_HOOK_NOOP);
-		auto* fc = new osg::Shader(osg::Shader::FRAGMENT, PICK_FRAG_CORE);
-		auto* fh = fragHook ? fragHook : new osg::Shader(osg::Shader::FRAGMENT, PICK_FRAG_HOOK_UNIFORM);
+		// No caller-supplied hooks: the whole Program is byte-identical across every call, so the
+		// whole thing (not just its shaders) is shared - see Shader.hpp's cachedProgram() comment.
+		if(!vertHook && !fragHook) {
+			const std::array<ProgramShader, 4> shaders = {{
+				{osg::Shader::VERTEX, PICK_VERT_CORE, "pickVertCore"},
+				{osg::Shader::VERTEX, PICK_VERT_HOOK_NOOP, "pickVertHook"},
+				{osg::Shader::FRAGMENT, PICK_FRAG_CORE, "pickFragCore"},
+				{osg::Shader::FRAGMENT, PICK_FRAG_HOOK_UNIFORM, "pickFragHook"}
+			}};
 
-		vc->setName("pickVertCore"); vh->setName("pickVertHook");
-		fc->setName("pickFragCore"); fh->setName("pickFragHook");
+			prog = cachedProgram("pickProgram", shaders);
+		}
 
-		prog->addShader(vc); prog->addShader(vh);
-		prog->addShader(fc); prog->addShader(fh);
+		else {
+			prog = make_nref<osg::Program>("pickProgram");
+
+			auto* vc = cachedShader(osg::Shader::VERTEX, PICK_VERT_CORE);
+			auto* vh = vertHook ? vertHook : cachedShader(osg::Shader::VERTEX, PICK_VERT_HOOK_NOOP);
+			auto* fc = cachedShader(osg::Shader::FRAGMENT, PICK_FRAG_CORE);
+			auto* fh = fragHook ? fragHook : cachedShader(osg::Shader::FRAGMENT, PICK_FRAG_HOOK_UNIFORM);
+
+			vc->setName("pickVertCore"); vh->setName("pickVertHook");
+			fc->setName("pickFragCore"); fh->setName("pickFragHook");
+
+			prog->addShader(vc); prog->addShader(vh);
+			prog->addShader(fc); prog->addShader(fh);
+		}
 
 		ss->setAttributeAndModes(prog, osg::StateAttribute::ON | osg::StateAttribute::OVERRIDE);
 	}

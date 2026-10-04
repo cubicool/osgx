@@ -1,5 +1,6 @@
 #include "osgx/RTT.hpp"
 #include "osgx/IBL.hpp" // osgx::FULLSCREEN_VERT
+#include "osgx/Shader.hpp"
 
 OSGX_DISABLE_WARNINGS
 
@@ -45,7 +46,7 @@ osg::ref_ptr<RTT> RTT::fullscreenQuad(int width, int height, const char* fragmen
 
 	auto program = osgx::make_ref<osg::Program>();
 
-	program->addShader(new osg::Shader(osg::Shader::VERTEX, osgx::FULLSCREEN_VERT));
+	program->addShader(osgx::cachedShader(osg::Shader::VERTEX, osgx::FULLSCREEN_VERT));
 	program->addShader(new osg::Shader(osg::Shader::FRAGMENT, fragmentShaderSrc));
 
 	ss->setAttributeAndModes(program, osg::StateAttribute::ON);

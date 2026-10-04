@@ -2,6 +2,7 @@
 
 #include "osgx/Array.hpp"
 #include "osgx/Library.hpp"
+#include "osgx/Shader.hpp"
 #include "osgx/Shadow.hpp"
 
 OSGX_DISABLE_WARNINGS
@@ -22,6 +23,7 @@ OSGX_DISABLE_WARNINGS
 OSGX_ENABLE_WARNINGS
 
 #include <algorithm>
+#include <array>
 #include <bit>
 #include <cmath>
 #include <stdexcept>
@@ -56,12 +58,12 @@ void main() {
 )GLSL";
 
 osg::ref_ptr<osg::Program> makeDepthOnlyProgram() {
-	auto program = osgx::make_nref<osg::Program>("osgx_shadow_DepthOnly");
+	const std::array<osgx::ProgramShader, 2> shaders = {{
+		{osg::Shader::VERTEX, DEPTH_ONLY_VERTEX_SHADER},
+		{osg::Shader::FRAGMENT, DEPTH_ONLY_FRAGMENT_SHADER}
+	}};
 
-	program->addShader(new osg::Shader(osg::Shader::VERTEX, DEPTH_ONLY_VERTEX_SHADER));
-	program->addShader(new osg::Shader(osg::Shader::FRAGMENT, DEPTH_ONLY_FRAGMENT_SHADER));
-
-	return program;
+	return osgx::cachedProgram("osgx_shadow_DepthOnly", shaders);
 }
 
 // Distance-only Program for ShadowMap::createPoint()'s six-camera cube capture (installed via
@@ -101,12 +103,12 @@ void main() {
 )GLSL";
 
 osg::ref_ptr<osg::Program> makeDistanceOnlyProgram() {
-	auto program = osgx::make_nref<osg::Program>("osgx_shadow_DistanceOnly");
+	const std::array<osgx::ProgramShader, 2> shaders = {{
+		{osg::Shader::VERTEX, DISTANCE_ONLY_VERTEX_SHADER},
+		{osg::Shader::FRAGMENT, DISTANCE_ONLY_FRAGMENT_SHADER}
+	}};
 
-	program->addShader(new osg::Shader(osg::Shader::VERTEX, DISTANCE_ONLY_VERTEX_SHADER));
-	program->addShader(new osg::Shader(osg::Shader::FRAGMENT, DISTANCE_ONLY_FRAGMENT_SHADER));
-
-	return program;
+	return osgx::cachedProgram("osgx_shadow_DistanceOnly", shaders);
 }
 
 // Starting point for ShadowMap::normalOffset, in texels of this map's own footprint - a world-

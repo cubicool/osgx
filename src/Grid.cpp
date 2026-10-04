@@ -9,6 +9,7 @@
 #include <osg/State>
 
 #include <algorithm>
+#include <array>
 #include <bit>
 #include <cmath>
 #include <stdexcept>
@@ -479,13 +480,13 @@ void Grid::_buildSphere(float radius, unsigned int slices, unsigned int stacks) 
 
 void Grid::_installState() {
 	auto* ss = getOrCreateStateSet();
-	auto program = make_ref<osg::Program>();
 	auto settings = make_ref<GridSettings>();
+	const std::array<ProgramShader, 2> shaders = {{
+		{osg::Shader::VERTEX, resolveShaderLibs(GRID_VERTEX_SHADER)},
+		{osg::Shader::FRAGMENT, resolveShaderLibs(GRID_FRAGMENT_SHADER)}
+	}};
 
-	program->addShader(new osg::Shader(osg::Shader::VERTEX, resolveShaderLibs(GRID_VERTEX_SHADER)));
-	program->addShader(new osg::Shader(osg::Shader::FRAGMENT, resolveShaderLibs(GRID_FRAGMENT_SHADER)));
-
-	ss->setAttributeAndModes(program, osg::StateAttribute::ON);
+	ss->setAttributeAndModes(cachedProgram("osgx_Grid", shaders), osg::StateAttribute::ON);
 	setSettings(settings);
 	ss->setMode(GL_BLEND, osg::StateAttribute::ON);
 	// Enabling GL_BLEND alone leaves GL's default blend func (ONE, ZERO), which just

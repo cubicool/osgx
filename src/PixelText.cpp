@@ -1,6 +1,7 @@
 #include "LibraryState.hpp"
 
 #include "osgx/PixelText.hpp"
+#include "osgx/Shader.hpp"
 
 OSGX_DISABLE_WARNINGS
 
@@ -460,12 +461,12 @@ void PixelText::_build(float cellSize) {
 
 void PixelText::_installState() {
 	auto* ss = getOrCreateStateSet();
-	auto program = make_ref<osg::Program>();
+	const std::array<ProgramShader, 2> shaders = {{
+		{osg::Shader::VERTEX, resolveShaderLibs(PIXEL_TEXT_VERTEX_SHADER)},
+		{osg::Shader::FRAGMENT, resolveShaderLibs(PIXEL_TEXT_FRAGMENT_SHADER)}
+	}};
 
-	program->addShader(new osg::Shader(osg::Shader::VERTEX, resolveShaderLibs(PIXEL_TEXT_VERTEX_SHADER)));
-	program->addShader(new osg::Shader(osg::Shader::FRAGMENT, resolveShaderLibs(PIXEL_TEXT_FRAGMENT_SHADER)));
-
-	ss->setAttributeAndModes(program, osg::StateAttribute::ON);
+	ss->setAttributeAndModes(cachedProgram("osgx_PixelText", shaders), osg::StateAttribute::ON);
 	ss->setMode(GL_BLEND, osg::StateAttribute::ON);
 	// See osgx::Grid::_installState() - GL_BLEND alone leaves GL's default (ONE, ZERO) blend
 	// func, which just overwrites the destination regardless of alpha.
