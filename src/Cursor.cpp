@@ -8,6 +8,8 @@ OSGX_DISABLE_WARNINGS
 
 OSGX_ENABLE_WARNINGS
 
+#include <cmath>
+
 namespace osgx {
 
 namespace {
@@ -89,12 +91,31 @@ void CursorCapture::setCaptured(bool captured) {
 	_echoPending = false;
 }
 
-osg::Vec2 CursorCapture::consume() {
+osg::Vec2 CursorCapture::drain() {
 	osg::Vec2 result = _accum;
 
 	_accum.set(0.0f, 0.0f);
 
+	if(std::abs(result.x()) <= _deadZone) result.x() = 0.0f;
+	if(std::abs(result.y()) <= _deadZone) result.y() = 0.0f;
+
 	return result;
+}
+
+osg::Vec2 CursorCapture::drainNormalized(const osgGA::GUIEventAdapter& ea) {
+	osg::Vec2 delta = drain();
+
+	const double w = ea.getXmax() - ea.getXmin();
+	const double h = ea.getYmax() - ea.getYmin();
+
+	if(w <= 0.0 || h <= 0.0) return osg::Vec2(0.0f, 0.0f);
+
+	const double dy = ea.getMouseYOrientation() == osgGA::GUIEventAdapter::Y_INCREASING_DOWNWARDS
+		? -delta.y()
+		: delta.y()
+	;
+
+	return osg::Vec2(static_cast<float>(2.0 * delta.x() / w), static_cast<float>(2.0 * dy / h));
 }
 
 bool CursorCapture::handle(const osgGA::GUIEventAdapter& ea, osgGA::GUIActionAdapter& aa) {

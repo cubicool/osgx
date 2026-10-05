@@ -35,7 +35,6 @@ OSGX_DISABLE_WARNINGS
 OSGX_ENABLE_WARNINGS
 
 #include <algorithm>
-#include <cmath>
 #include <iostream>
 #include <string>
 
@@ -373,17 +372,12 @@ public:
 
 		if(event.getEventType() != osgGA::GUIEventAdapter::FRAME || !capture->isCaptured()) return false;
 
-		const osg::Vec2 delta = capture->consume();
-		const double width = event.getXmax() - event.getXmin();
-		const double height = event.getYmax() - event.getYmin();
-		constexpr float POINTER_DEAD_ZONE = 1.0f;
-		const double dx = std::abs(delta.x()) <= POINTER_DEAD_ZONE ? 0.0 : delta.x();
-		double dy = std::abs(delta.y()) <= POINTER_DEAD_ZONE ? 0.0 : delta.y();
+		// Dead-zone filtering (sub-pixel warp+recenter jitter) now lives in CursorCapture itself
+		// (see setDeadZone() in osgx/Cursor.hpp) - this used to duplicate it locally at the same
+		// 1-pixel threshold; drainNormalized() already applies it.
+		const osg::Vec2 delta = capture->drainNormalized(event);
 
-		if(event.getMouseYOrientation() == osgGA::GUIEventAdapter::Y_INCREASING_DOWNWARDS) dy = -dy;
-		if(width > 0.0 && height > 0.0) {
-			manipulator->orbitByDelta(2.0 * dx / width, 2.0 * dy / height);
-		}
+		manipulator->orbitByDelta(delta.x(), delta.y());
 
 		return false;
 	}

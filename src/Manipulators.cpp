@@ -621,41 +621,37 @@ bool FirstPersonManipulator::handleFrame(const osgGA::GUIEventAdapter& ea, osgGA
 	return true;
 }
 
-bool FirstPersonManipulator::handleMouseMove(const osgGA::GUIEventAdapter& ea, osgGA::GUIActionAdapter& us) {
-	if(_lookStyle != LookStyle::ALWAYS) return false;
-
-	const float x = ea.getXnormalized();
-	const float y = ea.getYnormalized();
-
-	if(_hasLastMouse) {
-		const float dx = x - _lastMouseX;
-		const float dy = y - _lastMouseY;
-
-		if(dx != 0.0f || dy != 0.0f) {
-			performMouseDeltaMovement(dx, dy);
-
-			us.requestRedraw();
-		}
-	}
-
-	_lastMouseX = x;
-	_lastMouseY = y;
-	_hasLastMouse = true;
-
-	return true;
-}
-
-// Always disabled - reserved for a future "interact" binding rather than look, under either
-// LookStyle (ALWAYS already looks from raw mouse movement; RIGHTCLICK_HOLD uses the right button
-// instead, see below).
+// Always disabled - reserved for a future "interact" binding rather than look, regardless of
+// getLookStyle()/getLookButton() (see PlayerManipulator<Base>::isLookButton() - this override
+// unconditionally refuses to treat LEFT as the look button).
 bool FirstPersonManipulator::performMovementLeftMouseButton(double, double, double) {
 	return false;
 }
 
-bool FirstPersonManipulator::performMovementRightMouseButton(double eventTimeDelta, double dx, double dy) {
-	if(_lookStyle != LookStyle::RIGHTCLICK_HOLD) return false;
+// Once it IS the look button, isCaptureActive() goes inert - false, no further processing - for
+// the SAME drag event handle()'s FRAME-polled consume() already applied this frame (see
+// PlayerManipulator<Base>'s class comment).
+bool FirstPersonManipulator::performMovementRightMouseButton(double, double dx, double dy) {
+	if(!isLookButton(osgGA::GUIEventAdapter::RIGHT_MOUSE_BUTTON) || isCaptureActive()) return false;
 
-	return osgGA::FirstPersonManipulator::performMovementLeftMouseButton(eventTimeDelta, dx, dy);
+	return performMouseDeltaMovement(static_cast<float>(dx), static_cast<float>(dy));
+}
+
+// LEFT is OrbitManipulator's own native rotate button - unlike FirstPersonManipulator's RIGHT
+// override (which borrows another button's math because the stock class has none of its own),
+// this forwards to Base's OWN performMovementLeftMouseButton() when LEFT is NOT the configured
+// look button (preserving Orbit's native rotate for whatever button that is instead). When LEFT
+// IS the look button, same capture-active guard as FirstPersonManipulator's RIGHT override above -
+// see PlayerManipulator<Base>'s class comment for why Orbit's own per-event math isn't worth
+// preserving once CursorCapture takes over.
+bool ThirdPersonManipulator::performMovementLeftMouseButton(double eventTimeDelta, double dx, double dy) {
+	if(!isLookButton(osgGA::GUIEventAdapter::LEFT_MOUSE_BUTTON)) {
+		return osgGA::NodeTrackerManipulator::performMovementLeftMouseButton(eventTimeDelta, dx, dy);
+	}
+
+	if(isCaptureActive()) return false;
+
+	return performMouseDeltaMovement(static_cast<float>(dx), static_cast<float>(dy));
 }
 
 }

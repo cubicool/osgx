@@ -442,6 +442,120 @@ void bind_core(py::module_& m) {
 		)
 	;
 
+	py::enum_<osgx::LookStyle>(
+		m,
+		"LookStyle",
+		"Shared by osgx.FirstPersonManipulator and osgx.ThirdPersonManipulator - lives at osgx "
+		"module scope rather than nested under either one, since it's really owned by the "
+		"C++-only template osgx::PlayerManipulator<Base> both build on (see Manipulators.hpp)."
+	)
+		.value("ALWAYS", osgx::LookStyle::ALWAYS)
+		.value("CLICK_HOLD", osgx::LookStyle::CLICK_HOLD)
+	;
+
+	// osgx::FirstPersonManipulator / ThirdPersonManipulator (osgx/Manipulators.hpp) both build on
+	// the C++-only template osgx::PlayerManipulator<Base> - lookStyle/lookButton/sensitivity/
+	// invertY are duplicated across these two bindings rather than shared via a common Python
+	// base, since PlayerManipulator<Base> itself can't be bound (it's a template, not a concrete
+	// type) and neither leaf's OWN C++ base (osgGA::FirstPersonManipulator/
+	// osgGA::NodeTrackerManipulator) is registered in Python either - same situation
+	// ActionsManipulator<Base> below is already in (TrackballManipulator/OrbitManipulator/
+	// StandardManipulator aren't registered there either), so osgGA.CameraManipulator is as far up
+	// as any of these bindings can reach.
+	py::class_<
+		osgx::FirstPersonManipulator,
+		osgGA::CameraManipulator,
+		osg::ref_ptr<osgx::FirstPersonManipulator>
+	>(
+		m,
+		"FirstPersonManipulator",
+		"WASD + mouse-look osgGA.CameraManipulator. Mouse look is driven by an internally-owned "
+		"osgx.CursorCapture (hide+warp+accumulate) - no manual capture wiring needed."
+	)
+		.def(py::init<>(), "Constructs a manipulator with no node set; call setNode()/setCameraManipulator() before use.")
+		.def_property(
+			"lookStyle",
+			&osgx::FirstPersonManipulator::getLookStyle,
+			&osgx::FirstPersonManipulator::setLookStyle,
+			"ALWAYS (default - raw mouse look, no button) or CLICK_HOLD (look only while lookButton is held)."
+		)
+		.def_property(
+			"lookButton",
+			&osgx::FirstPersonManipulator::getLookButton,
+			&osgx::FirstPersonManipulator::setLookButton,
+			"Which mouse button CLICK_HOLD gates look on (default RIGHT_MOUSE_BUTTON). LEFT is "
+			"unconditionally reserved for a future 'interact' binding regardless of this setting."
+		)
+		.def_property(
+			"sensitivity",
+			&osgx::FirstPersonManipulator::getSensitivity,
+			&osgx::FirstPersonManipulator::setSensitivity,
+			"Look sensitivity multiplier."
+		)
+		.def_property(
+			"invertY",
+			&osgx::FirstPersonManipulator::getInvertY,
+			&osgx::FirstPersonManipulator::setInvertY,
+			"Inverts the look Y axis. Default True: moving the mouse up looks up."
+		)
+		.def_property(
+			"moveSpeed",
+			&osgx::FirstPersonManipulator::getMoveSpeed,
+			&osgx::FirstPersonManipulator::setMoveSpeed,
+			"WASD movement speed, in world units per second (default 4.0)."
+		)
+	;
+
+	py::class_<
+		osgx::ThirdPersonManipulator,
+		osgGA::CameraManipulator,
+		osg::ref_ptr<osgx::ThirdPersonManipulator>
+	>(
+		m,
+		"ThirdPersonManipulator",
+		"Turntable-follow osgGA.CameraManipulator orbiting trackNode at a fixed distance/height, "
+		"always looking at it (TrackerMode.NODE_CENTER_AND_AZIM, fixed - not exposed as a "
+		"setting). Left-drag orbit is driven by an internally-owned osgx.CursorCapture while "
+		"held - no manual capture wiring needed. No WASD - osgGA.OrbitManipulator has no "
+		"equivalent to moveForward()/moveRight() for this to drive."
+	)
+		.def(py::init<>(), "Constructs a manipulator with no node set; call trackNode before use.")
+		.def_property(
+			"trackNode",
+			static_cast<osg::Node* (osgGA::NodeTrackerManipulator::*)()>(
+				&osgGA::NodeTrackerManipulator::getTrackNode
+			),
+			&osgx::ThirdPersonManipulator::setTrackNode,
+			"The node the camera orbits and keeps azimuth-locked to."
+		)
+		.def_property(
+			"lookStyle",
+			&osgx::ThirdPersonManipulator::getLookStyle,
+			&osgx::ThirdPersonManipulator::setLookStyle,
+			"ALWAYS (raw mouse look, no button) or CLICK_HOLD (default here - look only while "
+			"lookButton is held)."
+		)
+		.def_property(
+			"lookButton",
+			&osgx::ThirdPersonManipulator::getLookButton,
+			&osgx::ThirdPersonManipulator::setLookButton,
+			"Which mouse button gates orbit/look (default LEFT_MOUSE_BUTTON, OrbitManipulator's "
+			"own native rotate button)."
+		)
+		.def_property(
+			"sensitivity",
+			&osgx::ThirdPersonManipulator::getSensitivity,
+			&osgx::ThirdPersonManipulator::setSensitivity,
+			"Look sensitivity multiplier."
+		)
+		.def_property(
+			"invertY",
+			&osgx::ThirdPersonManipulator::getInvertY,
+			&osgx::ThirdPersonManipulator::setInvertY,
+			"Inverts the look Y axis. Default True: moving the mouse up looks up."
+		)
+	;
+
 	py::class_<
 		osgx::MultiCameraManipulator,
 		osgGA::CameraManipulator,
@@ -477,9 +591,10 @@ void bind_core(py::module_& m) {
 		.def("next", &osgx::MultiCameraManipulator::next, "Activates the next target, wrapping around.")
 	;
 
-	// osgx::ActionsManipulator<Base> (osgx/Manipulators.hpp) - CRTP mixin merging one-shot/
-	// persistent "camera action" callbacks onto a SINGLE real manipulator instance (as opposed to
-	// wrapping/replacing it, see the header's own class comment for why that distinction mattered).
+	// osgx::ActionsManipulator<Base> (osgx/Manipulators.hpp) - parameterized-base mixin (NOT CRTP -
+	// see the header's own class comment for the distinction) merging one-shot/persistent "camera
+	// action" callbacks onto a SINGLE real manipulator instance (as opposed to wrapping/replacing
+	// it, see the header's own class comment for why that distinction mattered).
 	// Only the TrackballManipulator instantiation is bound for now - the only Base actually
 	// verified working (examples/osgx-manipulator.cpp's "actions" mode) - exposed as plain
 	// "ActionsManipulator" to match osgx::ActionsManipulator<>'s own default Base directly.

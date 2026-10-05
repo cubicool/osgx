@@ -172,7 +172,7 @@ osg::ref_ptr<CursorCallback> makeCursorUniformCallback(
 // Manipulators.hpp. See docs/CORE.md's osgx/Cursor.hpp section for the worked composition.
 //
 // Usage: add as an ordinary event handler (addEventHandler()), toggle setCaptured() (e.g. on a
-// button press), and poll consume() once per update traversal for the accumulated delta.
+// button press), and poll drain() once per update traversal for the accumulated delta.
 class CursorCapture: public osgGA::GUIEventHandler {
 public:
 	explicit CursorCapture(osgViewer::View& view): _view(&view) {}
@@ -182,10 +182,34 @@ public:
 	void setCaptured(bool captured);
 	bool isCaptured() const { return _captured; }
 
+	// Below this per-axis magnitude (in the same raw view/event coordinate units as drain() - see
+	// below), a drain()ed delta's axis is zeroed instead of returned - filters out the sub-pixel
+	// jitter a warp+recenter round trip can itself introduce (OS/compositor-dependent), which
+	// otherwise reads as a constant low-level tremor even with a perfectly still hand. 0 disables
+	// filtering entirely. Default 1 pixel - tune up if it still feels jittery, or down (toward 0)
+	// if deliberate slow/precise movement starts feeling unresponsive instead.
+	void setDeadZone(float pixels) { _deadZone = pixels; }
+	float getDeadZone() const { return _deadZone; }
+
 	// Accumulated (dx, dy) since the last call, in view/event coordinate units (the same units as
-	// GUIEventAdapter::getX()/getY()). Resets the accumulator to zero so repeated polling - e.g.
-	// once per update traversal - never double-counts.
-	osg::Vec2 consume();
+	// GUIEventAdapter::getX()/getY()), with getDeadZone() already applied per-axis. Resets the
+	// accumulator to zero so repeated polling - e.g. once per update traversal - never
+	// double-counts; the dead-zone check happens AFTER that reset is decided, not instead of it, so
+	// a filtered-out sub-threshold sample is simply discarded, never carried over to accumulate
+	// across frames.
+	osg::Vec2 drain();
+
+	// drain(), rescaled to the same small, normalized ([-1, 1] across the whole window) units as
+	// GUIEventAdapter::getXnormalized()/getYnormalized() - the convention every manipulator input
+	// this is meant to drive already expects (performMouseDeltaMovement(),
+	// OrbitAxisManipulator::orbitByDelta(), ...). Feeding drain()'s raw pixel units into one of
+	// those directly is a real, previously-made mistake (sensitivity effectively off by two or
+	// three orders of magnitude) - this exists so nobody has to re-derive the fix: dividing by half
+	// the window's width/height, with ea's own getMouseYOrientation() accounted for so dy is always
+	// up-positive regardless of platform, exactly as getYnormalized() itself already guarantees.
+	// `ea` only needs to be a recent/current event - it's read purely for window extent and Y
+	// orientation, not for its own position.
+	osg::Vec2 drainNormalized(const osgGA::GUIEventAdapter& ea);
 
 	bool handle(const osgGA::GUIEventAdapter& ea, osgGA::GUIActionAdapter& aa) override;
 
@@ -195,6 +219,7 @@ private:
 	bool _captured = false;
 	bool _recenterPending = false; // need to actively warp on the next MOVE/DRAG (capture-start/resize)
 	bool _echoPending = false; // next MOVE/DRAG is presumed to be this handler's own warp echo
+	float _deadZone = 1.0f;
 
 	osg::Vec2 _center{0.0f, 0.0f};
 	osg::Vec2 _accum{0.0f, 0.0f};

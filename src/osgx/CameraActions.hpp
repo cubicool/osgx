@@ -25,7 +25,8 @@ namespace osgx {
 // Built-in camera actions
 //
 // Plain osg::Callback subclasses (no dependency on any concrete ActionsManipulator<Base>
-// instantiation), meant to be attached via ActionsManipulator<Base>::addUpdateCameraCallback() (see
+// instantiation - see osgx/Manipulators.hpp for why that's a parameterized-base mixin, not CRTP),
+// meant to be attached via ActionsManipulator<Base>::addUpdateCameraCallback() (see
 // osgx/Manipulators.hpp). Both cast their `object` argument to osgx::CameraActionsInterface to read
 // currentTime() (FRAME-event time, cached by the mixin - not a polled osg::Timer), and their
 // `data` argument to osg::Camera to read/write the view matrix currently being composed.

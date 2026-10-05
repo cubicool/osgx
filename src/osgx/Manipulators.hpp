@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Core.hpp"
+#include "Cursor.hpp"
 
 OSGX_DISABLE_WARNINGS
 
@@ -15,7 +16,10 @@ OSGX_DISABLE_WARNINGS
 #include <osgGA/FirstPersonManipulator>
 #include <osgGA/GUIActionAdapter>
 #include <osgGA/GUIEventAdapter>
+#include <osgGA/NodeTrackerManipulator>
+#include <osgGA/StandardManipulator>
 #include <osgGA/TrackballManipulator>
+#include <osgViewer/View>
 
 OSGX_ENABLE_WARNINGS
 
@@ -465,39 +469,247 @@ private:
 };
 
 // ================================================================================================
+// PlayerManipulator<Base>
+//
+// Parameterized-base mixin (same idiom as osgx::ActionsManipulator<Base> below, and osgx::Array<T>
+// in osgx/Array.hpp - NOT CRTP: Base here is the stock OSG class being extended, not the leaf that
+// eventually inherits this template, so nothing ever reaches back down into a more-derived type).
+// Shares the "modern game camera" look concerns - sensitivity, Y-invert, a configurable
+// look-trigger button/style, AND osgx::CursorCapture hide+warp+accumulate - across every osgx
+// gaming-style manipulator built on a different osgGA::StandardManipulator-derived Base
+// (osgx::FirstPersonManipulator today; osgx::ThirdPersonManipulator below).
+//
+// Unlike osgx::OrbitAxisManipulator (see its own class comment), which deliberately leaves
+// CursorCapture composed at the application level so it stays ignorant of any one capture scheme,
+// this mixin owns a CursorCapture directly: it IS the opinionated "modern game camera" tier, where
+// hide+warp+accumulate look is the expected default behavior, not an optional bolt-on.
+//
+// performMouseDeltaMovement(dx, dy) is the single hook both osgGA::FirstPersonManipulator and
+// osgGA::OrbitManipulator (parent of NodeTrackerManipulator) independently override at the same
+// StandardManipulator-declared signature - confirmed against the OSG 3.6.5 source, not assumed -
+// so overriding it once here and forwarding to Base:: with an adjusted delta covers every look
+// motion uniformly regardless of Base, whether it's driven by handle()'s FRAME-polled
+// CursorCapture::drain() below (both LookStyle::ALWAYS and, while held, CLICK_HOLD) or by a
+// leaf's own performMovement*Button override explicitly funneling into it as a fallback for when
+// CursorCapture itself couldn't be constructed (see isCaptureActive()).
+//
+// A held-button look (LookStyle::CLICK_HOLD) still needs a leaf's OWN performMovement*Button
+// override, because FirstPersonManipulator and OrbitManipulator map their LEFT/MIDDLE/RIGHT hooks
+// to unrelated actions (FP has no native right-button behavior at all; Orbit uses left=rotate,
+// middle=pan, right=zoom) - a uniform override here would wrongly apply look sensitivity to
+// Orbit's pan/zoom. isLookButton() is what a leaf's override checks; see osgx::ThirdPersonManipulator
+// for the shape. Deliberately NOT trying to preserve Base's own per-button math (e.g.
+// OrbitManipulator's throw/momentum-aware rotateTrackball()) once CursorCapture takes over a held
+// look-drag - every real motion sample while captured is a warp artifact as far as Base's own
+// _ga_t0/_ga_t1-based dx/dy tracking is concerned (the same reason
+// OrbitAxisManipulator::setLiveOrbitEnabled() exists), so a leaf's override must go fully inert
+// for that button while isCaptureActive(), deferring entirely to the once-per-frame
+// CursorCapture::drain() in handle() below instead of also processing the live drag event.
+// ================================================================================================
+template<typename T>
+concept OSGStandardManipulator = std::derived_from<T, osgGA::StandardManipulator>;
+
+// Hoisted out of PlayerManipulator<Base> itself - it doesn't involve Base at all, so keeping it a
+// template-nested type would give every instantiation (PlayerManipulator<osgGA::FirstPersonManipulator>::LookStyle
+// vs PlayerManipulator<osgGA::NodeTrackerManipulator>::LookStyle, ...) a DISTINCT C++ type despite
+// identical meaning - harmless in C++ (nothing compares across them), but it would force
+// osgx::FirstPersonManipulator and osgx::ThirdPersonManipulator's Python bindings into two
+// separate py::enum_<> registrations with two separate Python types for what's conceptually one
+// enum. PlayerManipulator<Base> re-exposes this as a member via `using LookStyle = osgx::LookStyle`
+// below, so `SomeLeaf::LookStyle` qualified lookup (used by examples/osgx-manipulator.cpp) is
+// unaffected.
+enum class LookStyle {
+	ALWAYS, // mouse look tracks every raw MOVE event, no button required
+	CLICK_HOLD // mouse look only while getLookButton() is held and dragging
+};
+
+template<OSGStandardManipulator Base>
+class PlayerManipulator: public Base {
+public:
+	using LookStyle = osgx::LookStyle;
+
+	using Base::Base;
+
+	OSGX_DISABLE_WARNINGS
+
+		PlayerManipulator(
+			const PlayerManipulator& m,
+			const osg::CopyOp& co=osg::CopyOp::SHALLOW_COPY
+		):
+		Base(m, co),
+		_lookStyle(m._lookStyle),
+		_lookButton(m._lookButton),
+		_sensitivity(m._sensitivity),
+		_invertY(m._invertY) {}
+		// _capture is deliberately NOT copied - it's tied to a specific osgViewer::View recovered
+		// lazily from whichever GUIActionAdapter first reaches this instance's handle(), not
+		// something a copy should inherit.
+
+	OSGX_ENABLE_WARNINGS
+
+	// Switching style immediately re-syncs capture to the new style's default (captured for
+	// ALWAYS, released until the next look-button press for CLICK_HOLD) rather than leaving it in
+	// whatever state the PREVIOUS style left it in.
+	void setLookStyle(LookStyle style) {
+		_lookStyle = style;
+
+		if(_capture.valid()) _capture->setCaptured(style == LookStyle::ALWAYS);
+	}
+
+	LookStyle getLookStyle() const { return _lookStyle; }
+
+	// Which mouse button LookStyle::CLICK_HOLD gates look (and CursorCapture) on; irrelevant under
+	// LookStyle::ALWAYS. Default RIGHT_MOUSE_BUTTON. A leaf may still refuse to honor this for a
+	// button it reserves for something else (osgx::FirstPersonManipulator unconditionally disables
+	// LEFT, for example).
+	void setLookButton(osgGA::GUIEventAdapter::MouseButtonMask button) { _lookButton = button; }
+	osgGA::GUIEventAdapter::MouseButtonMask getLookButton() const { return _lookButton; }
+
+	void setSensitivity(double s) { _sensitivity = s; }
+	double getSensitivity() const { return _sensitivity; }
+
+	// Default true: dragging/moving the mouse up looks up. Set false to restore the raw feel.
+	void setInvertY(bool invert) { _invertY = invert; }
+	bool getInvertY() const { return _invertY; }
+
+protected:
+	// True when `button` is the currently-configured look trigger under LookStyle::CLICK_HOLD -
+	// see the class comment above for how a leaf uses this.
+	bool isLookButton(osgGA::GUIEventAdapter::MouseButtonMask button) const {
+		return _lookStyle == LookStyle::CLICK_HOLD && button == _lookButton;
+	}
+
+	// True once CursorCapture exists and is actively hiding/warping/accumulating - a leaf's own
+	// performMovement*Button override checks this (see the class comment above) to go inert for
+	// its look button while captured, instead of double-processing the same motion handle() below
+	// already consumed this frame.
+	bool isCaptureActive() const { return _capture.valid() && _capture->isCaptured(); }
+
+	// The one place look sensitivity/invert-Y is computed.
+	std::pair<double, double> adjustDelta(double dx, double dy) const {
+		return {dx * _sensitivity, (_invertY ? -dy : dy) * _sensitivity};
+	}
+
+	bool performMouseDeltaMovement(const float dx, const float dy) override {
+		auto [adjustedDx, adjustedDy] = adjustDelta(dx, dy);
+
+		return Base::performMouseDeltaMovement(
+			static_cast<float>(adjustedDx), static_cast<float>(adjustedDy)
+		);
+	}
+
+	// Lazily recovers an osgViewer::View& the first time ANY event reaches this manipulator, to
+	// construct the CursorCapture that osgx::CursorCapture's own constructor requires - a
+	// CameraManipulator is never handed a View at construction time (the application calls
+	// viewer.setCameraManipulator(this) well afterward), so there's no earlier point to build it.
+	// The concrete GUIActionAdapter handed to handle() is normally the owning osgViewer::Viewer
+	// itself, which IS-A View; retried (cheaply) on every call rather than giving up permanently if
+	// an unusual host ever hands us something else.
+	CursorCapture* _ensureCapture(osgGA::GUIActionAdapter& aa) {
+		if(!_capture.valid()) {
+			if(auto* view = dynamic_cast<osgViewer::View*>(&aa)) _capture = new CursorCapture(*view);
+		}
+
+		return _capture.get();
+	}
+
+	// Peeks at PUSH to start CursorCapture for LookStyle::CLICK_HOLD, keeps it permanently on for
+	// LookStyle::ALWAYS, forwards every event into CursorCapture's own handle() (its hide+warp+
+	// accumulate bookkeeping - a peek, never an interception, same convention as
+	// ActionsManipulator<Base>::handle()), then applies this frame's accumulated delta through
+	// performMouseDeltaMovement() once Base::handle() has run.
+	//
+	// RELEASE's capture-off is handled separately, AFTER Base::handle() runs rather than before -
+	// see the comment down there for why that ordering specifically matters (it's load-bearing,
+	// not cosmetic: it's what keeps OSG's own "throw" momentum from re-arming on release).
+	bool handle(const osgGA::GUIEventAdapter& ea, osgGA::GUIActionAdapter& us) override {
+		const auto type = ea.getEventType();
+		const auto button = static_cast<osgGA::GUIEventAdapter::MouseButtonMask>(ea.getButton());
+
+		if(type == osgGA::GUIEventAdapter::PUSH && isLookButton(button)) {
+			if(auto* capture = _ensureCapture(us)) capture->setCaptured(true);
+		}
+
+		else if(type == osgGA::GUIEventAdapter::FRAME && _lookStyle == LookStyle::ALWAYS) {
+			if(auto* capture = _ensureCapture(us); capture && !capture->isCaptured()) {
+				capture->setCaptured(true);
+			}
+		}
+
+		if(_capture.valid()) _capture->handle(ea, us);
+
+		bool handled = Base::handle(ea, us);
+
+		// StandardManipulator::handleMouseRelease() (called from inside Base::handle() above)
+		// checks isMouseMoving() and, if true, performs ONE more performMovement*Button step
+		// itself AND arms OSG's own "throw" momentum (_thrown) for every subsequent FRAME to keep
+		// decaying - isMouseMoving() reads as true almost every time here, since CursorCapture has
+		// been continuously warping the cursor all drag long, which StandardManipulator's own
+		// _ga_t0/_ga_t1 history sees as constant motion regardless of the real net movement. Only
+		// turning capture off AFTER that call - not before, like a naive PUSH/RELEASE-symmetric
+		// implementation would - keeps isCaptureActive() reading true for THIS one call too, so a
+		// leaf's performMovement*Button override (see its own class comment) stays inert for it
+		// exactly like every other captured sample. That inertness is what actually prevents throw,
+		// not a special case: performMovement() returning false means
+		// `performMovement() && _allowThrow` is false regardless of _allowThrow, so _thrown never
+		// gets armed in the first place - no separate setAllowThrow(false) needed.
+		if(type == osgGA::GUIEventAdapter::RELEASE && isLookButton(button) && _capture.valid()) {
+			_capture->setCaptured(false);
+		}
+
+		if(type == osgGA::GUIEventAdapter::FRAME && isCaptureActive()) {
+			osg::Vec2 delta = _capture->drainNormalized(ea);
+
+			if(delta.x() != 0.0f || delta.y() != 0.0f) {
+				performMouseDeltaMovement(delta.x(), delta.y());
+
+				us.requestRedraw();
+			}
+		}
+
+		return handled;
+	}
+
+private:
+	LookStyle _lookStyle = LookStyle::ALWAYS;
+	osgGA::GUIEventAdapter::MouseButtonMask _lookButton = osgGA::GUIEventAdapter::RIGHT_MOUSE_BUTTON;
+	double _sensitivity = 1.0;
+	bool _invertY = true;
+
+	osg::ref_ptr<CursorCapture> _capture;
+};
+
+// ================================================================================================
 // FirstPersonManipulator
 //
-// A thin osgGA::FirstPersonManipulator subclass adding the one thing it's missing: continuous
-// keyboard movement. The stock class is mouse-only - confirmed against the OSG source: neither it
-// nor its StandardManipulator base bind any key for movement (StandardManipulator::handleKeyDown
-// only binds Space -> home()).
+// A osgx::PlayerManipulator<osgGA::FirstPersonManipulator> leaf adding the one thing the stock
+// class is missing: continuous keyboard movement. The stock class is mouse-only - confirmed
+// against the OSG source: neither it nor its StandardManipulator base bind any key for movement
+// (StandardManipulator::handleKeyDown only binds Space -> home()). Look sensitivity, Y-invert, and
+// LookStyle/look-button configuration all come from PlayerManipulator<Base> - this class owns only
+// WASD.
 //
 // Controls:
 //
 // W/A/S/D move forward/back/strafe left/right, held continuously (scaled by frame delta time via
 //          the inherited moveForward()/moveRight())
-// Mouse    look, gated by LookStyle (see below); left-button drag is always disabled here (the
-//          base class's own left-drag-to-look is reserved for a future "interact" binding instead)
+// Mouse    look, gated by getLookStyle()/getLookButton() (see PlayerManipulator<Base>); left-button
+//          drag is unconditionally disabled here (reserved for a future "interact" binding instead
+//          of look, regardless of what getLookButton() is set to)
 // Scroll   step forward/back (inherited, unchanged)
 // Space / Home reset to home (inherited, unchanged)
 //
-// LookStyle::ALWAYS tracks raw MOVE events with no button held - a real FPS mouse-look, but v1
-// (same caveat as OrbitAxisManipulator): no cursor hide/recenter yet, so it runs out of room at
-// the screen edge. Composing in osgx::CursorCapture (Cursor.hpp) to hide+warp+accumulate fixes
-// this at the application level, same layering OrbitAxisManipulator already uses - not wired in
-// here yet.
+// LookStyle::ALWAYS is a real FPS mouse-look with no screen-edge limit - PlayerManipulator<Base>
+// owns an osgx::CursorCapture directly (hide+warp+accumulate), unlike OrbitAxisManipulator's own
+// raw-position tracking (see that class's own v1 caveat) which still composes CursorCapture at
+// the application level instead.
 // ================================================================================================
-class FirstPersonManipulator: public osgGA::FirstPersonManipulator {
+class FirstPersonManipulator: public PlayerManipulator<osgGA::FirstPersonManipulator> {
 public:
-	enum class LookStyle {
-		ALWAYS, // mouse look tracks every MOVE event, no button required
-		RIGHTCLICK_HOLD // mouse look only while the right button is held and dragging
-	};
-
 	OSGX_META_Object(osgx, FirstPersonManipulator)
 
 	explicit FirstPersonManipulator(int flags=DEFAULT_SETTINGS):
-		osgGA::FirstPersonManipulator(flags) {}
+		PlayerManipulator<osgGA::FirstPersonManipulator>(flags) {}
 
 	OSGX_DISABLE_WARNINGS
 
@@ -505,18 +717,10 @@ public:
 			const FirstPersonManipulator& m,
 			const osg::CopyOp& co=osg::CopyOp::SHALLOW_COPY
 		):
-		osgGA::FirstPersonManipulator(m, co),
-		_lookStyle(m._lookStyle),
+		PlayerManipulator<osgGA::FirstPersonManipulator>(m, co),
 		_moveSpeed(m._moveSpeed) {}
 
 	OSGX_ENABLE_WARNINGS
-
-	void setLookStyle(LookStyle style) {
-		_lookStyle = style;
-		_hasLastMouse = false;
-	}
-
-	LookStyle getLookStyle() const { return _lookStyle; }
 
 	// Units per second, consumed by the inherited moveForward()/moveRight().
 	void setMoveSpeed(double speed) { _moveSpeed = speed; }
@@ -526,7 +730,6 @@ protected:
 	bool handleKeyDown(const osgGA::GUIEventAdapter& ea, osgGA::GUIActionAdapter& us) override;
 	bool handleKeyUp(const osgGA::GUIEventAdapter& ea, osgGA::GUIActionAdapter& us) override;
 	bool handleFrame(const osgGA::GUIEventAdapter& ea, osgGA::GUIActionAdapter& us) override;
-	bool handleMouseMove(const osgGA::GUIEventAdapter& ea, osgGA::GUIActionAdapter& us) override;
 	bool performMovementLeftMouseButton(double eventTimeDelta, double dx, double dy) override;
 	bool performMovementRightMouseButton(double eventTimeDelta, double dx, double dy) override;
 
@@ -538,24 +741,68 @@ private:
 		MOVE_RIGHT = 0x08
 	};
 
-	LookStyle _lookStyle = LookStyle::ALWAYS;
 	double _moveSpeed = 4.0;
 	unsigned int _moveBits = 0;
+};
 
-	bool _hasLastMouse = false;
-	float _lastMouseX = 0.0f;
-	float _lastMouseY = 0.0f;
+// ================================================================================================
+// ThirdPersonManipulator
+//
+// A osgx::PlayerManipulator<osgGA::NodeTrackerManipulator> leaf - a turntable-follow camera that
+// orbits setTrackNode() (inherited from osgGA::NodeTrackerManipulator) at a configurable distance/
+// height, always looking at it. Look sensitivity, Y-invert, and LookStyle/look-button
+// configuration come from PlayerManipulator<Base>, exactly as osgx::FirstPersonManipulator; this
+// class owns only node-tracking setup. No WASD - OrbitManipulator (NodeTrackerManipulator's base)
+// has no equivalent to moveForward()/moveRight(), so there's no shared movement hook to add it
+// through.
+//
+// osgGA::OrbitManipulator maps LEFT=rotate/MIDDLE=pan/RIGHT=zoom natively, and LEFT's rotate IS
+// "look" here - so the default look button is LEFT, not PlayerManipulator<Base>'s RIGHT default,
+// and LookStyle defaults to CLICK_HOLD, not ALWAYS (an orbit camera that spins on every raw mouse
+// move with no button held would fight normal pan/zoom use). MIDDLE/RIGHT are left completely
+// untouched (pan/zoom, not look) - only the LEFT-button override below is involved, and it funnels
+// into performMouseDeltaMovement() exactly like FirstPersonManipulator's RIGHT-button override
+// does, deliberately NOT preserving OrbitManipulator's own throw/momentum-aware rotate math (see
+// PlayerManipulator<Base>'s own class comment for why: CursorCapture taking over a held look-drag
+// makes Base's own per-event dx/dy tracking unusable anyway, so there is no throw-aware path left
+// worth keeping once it does).
+// ================================================================================================
+class ThirdPersonManipulator: public PlayerManipulator<osgGA::NodeTrackerManipulator> {
+public:
+	OSGX_META_Object(osgx, ThirdPersonManipulator)
+
+	ThirdPersonManipulator() {
+		setTrackerMode(NODE_CENTER_AND_AZIM);
+		setRotationMode(ELEVATION_AZIM);
+		setLookStyle(LookStyle::CLICK_HOLD);
+		setLookButton(osgGA::GUIEventAdapter::LEFT_MOUSE_BUTTON);
+	}
+
+	OSGX_DISABLE_WARNINGS
+
+		ThirdPersonManipulator(
+			const ThirdPersonManipulator& m,
+			const osg::CopyOp& co=osg::CopyOp::SHALLOW_COPY
+		):
+		PlayerManipulator<osgGA::NodeTrackerManipulator>(m, co) {}
+
+	OSGX_ENABLE_WARNINGS
+
+protected:
+	bool performMovementLeftMouseButton(double eventTimeDelta, double dx, double dy) override;
 };
 
 // ================================================================================================
 // ActionsManipulator<Base>
 //
-// CRTP mixin (same idiom as osgx::Array<T>, see osgx/Array.hpp) that lets a manipulator merge
-// one-shot or persistent "camera actions" - a fly-to animation, a shake, agent-driven nudges --
-// onto itself, without a caller needing a second manipulator object or to know/care which concrete
-// manipulator type is in play. osgx::ActionsManipulator<osgGA::TrackballManipulator> genuinely IS a
-// TrackballManipulator: every interaction method (handle, home, getMatrix, setNode, ...) is
-// inherited directly, not forwarded through a held ref_ptr.
+// Parameterized-base mixin (same idiom as osgx::PlayerManipulator<Base> above, and osgx::Array<T>
+// in osgx/Array.hpp - NOT CRTP: Base is the concrete manipulator type being extended, not the leaf
+// inheriting this template, so nothing here ever reaches back down into a more-derived type) that
+// lets a manipulator merge one-shot or persistent "camera actions" - a fly-to animation, a shake,
+// agent-driven nudges -- onto itself, without a caller needing a second manipulator object or to
+// know/care which concrete manipulator type is in play. osgx::ActionsManipulator<osgGA::TrackballManipulator>
+// genuinely IS a TrackballManipulator: every interaction method (handle, home, getMatrix, setNode,
+// ...) is inherited directly, not forwarded through a held ref_ptr.
 //
 // Actions are plain osg::Callback subclasses (see osgx/CameraActions.hpp for FlyToCallback/
 // ShakeCallback), added via addUpdateCameraCallback(). This deliberately reuses OSG's own callback

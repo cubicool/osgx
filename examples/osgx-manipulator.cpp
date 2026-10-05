@@ -1,26 +1,40 @@
-// vimrun! ./examples/osgx-manipulator
+// vimrun! ./examples/osgx-manipulator --type ortho2d
 //
-// Demonstrates osgx::Ortho2DManipulator (default), osgx::OrbitAxisManipulator ("orbit"), and
-// osgx::ActionsManipulator<> ("actions").
+// osgx-manipulator --type <TYPE> [--invert-y 0|1] [modelPath]
 //
-// With no arguments, renders a grid of colored boxes in the XY plane.
-// Pass "orbit" to use OrbitAxisManipulator instead of Ortho2DManipulator.
-// Pass "actions" to use osgx::ActionsManipulator<> (defaults to TrackballManipulator) wrapped with
-// one-shot camera actions - press '1' for a FlyToCallback to an alternate viewpoint, '2' for a
-// ShakeCallback. Normal trackball orbit/pan/zoom/Home all still work exactly as plain
-// TrackballManipulator would, proving Base inheritance is transparent - this is the C++-only
-// verification step for osgx::ActionsManipulator<Base>, no Python involved.
-// Pass a model path (after "orbit"/"actions", if present) to load and inspect it instead of the
-// grid.
+// <TYPE> is one of: ortho2d (default), orbit, actions, firstperson, thirdperson.
+// Pass a model path (any position) to load and inspect it instead of the default scene.
+// --invert-y 0|1 (default 1) applies to firstperson/thirdperson only - see
+// osgx::PlayerManipulator<Base>::setInvertY() in osgx/Manipulators.hpp. Deliberately set
+// explicitly here rather than left as the library's own default, so this example is the place to
+// compare both feels rather than that decision living silently inside the library.
 //
-// In "orbit" mode, press 'c' to toggle osgx::CursorCapture: the cursor hides and
-// warps back to window-center every frame, feeding accumulated deltas into
-// OrbitAxisManipulator::orbitByDelta() instead of the manipulator's own raw-cursor-position
-// tracking (which is bounded by the physical screen edge - this is the actual motivating test
-// for CursorCapture, see TODO.md's "osgx::platform later work"). The manipulator's own
-// MOVE/DRAG-driven orbit is disabled for the duration via setLiveOrbitEnabled(false), since OSG
-// delivers every event to both the manipulator and every other GUIEventHandler unconditionally
-// (see the comment on setLiveOrbitEnabled() in osgx/Manipulators.hpp for why that matters here).
+// ortho2d      osgx::Ortho2DManipulator - pan/zoom/Ctrl+drag-tilt (see its own class comment)
+// orbit        osgx::OrbitAxisManipulator - turntable orbit/height/zoom; 'c' toggles
+//              osgx::CursorCapture (hide+warp+accumulate, feeding orbitByDelta() instead of the
+//              manipulator's own raw-cursor-position tracking, which is bounded by the physical
+//              screen edge - this is the actual motivating test for CursorCapture, see TODO.md's
+//              "osgx::platform later work"). The manipulator's own MOVE/DRAG-driven orbit is
+//              disabled for the duration via setLiveOrbitEnabled(false), since OSG delivers every
+//              event to both the manipulator and every other GUIEventHandler unconditionally (see
+//              the comment on setLiveOrbitEnabled() in osgx/Manipulators.hpp for why that matters)
+// actions      osgx::ActionsManipulator<> (defaults to TrackballManipulator) wrapped with one-shot
+//              camera actions - '1' FlyToCallback, '2' ShakeCallback, '3' a LOOP patrol. Normal
+//              trackball orbit/pan/zoom/Home all still work exactly as plain TrackballManipulator
+//              would, proving Base inheritance is transparent - the C++-only verification step for
+//              osgx::ActionsManipulator<Base>, no Python involved.
+// firstperson  osgx::FirstPersonManipulator - WASD + mouse look; 'l' toggles LookStyle between
+//              ALWAYS (raw mouse look, no button) and CLICK_HOLD (look only while the configured
+//              look button - RIGHT by default - is held and dragging). The cursor is hidden and
+//              captured (hide+warp+accumulate) automatically - no manual osgx::CursorCapture
+//              wiring needed here, unlike "orbit" below - see osgx::PlayerManipulator<Base>'s own
+//              class comment in Manipulators.hpp for why.
+// thirdperson  osgx::ThirdPersonManipulator - orbits a slowly-rotating "pawn" marker (added to the
+//              default scene only; ignored when a model path is given) at a fixed distance/
+//              height, proving TrackerMode::NODE_CENTER_AND_AZIM keeps the camera's azimuth locked
+//              to the pawn's own facing instead of drifting independently. Left-drag to orbit
+//              manually in the meantime (the pawn keeps spinning regardless) - the cursor is
+//              captured automatically for the duration of the drag, same as firstperson above.
 
 #include "osgx/CameraActions.hpp"
 #include "osgx/Callbacks.hpp"
@@ -39,14 +53,13 @@ OSGX_DISABLE_WARNINGS
 #include <osgDB/ReadFile>
 #include <osgGA/GUIEventHandler>
 #include <osgViewer/Viewer>
-#include <osgViewer/ViewerEventHandlers>
 
 OSGX_ENABLE_WARNINGS
 
 #include <iostream>
 #include <string>
 
-static osg::ref_ptr<osg::Node> createDefaultScene() {
+static osg::ref_ptr<osg::Group> createDefaultScene() {
 	auto root = osgx::make_ref<osg::Group>();
 
 	struct Entry {
@@ -81,10 +94,51 @@ static osg::ref_ptr<osg::Node> createDefaultScene() {
 	return root;
 }
 
-// Bridges osgx::CursorCapture into OrbitAxisManipulator::orbitByDelta(): toggles
-// capture on 'c', and while captured, feeds each frame's accumulated pixel delta - normalized by
-// the window's half-width/half-height to match orbitByDelta()'s [-1, 1]-ish scale - into the
-// manipulator instead of letting it track the raw cursor itself.
+// Adds a small "pawn" (body box + an offset facing marker, so its azimuth is visible at a glance)
+// to `root`, slowly rotating in place via setUpdateCallback() - proves
+// osgx::ThirdPersonManipulator's TrackerMode::NODE_CENTER_AND_AZIM keeps the camera's azimuth
+// locked to the tracked node's own heading instead of drifting independently. Returns the pawn's
+// transform for setTrackNode().
+static osg::ref_ptr<osg::MatrixTransform> addPawn(osg::Group* root) {
+	auto pawn = osgx::make_ref<osg::MatrixTransform>();
+	auto body = osgx::make_ref<osg::Geode>();
+	auto bodyShape = osgx::make_ref<osg::ShapeDrawable>(new osg::Box(osg::Vec3(), 0.6f, 0.6f, 1.2f));
+
+	bodyShape->setColor(osg::Vec4(0.9f, 0.9f, 0.2f, 1.0f));
+	body->addDrawable(bodyShape);
+
+	auto facing = osgx::make_ref<osg::Geode>();
+	auto facingShape = osgx::make_ref<osg::ShapeDrawable>(
+		new osg::Box(osg::Vec3(0.0f, 0.5f, 0.3f), 0.2f, 0.2f, 0.2f)
+	);
+
+	facingShape->setColor(osg::Vec4(1.0f, 0.1f, 0.1f, 1.0f));
+	facing->addDrawable(facingShape);
+
+	pawn->addChild(body);
+	pawn->addChild(facing);
+
+	pawn->setUpdateCallback(new osgx::NodeLambdaCallback(
+		[](osg::Node* node, osg::NodeVisitor* nv) {
+			const double t = nv->getFrameStamp() ? nv->getFrameStamp()->getSimulationTime() : 0.0;
+
+			static_cast<osg::MatrixTransform*>(node)->setMatrix(
+				osg::Matrix::rotate(t * 0.5, osg::Vec3(0.0, 0.0, 1.0)) *
+				osg::Matrix::translate(0.0, 0.0, 0.6)
+			);
+		}
+	));
+
+	root->addChild(pawn);
+
+	return pawn;
+}
+
+// Bridges osgx::CursorCapture into OrbitAxisManipulator::orbitByDelta(): toggles capture on 'c',
+// and while captured, feeds each frame's accumulated delta - via drainNormalized(), which
+// already matches orbitByDelta()'s [-1, 1]-ish scale (see CursorCapture's own class comment in
+// Cursor.hpp for why that normalization can't just be skipped) - into the manipulator instead of
+// letting it track the raw cursor itself.
 class OrbitCaptureBridge: public osgGA::GUIEventHandler {
 public:
 	OrbitCaptureBridge(osgx::CursorCapture* capture, osgx::OrbitAxisManipulator* manip):
@@ -114,23 +168,9 @@ public:
 
 		if(!capture || !manip || !capture->isCaptured()) return false;
 
-		osg::Vec2 delta = capture->consume();
-		double w = ea.getXmax() - ea.getXmin();
-		double h = ea.getYmax() - ea.getYmin();
+		osg::Vec2 delta = capture->drainNormalized(ea);
 
-		// CursorCapture reports raw ea.getX()/getY() units by design (see osgx/Cursor.hpp) - it
-		// doesn't know or care what those units mean to a caller. orbitByDelta()'s dy, though,
-		// matches getYnormalized() (up-positive), the same convention OrbitAxisManipulator's own
-		// live MOVE/DRAG tracking uses internally. Raw Y is up-positive or down-positive depending on
-		// the window's mouse orientation (X11 defaults to Y_INCREASING_DOWNWARDS), so it must be
-		// flipped to match here - otherwise height responds backwards relative to the uncaptured
-		// feel. X has no such flip: getXnormalized() has no orientation dependence.
-		double dy = ea.getMouseYOrientation() == osgGA::GUIEventAdapter::Y_INCREASING_DOWNWARDS
-			? -delta.y()
-			: delta.y()
-		;
-
-		if(w > 0.0 && h > 0.0) manip->orbitByDelta(2.0 * delta.x() / w, 2.0 * dy / h);
+		manip->orbitByDelta(delta.x(), delta.y());
 
 		return false;
 	}
@@ -140,36 +180,86 @@ private:
 	osg::observer_ptr<osgx::OrbitAxisManipulator> _manip;
 };
 
+enum class ManipulatorType { ORTHO2D, ORBIT, ACTIONS, FIRSTPERSON, THIRDPERSON };
+
+static bool parseType(const std::string& s, ManipulatorType& type) {
+	if(s == "ortho2d") type = ManipulatorType::ORTHO2D;
+	else if(s == "orbit") type = ManipulatorType::ORBIT;
+	else if(s == "actions") type = ManipulatorType::ACTIONS;
+	else if(s == "firstperson") type = ManipulatorType::FIRSTPERSON;
+	else if(s == "thirdperson") type = ManipulatorType::THIRDPERSON;
+	else return false;
+
+	return true;
+}
+
 int main(int argc, char** argv) {
 	auto lib = osgx::initialize();
 
 	osgViewer::Viewer viewer;
 
-	bool orbitMode = argc >= 2 && std::string(argv[1]) == "orbit";
-	bool actionsMode = argc >= 2 && std::string(argv[1]) == "actions";
-	const char* modelPath = (orbitMode || actionsMode)
-		? (argc >= 3 ? argv[2] : nullptr)
-		: (argc >= 2 ? argv[1] : nullptr)
-	;
+	ManipulatorType type = ManipulatorType::ORTHO2D;
+	const char* modelPath = nullptr;
+	bool invertY = true; // applied explicitly below for firstperson/thirdperson - see --invert-y
 
-	osg::ref_ptr<osg::Node> scene;
+	for(int i = 1; i < argc; i++) {
+		if(std::string(argv[i]) == "--type") {
+			if(i + 1 >= argc) {
+				std::cerr << "--type requires a value" << std::endl;
+
+				return 1;
+			}
+
+			if(!parseType(argv[++i], type)) {
+				std::cerr << "Unknown --type: " << argv[i] << std::endl;
+
+				return 1;
+			}
+		}
+
+		else if(std::string(argv[i]) == "--invert-y") {
+			if(i + 1 >= argc || (std::string(argv[i + 1]) != "0" && std::string(argv[i + 1]) != "1")) {
+				std::cerr << "--invert-y requires a value of 0 or 1" << std::endl;
+
+				return 1;
+			}
+
+			invertY = std::string(argv[++i]) == "1";
+		}
+
+		else modelPath = argv[i];
+	}
+
+	osg::ref_ptr<osg::Group> scene;
 
 	if(modelPath) {
-		scene = osgDB::readRefNodeFile(modelPath);
+		osg::ref_ptr<osg::Node> loaded = osgDB::readRefNodeFile(modelPath);
 
-		if(!scene) {
+		if(!loaded) {
 			std::cerr << "Failed to load: " << modelPath << std::endl;
 
 			return 1;
 		}
+
+		scene = osgx::make_ref<osg::Group>();
+
+		scene->addChild(loaded);
 	}
 
 	else scene = createDefaultScene();
 
-	viewer.setSceneData(scene);
-	viewer.addEventHandler(new osgViewer::StatsHandler());
+	// thirdperson needs something to track - the pawn, when there's no explicit model (see the
+	// file header comment); otherwise the loaded model's own root, which at least proves orbit-
+	// follow on an arbitrary node, just without the spinning-azimuth demonstration.
+	osg::ref_ptr<osg::Node> trackTarget;
 
-	if(orbitMode) {
+	if(type == ManipulatorType::THIRDPERSON) {
+		trackTarget = modelPath ? scene->getChild(0) : addPawn(scene).get();
+	}
+
+	viewer.setSceneData(scene);
+
+	if(type == ManipulatorType::ORBIT) {
 		auto manip = osgx::make_ref<osgx::OrbitAxisManipulator>();
 
 		viewer.setCameraManipulator(manip);
@@ -188,7 +278,7 @@ int main(int argc, char** argv) {
 		;
 	}
 
-	else if(actionsMode) {
+	else if(type == ManipulatorType::ACTIONS) {
 		auto manip = osgx::make_ref<osgx::ActionsManipulator<>>();
 
 		viewer.setCameraManipulator(manip);
@@ -292,6 +382,57 @@ int main(int argc, char** argv) {
 			<< " '2' ShakeCallback (0.4s)" << std::endl
 			<< " '3' toggle a multi-waypoint FlyToCallback LOOP patrol between two viewpoints" << std::endl
 			<< " '1'/'2' both compose cleanly on top of an active '3' patrol - try it" << std::endl
+		;
+	}
+
+	else if(type == ManipulatorType::FIRSTPERSON) {
+		auto manip = osgx::make_ref<osgx::FirstPersonManipulator>();
+
+		manip->setInvertY(invertY);
+		viewer.setCameraManipulator(manip);
+
+		viewer.addEventHandler(new osgx::LambdaKeyHandler(
+			'l',
+			[manip](const osgGA::GUIEventAdapter&, osgGA::GUIActionAdapter&) {
+				using LookStyle = osgx::FirstPersonManipulator::LookStyle;
+
+				LookStyle style = manip->getLookStyle() == LookStyle::ALWAYS
+					? LookStyle::CLICK_HOLD
+					: LookStyle::ALWAYS
+				;
+
+				manip->setLookStyle(style);
+
+				std::cout
+					<< "LookStyle: " << (style == LookStyle::ALWAYS ? "ALWAYS" : "CLICK_HOLD")
+					<< std::endl
+				;
+
+				return true;
+			}
+		));
+
+		std::cout
+			<< "FirstPersonManipulator" << std::endl
+			<< " W/A/S/D move forward/back/strafe left/right" << std::endl
+			<< " Mouse look (LookStyle::ALWAYS by default - no button needed)" << std::endl
+			<< " 'l' toggle LookStyle::ALWAYS <-> CLICK_HOLD (getLookButton() held, RIGHT by default)" << std::endl
+			<< " Scroll step forward/back, Space/Home reset" << std::endl
+		;
+	}
+
+	else if(type == ManipulatorType::THIRDPERSON) {
+		auto manip = osgx::make_ref<osgx::ThirdPersonManipulator>();
+
+		manip->setTrackNode(trackTarget);
+		manip->setInvertY(invertY);
+		viewer.setCameraManipulator(manip);
+
+		std::cout
+			<< "ThirdPersonManipulator" << std::endl
+			<< " Left drag orbit (tracks the pawn's own azimuth when not dragging)" << std::endl
+			<< " Middle drag pan, Scroll dolly zoom" << std::endl
+			<< " Space/Home reset view" << std::endl
 		;
 	}
 

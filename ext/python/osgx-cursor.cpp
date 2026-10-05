@@ -177,10 +177,24 @@ void bind_cursor(py::module_& m) {
 			"Whether capture is active: while True, hides the cursor and re-centers it on every "
 			"MOVE/DRAG event, accumulating the raw delta. Disabled by default."
 		)
+		.def_property(
+			"deadZone",
+			&osgx::CursorCapture::getDeadZone,
+			&osgx::CursorCapture::setDeadZone,
+			"Per-axis magnitude (raw pixels) below which a drain()ed delta's axis is zeroed - "
+			"filters sub-pixel warp+recenter jitter. 0 disables filtering. Default 1 pixel."
+		)
 		.def(
-			"consume", &osgx::CursorCapture::consume,
-			"Returns the accumulated delta since the last consume() call and resets it to zero. "
-			"Poll once per update traversal."
+			"drain", &osgx::CursorCapture::drain,
+			"Returns the accumulated delta since the last drain() call and resets it to zero "
+			"(deadZone already applied per-axis). Poll once per update traversal."
+		)
+		.def(
+			"drainNormalized", &osgx::CursorCapture::drainNormalized, "ea"_a,
+			"Like drain(), rescaled to the same small, normalized ([-1, 1] across the whole "
+			"window) units GUIEventAdapter.x_normalized/y_normalized use - the convention every "
+			"manipulator input this is meant to drive already expects. Feeding drain()'s raw "
+			"pixel units into one of those directly is a real, previously-made mistake."
 		)
 	;
 }
