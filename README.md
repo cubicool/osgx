@@ -110,7 +110,7 @@ by concern:
 - `osgx/Manipulators.hpp` — `Ortho2DManipulator`, `OrbitAxisManipulator`, and `MultiCameraManipulator`.
 - `osgx/Headless.hpp` — offscreen native/EGL pbuffer creation, command-line parsing, and fixed-frame
   viewer capture.
-- `osgx/CameraIntents.hpp` — `Viewpoint`, `FlyToCallback`, and `ShakeCallback`, driven by real
+- `osgx/CameraActions.hpp` — `Viewpoint`, `FlyToCallback`, and `ShakeCallback`, driven by real
   `osgAnimation::Motion`/`CompositeMotion` (patrol legs, arrival latch, procedural shake).
 - `osgx/Grid.hpp` — procedurally generated, antialiased grid overlay/ground-plane geometry.
 - `osgx/Shapes.hpp` — `Polyhedron`-based primitive geometry (`Cube`, `Tetrahedron`, `Octahedron`,
@@ -152,7 +152,7 @@ by concern:
 Per-subsystem deep dives live in [`docs/`](docs/):
 
 - [`osgx` core](docs/CORE.md) — everything above that lives flat in `osgx::`: `Core`, `Visitors`,
-  `Array`, `Callbacks`, `Picking`, `Manipulators`, `CameraIntents`, `Grid`, `Shapes`, `Shader`,
+  `Array`, `Callbacks`, `Picking`, `Manipulators`, `CameraActions`, `Grid`, `Shapes`, `Shader`,
   `PBR`, `Gizmos`, `Shadow`, `IBL`, `GBuffer`, `Cursor`, `Projection`, and the cubemap-baking primitives it's
   built on.
 - [`osgx::debug`](docs/DEBUG.md) — the three `GL_KHR_debug` systems, the two-phase GPU/CPU

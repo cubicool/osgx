@@ -1,4 +1,4 @@
-#include "osgx/CameraIntents.hpp"
+#include "osgx/CameraActions.hpp"
 
 OSGX_DISABLE_WARNINGS
 
@@ -93,11 +93,11 @@ bool FlyToCallback::run(osg::Object* object, osg::Object* data) {
 	if(_arrived) return false; // never re-touch _timeline once CLAMP has pinned it - see below
 
 	auto* camera = dynamic_cast<osg::Camera*>(data);
-	auto* host = dynamic_cast<CameraIntentHost*>(object);
+	auto* actions = dynamic_cast<CameraActionsInterface*>(object);
 
-	if(!camera || !host) return false;
+	if(!camera || !actions) return false;
 
-	double now = host->currentTime();
+	double now = actions->currentTime();
 
 	if(_startTime < 0.0) {
 		osg::Matrixd startCameraToWorld = osg::Matrixd::inverse(camera->getViewMatrix());
@@ -122,14 +122,16 @@ bool FlyToCallback::run(osg::Object* object, osg::Object* data) {
 	// must never be touched again once _arrived is set.
 	if(t >= _timeline->getDuration()) {
 		osg::Matrixd targetView = osg::Matrixd::lookAt(
-			_finalTarget.eye, _finalTarget.center, _finalTarget.up
+			_finalTarget.eye,
+			_finalTarget.center,
+			_finalTarget.up
 		);
 
 		camera->setViewMatrix(targetView);
 
 		// Resync the manipulator's own state so control hands back to it seamlessly. `this` IS the
-		// real manipulator via CameraManipulator<Base>'s inheritance - no separate "inner" object.
-		// See the KNOWN LIMITATION comment in CameraIntents.hpp: this can't perfectly restore an
+		// real manipulator via ActionsManipulator<Base>'s inheritance - no separate "inner" object.
+		// See the KNOWN LIMITATION comment in CameraActions.hpp: this can't perfectly restore an
 		// orbit-style manipulator's pivot/distance from a single matrix.
 		if(auto* manip = dynamic_cast<osgGA::CameraManipulator*>(object)) {
 			manip->setByMatrix(osg::Matrixd::inverse(targetView));
@@ -180,11 +182,11 @@ bool ShakeCallback::run(osg::Object* object, osg::Object* data) {
 	if(_finished) return false;
 
 	auto* camera = dynamic_cast<osg::Camera*>(data);
-	auto* host = dynamic_cast<CameraIntentHost*>(object);
+	auto* actions = dynamic_cast<CameraActionsInterface*>(object);
 
-	if(!camera || !host) return false;
+	if(!camera || !actions) return false;
 
-	double now = host->currentTime();
+	double now = actions->currentTime();
 
 	if(_startTime < 0.0) _startTime = now;
 

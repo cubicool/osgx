@@ -1,16 +1,16 @@
 // vimrun! ./examples/osgx-manipulator
 //
 // Demonstrates osgx::Ortho2DManipulator (default), osgx::OrbitAxisManipulator ("orbit"), and
-// osgx::CameraManipulator<> ("intents").
+// osgx::ActionsManipulator<> ("actions").
 //
 // With no arguments, renders a grid of colored boxes in the XY plane.
 // Pass "orbit" to use OrbitAxisManipulator instead of Ortho2DManipulator.
-// Pass "intents" to use osgx::CameraManipulator<> (defaults to TrackballManipulator) wrapped with
-// one-shot camera intents - press '1' for a FlyToCallback to an alternate viewpoint, '2' for a
+// Pass "actions" to use osgx::ActionsManipulator<> (defaults to TrackballManipulator) wrapped with
+// one-shot camera actions - press '1' for a FlyToCallback to an alternate viewpoint, '2' for a
 // ShakeCallback. Normal trackball orbit/pan/zoom/Home all still work exactly as plain
 // TrackballManipulator would, proving Base inheritance is transparent - this is the C++-only
-// verification step for osgx::CameraManipulator<Base>, no Python involved.
-// Pass a model path (after "orbit"/"intents", if present) to load and inspect it instead of the
+// verification step for osgx::ActionsManipulator<Base>, no Python involved.
+// Pass a model path (after "orbit"/"actions", if present) to load and inspect it instead of the
 // grid.
 //
 // In "orbit" mode, press 'c' to toggle osgx::CursorCapture: the cursor hides and
@@ -22,7 +22,7 @@
 // delivers every event to both the manipulator and every other GUIEventHandler unconditionally
 // (see the comment on setLiveOrbitEnabled() in osgx/Manipulators.hpp for why that matters here).
 
-#include "osgx/CameraIntents.hpp"
+#include "osgx/CameraActions.hpp"
 #include "osgx/Callbacks.hpp"
 #include "osgx/Core.hpp"
 #include "osgx/Cursor.hpp"
@@ -146,8 +146,8 @@ int main(int argc, char** argv) {
 	osgViewer::Viewer viewer;
 
 	bool orbitMode = argc >= 2 && std::string(argv[1]) == "orbit";
-	bool intentsMode = argc >= 2 && std::string(argv[1]) == "intents";
-	const char* modelPath = (orbitMode || intentsMode)
+	bool actionsMode = argc >= 2 && std::string(argv[1]) == "actions";
+	const char* modelPath = (orbitMode || actionsMode)
 		? (argc >= 3 ? argv[2] : nullptr)
 		: (argc >= 2 ? argv[1] : nullptr)
 	;
@@ -188,8 +188,8 @@ int main(int argc, char** argv) {
 		;
 	}
 
-	else if(intentsMode) {
-		auto manip = osgx::make_ref<osgx::CameraManipulator<>>();
+	else if(actionsMode) {
+		auto manip = osgx::make_ref<osgx::ActionsManipulator<>>();
 
 		viewer.setCameraManipulator(manip);
 
@@ -286,7 +286,7 @@ int main(int argc, char** argv) {
 		));
 
 		std::cout
-			<< "osgx::CameraManipulator<> (TrackballManipulator + camera intents)" << std::endl
+			<< "osgx::ActionsManipulator<> (TrackballManipulator + camera actions)" << std::endl
 			<< " Normal trackball orbit/pan/zoom, Space/Home reset" << std::endl
 			<< " '1' FlyToCallback to an alternate viewpoint (1.5s)" << std::endl
 			<< " '2' ShakeCallback (0.4s)" << std::endl

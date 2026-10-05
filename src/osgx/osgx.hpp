@@ -7,7 +7,7 @@
 #include "Callbacks.hpp"
 #include "Picking.hpp"
 #include "Manipulators.hpp"
-#include "CameraIntents.hpp"
+#include "CameraActions.hpp"
 #include "Grid.hpp"
 #include "PixelText.hpp"
 #include "Shapes.hpp"

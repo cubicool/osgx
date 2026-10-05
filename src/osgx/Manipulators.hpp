@@ -12,6 +12,7 @@ OSGX_DISABLE_WARNINGS
 #include <osg/Vec2>
 #include <osg/observer_ptr>
 #include <osgGA/CameraManipulator>
+#include <osgGA/FirstPersonManipulator>
 #include <osgGA/GUIActionAdapter>
 #include <osgGA/GUIEventAdapter>
 #include <osgGA/TrackballManipulator>
@@ -464,16 +465,99 @@ private:
 };
 
 // ================================================================================================
-// CameraManipulator<Base>
+// FirstPersonManipulator
+//
+// A thin osgGA::FirstPersonManipulator subclass adding the one thing it's missing: continuous
+// keyboard movement. The stock class is mouse-only - confirmed against the OSG source: neither it
+// nor its StandardManipulator base bind any key for movement (StandardManipulator::handleKeyDown
+// only binds Space -> home()).
+//
+// Controls:
+//
+// W/A/S/D move forward/back/strafe left/right, held continuously (scaled by frame delta time via
+//          the inherited moveForward()/moveRight())
+// Mouse    look, gated by LookStyle (see below); left-button drag is always disabled here (the
+//          base class's own left-drag-to-look is reserved for a future "interact" binding instead)
+// Scroll   step forward/back (inherited, unchanged)
+// Space / Home reset to home (inherited, unchanged)
+//
+// LookStyle::ALWAYS tracks raw MOVE events with no button held - a real FPS mouse-look, but v1
+// (same caveat as OrbitAxisManipulator): no cursor hide/recenter yet, so it runs out of room at
+// the screen edge. Composing in osgx::CursorCapture (Cursor.hpp) to hide+warp+accumulate fixes
+// this at the application level, same layering OrbitAxisManipulator already uses - not wired in
+// here yet.
+// ================================================================================================
+class FirstPersonManipulator: public osgGA::FirstPersonManipulator {
+public:
+	enum class LookStyle {
+		ALWAYS, // mouse look tracks every MOVE event, no button required
+		RIGHTCLICK_HOLD // mouse look only while the right button is held and dragging
+	};
+
+	OSGX_META_Object(osgx, FirstPersonManipulator)
+
+	explicit FirstPersonManipulator(int flags=DEFAULT_SETTINGS):
+		osgGA::FirstPersonManipulator(flags) {}
+
+	OSGX_DISABLE_WARNINGS
+
+		FirstPersonManipulator(
+			const FirstPersonManipulator& m,
+			const osg::CopyOp& co=osg::CopyOp::SHALLOW_COPY
+		):
+		osgGA::FirstPersonManipulator(m, co),
+		_lookStyle(m._lookStyle),
+		_moveSpeed(m._moveSpeed) {}
+
+	OSGX_ENABLE_WARNINGS
+
+	void setLookStyle(LookStyle style) {
+		_lookStyle = style;
+		_hasLastMouse = false;
+	}
+
+	LookStyle getLookStyle() const { return _lookStyle; }
+
+	// Units per second, consumed by the inherited moveForward()/moveRight().
+	void setMoveSpeed(double speed) { _moveSpeed = speed; }
+	double getMoveSpeed() const { return _moveSpeed; }
+
+protected:
+	bool handleKeyDown(const osgGA::GUIEventAdapter& ea, osgGA::GUIActionAdapter& us) override;
+	bool handleKeyUp(const osgGA::GUIEventAdapter& ea, osgGA::GUIActionAdapter& us) override;
+	bool handleFrame(const osgGA::GUIEventAdapter& ea, osgGA::GUIActionAdapter& us) override;
+	bool handleMouseMove(const osgGA::GUIEventAdapter& ea, osgGA::GUIActionAdapter& us) override;
+	bool performMovementLeftMouseButton(double eventTimeDelta, double dx, double dy) override;
+	bool performMovementRightMouseButton(double eventTimeDelta, double dx, double dy) override;
+
+private:
+	enum MoveBit: unsigned int {
+		MOVE_FORWARD = 0x01,
+		MOVE_BACK = 0x02,
+		MOVE_LEFT = 0x04,
+		MOVE_RIGHT = 0x08
+	};
+
+	LookStyle _lookStyle = LookStyle::ALWAYS;
+	double _moveSpeed = 4.0;
+	unsigned int _moveBits = 0;
+
+	bool _hasLastMouse = false;
+	float _lastMouseX = 0.0f;
+	float _lastMouseY = 0.0f;
+};
+
+// ================================================================================================
+// ActionsManipulator<Base>
 //
 // CRTP mixin (same idiom as osgx::Array<T>, see osgx/Array.hpp) that lets a manipulator merge
-// one-shot or persistent "camera intents" - a fly-to animation, a shake, agent-driven nudges --
+// one-shot or persistent "camera actions" - a fly-to animation, a shake, agent-driven nudges --
 // onto itself, without a caller needing a second manipulator object or to know/care which concrete
-// manipulator type is in play. osgx::CameraManipulator<osgGA::TrackballManipulator> genuinely IS a
+// manipulator type is in play. osgx::ActionsManipulator<osgGA::TrackballManipulator> genuinely IS a
 // TrackballManipulator: every interaction method (handle, home, getMatrix, setNode, ...) is
 // inherited directly, not forwarded through a held ref_ptr.
 //
-// Intents are plain osg::Callback subclasses (see osgx/CameraIntents.hpp for FlyToCallback/
+// Actions are plain osg::Callback subclasses (see osgx/CameraActions.hpp for FlyToCallback/
 // ShakeCallback), added via addUpdateCameraCallback(). This deliberately reuses OSG's own callback
 // type rather than a bespoke hierarchy, so a caller can drop in either a purpose-built C++
 // subclass or (once pyx::CallableCallback grows a matching specialization) a plain Python callable.
@@ -493,22 +577,22 @@ private:
 template<typename T>
 concept OSGCameraManipulator = std::derived_from<T, osgGA::CameraManipulator>;
 
-// Type-erases CameraManipulator<Base>'s extra surface so a generic osg::Callback - which only
+// Type-erases ActionsManipulator<Base>'s extra surface so a generic osg::Callback - which only
 // ever receives a plain osg::Object* - can reach back into "whatever manipulator it's attached
 // to" without needing to know Base. dynamic_cast across this is safe regardless of Base: OSG never
 // disables RTTI, and osg::Object has a virtual destructor, so it stays live throughout.
-class CameraIntentHost {
+class CameraActionsInterface {
 public:
 	virtual double currentTime() const = 0;
 	virtual void addUpdateCameraCallback(osg::Callback* cb, bool runOnce=false) = 0;
 	virtual void removeUpdateCameraCallback(osg::Callback* cb) = 0;
 
 protected:
-	virtual ~CameraIntentHost() {}
+	virtual ~CameraActionsInterface() {}
 };
 
 template<OSGCameraManipulator Base=osgGA::TrackballManipulator>
-class CameraManipulator: public Base, public CameraIntentHost {
+class ActionsManipulator: public Base, public CameraActionsInterface {
 public:
 	using Base::Base;
 
@@ -540,9 +624,9 @@ public:
 		return _callbacks[i].runOnce;
 	}
 
-	// Peeks at FRAME events to cache the current time for intents to read via currentTime() --
+	// Peeks at FRAME events to cache the current time for actions to read via currentTime() --
 	// matches how OSG's own animated manipulators source time (from the FRAME event, not a polled
-	// osg::Timer), and keeps intent timing deterministically testable later by injecting FRAME
+	// osg::Timer), and keeps action timing deterministically testable later by injecting FRAME
 	// events. Always forwards to Base - this is a peek, never an interception.
 	bool handle(const osgGA::GUIEventAdapter& ea, osgGA::GUIActionAdapter& aa) override {
 		if(ea.getEventType() == osgGA::GUIEventAdapter::FRAME) _currentTime = ea.getTime();

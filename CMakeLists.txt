@@ -230,7 +230,7 @@ endif()
 add_library(osgx ${OSGX_LIBRARY_TYPE}
 	src/Array.cpp
 	src/Aura.cpp
-	src/CameraIntents.cpp
+	src/CameraActions.cpp
 	src/CaptureCubeMap.cpp
 	src/CompressedTexture.cpp
 	src/Cursor.cpp

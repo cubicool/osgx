@@ -22,11 +22,11 @@ OSGX_ENABLE_WARNINGS
 namespace osgx {
 
 // ================================================================================================
-// Built-in camera intents
+// Built-in camera actions
 //
-// Plain osg::Callback subclasses (no dependency on any concrete CameraManipulator<Base>
-// instantiation), meant to be attached via CameraManipulator<Base>::addUpdateCameraCallback() (see
-// osgx/Manipulators.hpp). Both cast their `object` argument to osgx::CameraIntentHost to read
+// Plain osg::Callback subclasses (no dependency on any concrete ActionsManipulator<Base>
+// instantiation), meant to be attached via ActionsManipulator<Base>::addUpdateCameraCallback() (see
+// osgx/Manipulators.hpp). Both cast their `object` argument to osgx::CameraActionsInterface to read
 // currentTime() (FRAME-event time, cached by the mixin - not a polled osg::Timer), and their
 // `data` argument to osg::Camera to read/write the view matrix currently being composed.
 //
@@ -56,7 +56,7 @@ struct Viewpoint {
 // easing chains multiple instances instead.
 //
 // Under osgAnimation::Motion::CLAMP (the default), on arrival this writes the EXACT final pose and
-// resyncs the manipulator's own state via CameraManipulator::setByMatrix() so control hands back to
+// resyncs the manipulator's own state via ActionsManipulator::setByMatrix() so control hands back to
 // it seamlessly, then goes permanently inert - safe to leave attached with runOnce=false, it will
 // NOT keep rewriting the camera and fighting further user input after arrival.
 //

@@ -37,7 +37,7 @@ namespace osgx {
 // manager, or a bake function like GGXPrefilter's own that still hand-rolls its N cameras), not a
 // thing that grows its own fan-out logic.
 //
-// No OSGX_META_Object / clone() support - like osgx::CameraIntentHost's manipulator mixins
+// No OSGX_META_Object / clone() support - like osgx::CameraActionsInterface's manipulator mixins
 // (Manipulators.hpp), an RTT owns real GPU render-target state that clone() can't meaningfully
 // duplicate; it is not expected to ever be cloned.
 // ================================================================================================

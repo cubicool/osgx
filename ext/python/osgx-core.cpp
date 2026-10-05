@@ -1,5 +1,5 @@
 #include "osgx-python.hpp"
-#include "osgx/CameraIntents.hpp"
+#include "osgx/CameraActions.hpp"
 #include "osgx/Core.hpp"
 #include "osgx/Grid.hpp"
 #include "osgx/Manipulators.hpp"
@@ -8,33 +8,33 @@
 namespace osgx_python {
 
 // Only the TrackballManipulator instantiation is bound for now - the only Base actually verified
-// working (examples/osgx-manipulator.cpp's "intents" mode).
-using TrackballCameraManipulator = osgx::CameraManipulator<osgGA::TrackballManipulator>;
+// working (examples/osgx-manipulator.cpp's "actions" mode).
+using TrackballActionsManipulator = osgx::ActionsManipulator<osgGA::TrackballManipulator>;
 
 }
 
-// osgx::CameraManipulator<Base>::_callbacks introspection - pyx::SequenceProxy over the read
+// osgx::ActionsManipulator<Base>::_callbacks introspection - pyx::SequenceProxy over the read
 // accessors added alongside this (osgx/Manipulators.hpp's getNumUpdateCameraCallbacks()/
 // getUpdateCameraCallback()), modeled directly on osg::Program's SequenceTraits (OpenSceneGraph.py's
 // pyosg/osg/Program.hpp). Deliberately get/del only, no set()/append(): adding still goes through
 // addUpdateCameraCallback(cb, runOnce), which needs the extra bool a homogeneous-element sequence
 // can't carry.
 template<>
-struct pyx::SequenceTraits<osgx_python::TrackballCameraManipulator> {
+struct pyx::SequenceTraits<osgx_python::TrackballActionsManipulator> {
 	using element_type = osg::Callback;
 	using value_type = element_type*;
 
 	static value_type from_python(py::handle h) { return h.cast<value_type>(); }
 
-	static size_t size(const osgx_python::TrackballCameraManipulator* m) {
+	static size_t size(const osgx_python::TrackballActionsManipulator* m) {
 		return m->getNumUpdateCameraCallbacks();
 	}
 
-	static element_type* get(osgx_python::TrackballCameraManipulator* m, size_t i) {
+	static element_type* get(osgx_python::TrackballActionsManipulator* m, size_t i) {
 		return m->getUpdateCameraCallback(static_cast<unsigned int>(i));
 	}
 
-	static void del(osgx_python::TrackballCameraManipulator* m, size_t i) {
+	static void del(osgx_python::TrackballActionsManipulator* m, size_t i) {
 		m->removeUpdateCameraCallback(m->getUpdateCameraCallback(static_cast<unsigned int>(i)));
 	}
 };
@@ -42,8 +42,8 @@ struct pyx::SequenceTraits<osgx_python::TrackballCameraManipulator> {
 namespace osgx_python {
 
 namespace detail {
-	using CallbacksProxy = pyx::SequenceProxy<TrackballCameraManipulator>;
-	using CallbacksStorage = pyx::ProxyStorageOSG<TrackballCameraManipulator, CallbacksProxy>;
+	using CallbacksProxy = pyx::SequenceProxy<TrackballActionsManipulator>;
+	using CallbacksStorage = pyx::ProxyStorageOSG<TrackballActionsManipulator, CallbacksProxy>;
 }
 
 void bind_core(py::module_& m) {
@@ -477,27 +477,27 @@ void bind_core(py::module_& m) {
 		.def("next", &osgx::MultiCameraManipulator::next, "Activates the next target, wrapping around.")
 	;
 
-	// osgx::CameraManipulator<Base> (osgx/Manipulators.hpp) - CRTP mixin merging one-shot/
-	// persistent "camera intent" callbacks onto a SINGLE real manipulator instance (as opposed to
+	// osgx::ActionsManipulator<Base> (osgx/Manipulators.hpp) - CRTP mixin merging one-shot/
+	// persistent "camera action" callbacks onto a SINGLE real manipulator instance (as opposed to
 	// wrapping/replacing it, see the header's own class comment for why that distinction mattered).
 	// Only the TrackballManipulator instantiation is bound for now - the only Base actually
-	// verified working (examples/osgx-manipulator.cpp's "intents" mode) - exposed as plain
-	// "CameraManipulator" to match osgx::CameraManipulator<>'s own default Base directly.
-	auto cameraManipulator = py::class_<
-		TrackballCameraManipulator,
+	// verified working (examples/osgx-manipulator.cpp's "actions" mode) - exposed as plain
+	// "ActionsManipulator" to match osgx::ActionsManipulator<>'s own default Base directly.
+	auto actionsManipulator = py::class_<
+		TrackballActionsManipulator,
 		osgGA::CameraManipulator,
-		osg::ref_ptr<TrackballCameraManipulator>
+		osg::ref_ptr<TrackballActionsManipulator>
 	>(
 		m,
-		"CameraManipulator",
-		"osgGA.TrackballManipulator with one-shot/persistent \"camera intent\" callbacks (flyTo, "
+		"ActionsManipulator",
+		"osgGA.TrackballManipulator with one-shot/persistent \"camera action\" callbacks (flyTo, "
 		"shake, or any custom osg.Callback) mergeable onto the SAME manipulator instance, rather "
 		"than wrapping or replacing it."
 	)
-		.def(py::init<>(), "Constructs a TrackballManipulator-based manipulator with no camera intents attached.")
+		.def(py::init<>(), "Constructs a TrackballManipulator-based manipulator with no camera actions attached.")
 		.def(
 			"addUpdateCameraCallback",
-			&TrackballCameraManipulator::addUpdateCameraCallback,
+			&TrackballActionsManipulator::addUpdateCameraCallback,
 			"callback"_a,
 			"runOnce"_a=false,
 			"Attaches an osg::Callback, run(this, camera) every updateCamera(); runOnce=True "
@@ -505,19 +505,19 @@ void bind_core(py::module_& m) {
 		)
 		.def(
 			"removeUpdateCameraCallback",
-			&TrackballCameraManipulator::removeUpdateCameraCallback,
+			&TrackballActionsManipulator::removeUpdateCameraCallback,
 			"callback"_a,
 			"Detaches a previously attached update-camera callback."
 		)
 		.def_property_readonly(
 			"currentTime",
-			&TrackballCameraManipulator::currentTime,
-			"FRAME-event time, cached each frame - what attached intents read for their own timing."
+			&TrackballActionsManipulator::currentTime,
+			"FRAME-event time, cached each frame - what attached actions read for their own timing."
 		)
 		.def(
 			"flyTo",
 			[](
-				TrackballCameraManipulator& self,
+				TrackballActionsManipulator& self,
 				osg::Vec3d eye,
 				osg::Vec3d center,
 				osg::Vec3d up,
@@ -545,7 +545,7 @@ void bind_core(py::module_& m) {
 		.def(
 			"shake",
 			[](
-				TrackballCameraManipulator& self,
+				TrackballActionsManipulator& self,
 				double intensity,
 				double duration,
 				osgAnimation::Motion::TimeBehaviour tb
@@ -561,9 +561,9 @@ void bind_core(py::module_& m) {
 	;
 
 	// .callbacks - read-only introspection of what's currently attached (see the
-	// pyx::SequenceTraits<TrackballCameraManipulator> specialization above this function).
-	pyx::bind_proxy_property<detail::CallbacksProxy, TrackballCameraManipulator, detail::CallbacksStorage>(
-		cameraManipulator, "_Callbacks", "callbacks",
+	// pyx::SequenceTraits<TrackballActionsManipulator> specialization above this function).
+	pyx::bind_proxy_property<detail::CallbacksProxy, TrackballActionsManipulator, detail::CallbacksStorage>(
+		actionsManipulator, "_Callbacks", "callbacks",
 		"Read-only introspection of the update-camera callbacks currently attached, as a real Python list."
 	);
 
@@ -583,7 +583,7 @@ void bind_core(py::module_& m) {
 	// osg::Callback itself is registered by pyosg (OpenSceneGraph.py/pyosg/osg/NodeCallback.cpp),
 	// imported before this runs (see osgx.cpp) - FlyToCallback/ShakeCallback derive from it
 	// directly (not osg::NodeCallback), matching the (manipulator, camera) object/data pair
-	// CameraManipulator<Base>::updateCamera() passes to run(), which osg::NodeCallback's
+	// ActionsManipulator<Base>::updateCamera() passes to run(), which osg::NodeCallback's
 	// operator()(Node*, NodeVisitor*) convenience doesn't fit.
 	py::class_<
 		osgx::FlyToCallback,
@@ -593,7 +593,7 @@ void bind_core(py::module_& m) {
 		m,
 		"FlyToCallback",
 		"A one-shot or multi-waypoint camera fly-to animation, driven by a real osgAnimation "
-		"Motion/CompositeMotion. Attach via CameraManipulator.flyTo() for the single-target case, "
+		"Motion/CompositeMotion. Attach via ActionsManipulator.flyTo() for the single-target case, "
 		"or construct directly (the multi-waypoint constructor) for a scripted patrol/loop."
 	)
 		.def(
@@ -634,7 +634,7 @@ void bind_core(py::module_& m) {
 		m,
 		"ShakeCallback",
 		"A camera shake/rumble effect layered on top of the manipulator's own view, driven by a "
-		"real osgAnimation Motion. Attach via CameraManipulator.shake() or directly via "
+		"real osgAnimation Motion. Attach via ActionsManipulator.shake() or directly via "
 		"addUpdateCameraCallback()."
 	)
 		.def(

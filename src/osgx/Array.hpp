@@ -206,31 +206,37 @@ public:
 	// field by field), where assign()/append_range() would change the size and `(*arr)[i] = ...` per
 	// field is just noise. Call dirty() afterward as usual.
 	void set(std::initializer_list<ElementDataType> values, std::size_t offset=0) {
-		if(offset + values.size() > size()) throw std::out_of_range("osgx::Array::set: range exceeds size");
+		if(offset > size() || values.size() > size() - offset) {
+			throw std::out_of_range("osgx::Array::set: range exceeds size");
+		}
 
 		std::ranges::copy(values, begin() + static_cast<
 			typename std::iterator_traits<decltype(begin())>::difference_type
 		>(offset));
 	}
 
-	// --- Full-span access ----------------------------------------------------
-	auto span() { return std::span<ElementDataType>(&(*this)[0], size()); }
-	auto span() const { return std::span<const ElementDataType>(&(*this)[0], size()); }
+	// Full-span access
+	auto span() { return std::span<ElementDataType>(begin(), size()); }
+	auto span() const { return std::span<const ElementDataType>(begin(), size()); }
 
-	// --- Partial-span access -------------------------------------------------
+	// Partial-span access
 	auto span(size_t start, size_t count) {
-		return std::span<ElementDataType>(&(*this)[start], count);
+		return std::span<ElementDataType>(begin() + static_cast<
+			typename std::iterator_traits<decltype(begin())>::difference_type
+		>(start), count);
 	}
 
 	auto span(size_t start, size_t count) const {
-		return std::span<const ElementDataType>(&(*this)[start], count);
+		return std::span<const ElementDataType>(begin() + static_cast<
+			typename std::iterator_traits<decltype(begin())>::difference_type
+		>(start), count);
 	}
 
-	// --- Range-based views ---------------------------------------------------
+	// Range-based views
 	auto view() { return std::ranges::subrange(begin(), end()); }
 	auto view() const { return std::ranges::subrange(begin(), end()); }
 
-	// --- Partial-range view --------------------------------------------------
+	// Partial-range view
 	auto view(size_t start, size_t count) {
 		return std::ranges::subrange(begin() + start, begin() + start + count);
 	}
@@ -400,11 +406,11 @@ public:
 	// --------------------------------------------------------------------------------------------
 
 	auto span() {
-		return std::span<value_type>(&(*this)[0], size());
+		return std::span<value_type>(begin(), size());
 	}
 
 	auto span() const {
-		return std::span<const value_type>(&(*this)[0], size());
+		return std::span<const value_type>(begin(), size());
 	}
 
 	auto view() {

@@ -19,6 +19,7 @@ osg::Vec3d perpendicularTo(const osg::Vec3d& axis) {
 		: osg::Vec3d(0.0, 1.0, 0.0)
 	;
 	osg::Vec3d result = reference ^ axis;
+
 	normalize(result);
 
 	return result;
@@ -581,6 +582,80 @@ bool OrbitAxisManipulator::handle(const osgGA::GUIEventAdapter& ea, osgGA::GUIAc
 	default:
 		return false;
 	}
+}
+
+bool FirstPersonManipulator::handleKeyDown(const osgGA::GUIEventAdapter& ea, osgGA::GUIActionAdapter& us) {
+	switch(ea.getKey()) {
+	case 'w': case 'W': _moveBits |= MOVE_FORWARD; return true;
+	case 's': case 'S': _moveBits |= MOVE_BACK; return true;
+	case 'a': case 'A': _moveBits |= MOVE_LEFT; return true;
+	case 'd': case 'D': _moveBits |= MOVE_RIGHT; return true;
+	default: return osgGA::FirstPersonManipulator::handleKeyDown(ea, us);
+	}
+}
+
+bool FirstPersonManipulator::handleKeyUp(const osgGA::GUIEventAdapter& ea, osgGA::GUIActionAdapter& us) {
+	switch(ea.getKey()) {
+	case 'w': case 'W': _moveBits &= ~static_cast<unsigned int>(MOVE_FORWARD); return true;
+	case 's': case 'S': _moveBits &= ~static_cast<unsigned int>(MOVE_BACK); return true;
+	case 'a': case 'A': _moveBits &= ~static_cast<unsigned int>(MOVE_LEFT); return true;
+	case 'd': case 'D': _moveBits &= ~static_cast<unsigned int>(MOVE_RIGHT); return true;
+	default: return osgGA::FirstPersonManipulator::handleKeyUp(ea, us);
+	}
+}
+
+bool FirstPersonManipulator::handleFrame(const osgGA::GUIEventAdapter& ea, osgGA::GUIActionAdapter& us) {
+	const bool baseResult = osgGA::FirstPersonManipulator::handleFrame(ea, us);
+
+	if(_moveBits == 0 || _delta_frame_time <= 0.0) return baseResult;
+
+	const double distance = _moveSpeed * _delta_frame_time;
+
+	if(_moveBits & MOVE_FORWARD) moveForward(distance);
+	if(_moveBits & MOVE_BACK) moveForward(-distance);
+	if(_moveBits & MOVE_RIGHT) moveRight(distance);
+	if(_moveBits & MOVE_LEFT) moveRight(-distance);
+
+	us.requestRedraw();
+
+	return true;
+}
+
+bool FirstPersonManipulator::handleMouseMove(const osgGA::GUIEventAdapter& ea, osgGA::GUIActionAdapter& us) {
+	if(_lookStyle != LookStyle::ALWAYS) return false;
+
+	const float x = ea.getXnormalized();
+	const float y = ea.getYnormalized();
+
+	if(_hasLastMouse) {
+		const float dx = x - _lastMouseX;
+		const float dy = y - _lastMouseY;
+
+		if(dx != 0.0f || dy != 0.0f) {
+			performMouseDeltaMovement(dx, dy);
+
+			us.requestRedraw();
+		}
+	}
+
+	_lastMouseX = x;
+	_lastMouseY = y;
+	_hasLastMouse = true;
+
+	return true;
+}
+
+// Always disabled - reserved for a future "interact" binding rather than look, under either
+// LookStyle (ALWAYS already looks from raw mouse movement; RIGHTCLICK_HOLD uses the right button
+// instead, see below).
+bool FirstPersonManipulator::performMovementLeftMouseButton(double, double, double) {
+	return false;
+}
+
+bool FirstPersonManipulator::performMovementRightMouseButton(double eventTimeDelta, double dx, double dy) {
+	if(_lookStyle != LookStyle::RIGHTCLICK_HOLD) return false;
+
+	return osgGA::FirstPersonManipulator::performMovementLeftMouseButton(eventTimeDelta, dx, dy);
 }
 
 }
