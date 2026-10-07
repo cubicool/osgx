@@ -4,6 +4,47 @@
 namespace osgx_python {
 
 void bind_debug(py::module_& m_debug) {
+	py::enum_<osgx::debug::ClockCalibration>(
+		m_debug,
+		"ClockCalibration",
+		"How ShaderClockDrawable obtains its shader-clock rate."
+	)
+		.value("DYNAMIC", osgx::debug::ClockCalibration::DYNAMIC)
+		.value("STATIC", osgx::debug::ClockCalibration::STATIC)
+		.export_values()
+	;
+
+	py::class_<osgx::debug::ShaderClockDrawable, osg::Drawable, osg::ref_ptr<osgx::debug::ShaderClockDrawable>>(
+		m_debug,
+		"ShaderClockDrawable",
+		"A GL_ARB_shader_clock drawable that adds a calibrated GPU delay during traversal."
+	)
+		.def(py::init<osgx::debug::ClockCalibration>(), "mode"_a=osgx::debug::ClockCalibration::DYNAMIC)
+		.def_property("duration", &osgx::debug::ShaderClockDrawable::getDuration, &osgx::debug::ShaderClockDrawable::setDuration, "Requested GPU delay in milliseconds.")
+		.def_property_readonly("calibrationMode", &osgx::debug::ShaderClockDrawable::getCalibrationMode, "The configured ClockCalibration mode.")
+		.def_property(
+			"staticTicksPerMillisecond",
+			&osgx::debug::ShaderClockDrawable::getStaticTicksPerMillisecond,
+			&osgx::debug::ShaderClockDrawable::setTicksPerMillisecond,
+			"Caller-provided shader-clock rate used in STATIC mode."
+		)
+		.def("getTicksPerMillisecond", &osgx::debug::ShaderClockDrawable::getTicksPerMillisecond, "contextID"_a=0)
+		.def("recalibrate", &osgx::debug::ShaderClockDrawable::recalibrate)
+		.def_property(
+			"recalibrationInterval",
+			&osgx::debug::ShaderClockDrawable::getRecalibrationInterval,
+			&osgx::debug::ShaderClockDrawable::setRecalibrationInterval,
+			"Elapsed seconds between DYNAMIC recalibrations; zero disables it."
+		)
+		.def_property(
+			"recalibrationFrameInterval",
+			&osgx::debug::ShaderClockDrawable::getRecalibrationFrameInterval,
+			&osgx::debug::ShaderClockDrawable::setRecalibrationFrameInterval,
+			"Rendered frames between DYNAMIC recalibrations; zero disables it."
+		)
+		.def("isSupported", &osgx::debug::ShaderClockDrawable::isSupported, "contextID"_a=0)
+	;
+
 	py::class_<
 		osgx::debug::GraphicsOperation,
 		osg::GraphicsOperation,

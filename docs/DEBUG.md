@@ -1,6 +1,6 @@
-# `osgx::debug` — GL_KHR_debug + profiler
+# `osgx::debug` - GL_KHR_debug, profiler, and GPU load simulation
 
-`osgx/Debug.hpp` provides three independent systems that can be used together or separately. It is
+`osgx/Debug.hpp` provides four independent systems that can be used together or separately. It is
 not included by `osgx.hpp`; opt in explicitly with `#include "osgx/Debug.hpp"`.
 
 For a Dear ImGui front-end, see [`osgx::imgui`](IMGUI.md) — it is a sibling of `osgx::debug`, not
@@ -88,6 +88,29 @@ Blocks only on the last outstanding query. Install on the camera's `FINAL_DRAW` 
 
 ---
 
+## System 4 - Shader-Clock GPU Load Simulation
+
+`ShaderClockDrawable` creates deliberate, calibrated GPU work at the point where it occurs in
+scene traversal. It uses `GL_ARB_shader_clock` in a private 1x1 render target, so it does not
+change CPU pacing or visible framebuffer contents. Add it directly to a scene graph, set a
+duration in milliseconds, and it will stall the GPU for approximately that duration each draw.
+
+- `ClockCalibration::DYNAMIC` (default) measures the context's shader-clock rate with GPU
+  timestamp queries on first draw. This calibration blocks the CPU once; ordinary stall draws do
+  not read data back. `recalibrate()`, `setRecalibrationInterval()`, or
+  `setRecalibrationFrameInterval()` refreshes the rate. The frame interval is useful when the
+  workload is rendered intermittently or must be sampled on a deterministic render cadence.
+- `ClockCalibration::STATIC` uses a rate supplied with `setTicksPerMillisecond()`, avoiding
+  timestamp queries and CPU readback entirely.
+- `isSupported(contextID)` reports whether the first draw under that context found
+  `GL_ARB_shader_clock`. Unsupported contexts log once and subsequently perform no work.
+
+Wrap the drawable with `ProfilerCallback` when measuring the resulting GPU cost. Shader-clock
+ticks are implementation-defined, so dynamic calibration is the appropriate default outside a
+controlled test rig.
+
+---
+
 ## Data flow summary
 
 ```
@@ -97,11 +120,14 @@ you ──AnnotationBegin/EndCallback──► GL driver ──► apitrace / Re
 
 ProfilerCallback ──► FrameAccumulator ──► ProfilerFinalCallback ──► osg::notify (or osgx::imgui::Widget)
 
+ShaderClockDrawable ──► private 1x1 FBO ──► calibrated GPU delay
+
 FrameByFrameViewer::requestRender() ◄── 'n' key (or an osgx::imgui button)
 ```
 
-The three flows are independent. Annotations never need to know the profiler exists,
-and the driver callback has nothing to do with either.
+The four systems are independent. Annotations never need to know the profiler exists, and the
+driver callback has nothing to do with either. ShaderClockDrawable can be profiled, but does not
+depend on the profiler.
 
 ---
 
@@ -123,3 +149,4 @@ session does not flood with unintended frames. On first render it automatically 
 - GL_EXT_debug_marker
 - GL_EXT_debug_label
 - GL_AMD_debug_output
+- GL_ARB_shader_clock

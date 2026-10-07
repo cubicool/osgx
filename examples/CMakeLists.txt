@@ -17,6 +17,7 @@ set(OSGX_EXAMPLES
 	"picking"
 	"pixel-text"
 	"platform"
+	"shaderclock"
 	"shadow"
 	"shapes"
 	# "temporal-edge"
