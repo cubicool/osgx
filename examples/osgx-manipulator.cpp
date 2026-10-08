@@ -1,6 +1,6 @@
 // vimrun! ./examples/osgx-manipulator --type ortho2d
 //
-// osgx-manipulator --type <TYPE> [--invert-y 0|1] [modelPath]
+// osgx-manipulator --type <TYPE> [--invert-y 0|1] [--invert-zoom 0|1] [modelPath]
 //
 // <TYPE> is one of: ortho2d (default), orbit, actions, firstperson, thirdperson.
 // Pass a model path (any position) to load and inspect it instead of the default scene.
@@ -8,6 +8,9 @@
 // osgx::PlayerManipulator<Base>::setInvertY() in osgx/Manipulators.hpp. Deliberately set
 // explicitly here rather than left as the library's own default, so this example is the place to
 // compare both feels rather than that decision living silently inside the library.
+// --invert-zoom 0|1 (default 0) applies to thirdperson only - see
+// osgx::PlayerFollowManipulator::setInvertZoom() in osgx/Manipulators.hpp. Same reasoning as
+// --invert-y above: set explicitly here, not baked into the library's own default.
 //
 // ortho2d      osgx::Ortho2DManipulator - pan/zoom/Ctrl+drag-tilt (see its own class comment)
 // orbit        osgx::OrbitAxisManipulator - turntable orbit/height/zoom; 'c' toggles
@@ -29,10 +32,10 @@
 //              captured (hide+warp+accumulate) automatically - no manual osgx::CursorCapture
 //              wiring needed here, unlike "orbit" below - see osgx::PlayerManipulator<Base>'s own
 //              class comment in Manipulators.hpp for why.
-// thirdperson  osgx::ThirdPersonManipulator - orbits a "pawn" marker (added to the default scene
-//              only; ignored when a model path is given) at a fixed distance/height, proving
-//              TrackerMode::NODE_CENTER_AND_AZIM keeps the camera's azimuth locked to the pawn's
-//              own facing instead of drifting independently. W/A/S/D drive the pawn itself via
+// thirdperson  osgx::ThirdPersonManipulator - orbits a "target" marker (added to the default scene
+//              only; ignored when a model path is given) at a configurable distance, proving
+//              osgx::PlayerFollowManipulator keeps the camera's azimuth locked to the target's
+//              own facing instead of drifting independently. W/A/S/D drive the target itself via
 //              osgx::PlayerMovementHandler (TANK style - W/S move along its current facing, A/D
 //              turn in place, no strafe); left-drag still orbits the camera manually on top of
 //              that. The cursor is captured automatically for the duration of the drag, same as
@@ -60,7 +63,6 @@ OSGX_ENABLE_WARNINGS
 
 #include <iostream>
 #include <string>
-#include <utility>
 
 static osg::ref_ptr<osg::Group> createDefaultScene() {
 	auto root = osgx::make_ref<osg::Group>();
@@ -97,22 +99,19 @@ static osg::ref_ptr<osg::Group> createDefaultScene() {
 	return root;
 }
 
-// Adds a small "pawn" (body box + an offset facing marker, so its azimuth is visible at a glance)
-// to `root`, resting on the floor at a fixed height - osgx::PlayerMovementHandler (added by the
-// caller, see the thirdperson branch below) owns the transform's matrix from then on, driving it
-// via WASD.
+// Adds a small "target" (body box + an offset facing marker, so its azimuth is visible at a
+// glance) to `root`, resting on the floor at a fixed height - osgx::PlayerMovementHandler (added
+// by the caller, see the thirdperson branch below) owns the transform's matrix from then on,
+// driving it via WASD.
 //
-// Also adds an empty "anchor" child Group at the pawn's local origin, returned separately for
-// ThirdPersonManipulator::setTrackNode() - NOT the pawn transform itself. NodeTrackerManipulator
-// tracks a node's getBound().center(), not its local origin; tracking `pawn` directly would put
-// the look-at target at the union bound of the body box AND the off-center facing marker, visibly
-// off from the body's actual center. An empty Group has no bound of its own (its center() default
-// is (0,0,0), i.e. its own local origin), so tracking the anchor instead keeps the camera exactly
-// on the pawn's position regardless of whatever asymmetric geometry is attached to it - this also
-// preempts a worse version of the same problem once a skinned/animated model replaces this demo
-// box, whose bound would otherwise shift every frame as it animates.
-static std::pair<osg::ref_ptr<osg::MatrixTransform>, osg::ref_ptr<osg::Node>> addPawn(osg::Group* root) {
-	auto pawn = osgx::make_ref<osg::MatrixTransform>();
+// No separate "anchor" node needed (an earlier version of this function added one specifically to
+// work around osgGA::NodeTrackerManipulator tracking a node's getBound().center() instead of its
+// local origin - that bug, and the workaround, are both gone now that
+// osgx::ThirdPersonManipulator is built on osgx::PlayerFollowManipulator, which tracks a node's
+// live world-space TRANSLATION directly and never touches its bound at all). `target` itself is
+// what ThirdPersonManipulator::setTrackNode() wants.
+static osg::ref_ptr<osg::MatrixTransform> addTarget(osg::Group* root) {
+	auto target = osgx::make_ref<osg::MatrixTransform>();
 	auto body = osgx::make_ref<osg::Geode>();
 	auto bodyShape = osgx::make_ref<osg::ShapeDrawable>(new osg::Box(osg::Vec3(), 0.6f, 0.6f, 1.2f));
 
@@ -127,16 +126,13 @@ static std::pair<osg::ref_ptr<osg::MatrixTransform>, osg::ref_ptr<osg::Node>> ad
 	facingShape->setColor(osg::Vec4(1.0f, 0.1f, 0.1f, 1.0f));
 	facing->addDrawable(facingShape);
 
-	auto anchor = osgx::make_nref<osg::Group>("PawnAnchor");
+	target->addChild(body);
+	target->addChild(facing);
+	target->setMatrix(osg::Matrix::translate(0.0, 0.0, 0.6));
 
-	pawn->addChild(body);
-	pawn->addChild(facing);
-	pawn->addChild(anchor);
-	pawn->setMatrix(osg::Matrix::translate(0.0, 0.0, 0.6));
+	root->addChild(target);
 
-	root->addChild(pawn);
-
-	return {pawn, anchor};
+	return target;
 }
 
 // Bridges osgx::CursorCapture into OrbitAxisManipulator::orbitByDelta(): toggles capture on 'c',
@@ -206,6 +202,7 @@ int main(int argc, char** argv) {
 	ManipulatorType type = ManipulatorType::ORTHO2D;
 	const char* modelPath = nullptr;
 	bool invertY = true; // applied explicitly below for firstperson/thirdperson - see --invert-y
+	bool invertZoom = false; // thirdperson only - see --invert-zoom
 
 	for(int i = 1; i < argc; i++) {
 		if(std::string(argv[i]) == "--type") {
@@ -232,6 +229,16 @@ int main(int argc, char** argv) {
 			invertY = std::string(argv[++i]) == "1";
 		}
 
+		else if(std::string(argv[i]) == "--invert-zoom") {
+			if(i + 1 >= argc || (std::string(argv[i + 1]) != "0" && std::string(argv[i + 1]) != "1")) {
+				std::cerr << "--invert-zoom requires a value of 0 or 1" << std::endl;
+
+				return 1;
+			}
+
+			invertZoom = std::string(argv[++i]) == "1";
+		}
+
 		else modelPath = argv[i];
 	}
 
@@ -253,22 +260,22 @@ int main(int argc, char** argv) {
 
 	else scene = createDefaultScene();
 
-	// thirdperson needs something to track - the pawn's anchor (see addPawn()'s own comment for
-	// why not the pawn transform itself), when there's no explicit model (see the file header
-	// comment); otherwise the loaded model's own root, which at least proves orbit-follow on an
-	// arbitrary node, just without WASD movement (addPawn()'s PlayerMovementHandler pairing below
-	// only applies to the demo pawn, not an arbitrary loaded model).
+	// thirdperson needs something to track - the demo target itself, when there's no explicit
+	// model (see the file header comment); otherwise the loaded model's own root, which at least
+	// proves orbit-follow on an arbitrary node, just without WASD movement (addTarget()'s
+	// PlayerMovementHandler pairing below only applies to the demo target, not an arbitrary loaded
+	// model). `trackTarget` and `target` are the SAME node in the demo-target case - kept as two
+	// variables only because `trackTarget` also needs to hold an arbitrary loaded-model Node in
+	// the other case, where there's no MatrixTransform for PlayerMovementHandler to drive at all.
 	osg::ref_ptr<osg::Node> trackTarget;
-	osg::ref_ptr<osg::MatrixTransform> pawn;
+	osg::ref_ptr<osg::MatrixTransform> target;
 
 	if(type == ManipulatorType::THIRDPERSON) {
 		if(modelPath) trackTarget = scene->getChild(0);
 
 		else {
-			auto [pawnXform, anchor] = addPawn(scene);
-
-			pawn = pawnXform;
-			trackTarget = anchor;
+			target = addTarget(scene);
+			trackTarget = target;
 		}
 	}
 
@@ -441,15 +448,16 @@ int main(int argc, char** argv) {
 
 		manip->setTrackNode(trackTarget);
 		manip->setInvertY(invertY);
+		manip->setInvertZoom(invertZoom);
 		viewer.setCameraManipulator(manip);
 
-		if(pawn.valid()) viewer.addEventHandler(osgx::make_ref<osgx::PlayerMovementHandler>(pawn.get()));
+		if(target.valid()) viewer.addEventHandler(osgx::make_ref<osgx::PlayerMovementHandler>(target.get()));
 
 		std::cout
 			<< "ThirdPersonManipulator" << std::endl
-			<< " W/S move the pawn forward/back, A/D turn it in place (TANK style, no strafe)" << std::endl
-			<< " Left drag orbit (tracks the pawn's own azimuth when not dragging)" << std::endl
-			<< " Middle drag pan, Scroll dolly zoom" << std::endl
+			<< " W/S move the target forward/back, A/D turn it in place (TANK style, no strafe)" << std::endl
+			<< " Left drag orbit (tracks the target's own azimuth when not dragging)" << std::endl
+			<< " Scroll dolly zoom (no pan - PlayerFollowManipulator doesn't implement one)" << std::endl
 			<< " Space/Home reset view" << std::endl
 		;
 	}

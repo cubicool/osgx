@@ -637,16 +637,235 @@ bool FirstPersonManipulator::performMovementRightMouseButton(double, double dx, 
 	return performMouseDeltaMovement(static_cast<float>(dx), static_cast<float>(dy));
 }
 
-// LEFT is OrbitManipulator's own native rotate button - unlike FirstPersonManipulator's RIGHT
-// override (which borrows another button's math because the stock class has none of its own),
-// this forwards to Base's OWN performMovementLeftMouseButton() when LEFT is NOT the configured
-// look button (preserving Orbit's native rotate for whatever button that is instead). When LEFT
-// IS the look button, same capture-active guard as FirstPersonManipulator's RIGHT override above -
-// see PlayerManipulator<Base>'s class comment for why Orbit's own per-event math isn't worth
-// preserving once CursorCapture takes over.
+void PlayerFollowManipulator::_computeTrackCenterAndAzimuth(
+	osg::Vec3d& center,
+	osg::Quat& azimuthRotation
+) const {
+	if(!_trackNode.valid()) {
+		center.set(0.0, 0.0, 0.0);
+		azimuthRotation = osg::Quat();
+
+		return;
+	}
+
+	osg::NodePathList paths = _trackNode->getParentalNodePaths();
+
+	if(paths.empty()) {
+		center.set(0.0, 0.0, 0.0);
+		azimuthRotation = osg::Quat();
+
+		return;
+	}
+
+	osg::Matrixd localToWorld = osg::computeLocalToWorld(paths[0]);
+
+	center = osg::Vec3d(0.0, 0.0, 0.0) * localToWorld;
+
+	// Yaw-only: matches osgx::PlayerMovementHandler's own pure-yaw convention (forward = rotation
+	// * (0, 1, 0)) - this is that formula inverted. Any pitch/roll the tracked node's full world
+	// rotation carries is ignored, a known simplification (see class comment).
+	osg::Vec3d forward = localToWorld.getRotate() * osg::Vec3d(0.0, 1.0, 0.0);
+	double azimuth = std::atan2(-forward.x(), forward.y());
+
+	azimuthRotation = osg::Quat(azimuth, osg::Vec3d(0.0, 0.0, 1.0));
+}
+
+// Camera-to-world. Direct port of osgGA::NodeTrackerManipulator::getMatrix()'s own translate/
+// rotate chain (see class comment) - center/azimuthRotation are the only things that differ.
+osg::Matrixd PlayerFollowManipulator::getMatrix() const {
+	osg::Vec3d center;
+	osg::Quat azimuthRotation;
+
+	_computeTrackCenterAndAzimuth(center, azimuthRotation);
+
+	return
+		osg::Matrixd::translate(0.0, 0.0, _distance) *
+		osg::Matrixd::rotate(_rotation) *
+		osg::Matrixd::rotate(azimuthRotation) *
+		osg::Matrixd::translate(center)
+	;
+}
+
+osg::Matrixd PlayerFollowManipulator::getInverseMatrix() const {
+	osg::Vec3d center;
+	osg::Quat azimuthRotation;
+
+	_computeTrackCenterAndAzimuth(center, azimuthRotation);
+
+	return
+		osg::Matrixd::translate(-center) *
+		osg::Matrixd::rotate(azimuthRotation.inverse()) *
+		osg::Matrixd::rotate(_rotation.inverse()) *
+		osg::Matrixd::translate(0.0, 0.0, -_distance)
+	;
+}
+
+void PlayerFollowManipulator::setByMatrix(const osg::Matrixd& m) {
+	setTransformation(m.getTrans(), m.getRotate());
+}
+
+void PlayerFollowManipulator::setByInverseMatrix(const osg::Matrixd& m) {
+	setByMatrix(osg::Matrixd::inverse(m));
+}
+
+// eye+rotation is underdetermined for "where's center" without already knowing _distance - this
+// path is not exercised by any of this class's own interactive code (drag/wheel mutate _rotation/
+// _distance directly), only by the abstract CameraManipulator/StandardManipulator contract, so an
+// approximation using the CURRENT _distance is good enough.
+void PlayerFollowManipulator::setTransformation(const osg::Vec3d& eye, const osg::Quat& rotation) {
+	osg::Vec3d forward = rotation * osg::Vec3d(0.0, 0.0, -1.0);
+	osg::Vec3d center = eye + forward * _distance;
+	osg::Vec3d up = rotation * osg::Vec3d(0.0, 1.0, 0.0);
+
+	setTransformation(eye, center, up);
+}
+
+void PlayerFollowManipulator::setTransformation(
+	const osg::Vec3d& eye,
+	const osg::Vec3d& center,
+	const osg::Vec3d& up
+) {
+	osg::Vec3d trackCenter;
+	osg::Quat azimuthRotation;
+
+	_computeTrackCenterAndAzimuth(trackCenter, azimuthRotation);
+
+	_distance = (eye - trackCenter).length();
+
+	osg::Matrixd lookAt;
+
+	lookAt.makeLookAt(eye, trackCenter, up);
+
+	// lookAt is a world-to-camera (view) matrix; its rotation inverse is the camera-to-world
+	// rotation, which getMatrix() builds as (_rotation * azimuthRotation) - see OSG's row-vector
+	// quaternion-product convention note on osgx::Ortho2DManipulator's own 3D tilt (q1*q2 applies
+	// q1 first) for why this is the correct order to divide azimuthRotation back out by.
+	osg::Quat totalRotation = lookAt.getRotate().inverse();
+
+	_rotation = totalRotation * azimuthRotation.inverse();
+}
+
+void PlayerFollowManipulator::getTransformation(osg::Vec3d& eye, osg::Quat& rotation) const {
+	osg::Matrixd m = getMatrix();
+
+	eye = m.getTrans();
+	rotation = m.getRotate();
+}
+
+void PlayerFollowManipulator::getTransformation(
+	osg::Vec3d& eye,
+	osg::Vec3d& center,
+	osg::Vec3d& up
+) const {
+	osg::Matrixd m = getMatrix();
+
+	eye = m.getTrans();
+	up = m.getRotate() * osg::Vec3d(0.0, 1.0, 0.0);
+
+	osg::Vec3d forward = m.getRotate() * osg::Vec3d(0.0, 0.0, -1.0);
+
+	center = eye + forward * _distance;
+}
+
+// Behind (-Y, pre-azimuth) and slightly above the tracked node, looking at it - azimuthRotation
+// then re-applies the node's own current facing so "behind" means behind the target, not behind
+// world -Y. Routed through setTransformation() (lookAt-based) rather than a hand-derived
+// quaternion, so this is correct by construction instead of relying on a guessed sign convention.
+void PlayerFollowManipulator::home(const osgGA::GUIEventAdapter&, osgGA::GUIActionAdapter& aa) {
+	osg::Vec3d center;
+	osg::Quat azimuthRotation;
+
+	_computeTrackCenterAndAzimuth(center, azimuthRotation);
+
+	const double tilt = osg::DegreesToRadians(20.0);
+	const double homeDistance = 6.0;
+	osg::Vec3d localOffset(0.0, -std::cos(tilt), std::sin(tilt));
+	osg::Vec3d eye = center + (azimuthRotation * localOffset) * homeDistance;
+
+	setTransformation(eye, center, osg::Vec3d(0.0, 0.0, 1.0));
+
+	aa.requestRedraw();
+}
+
+bool PlayerFollowManipulator::handleKeyDown(const osgGA::GUIEventAdapter& ea, osgGA::GUIActionAdapter& us) {
+	if(ea.getKey() == osgGA::GUIEventAdapter::KEY_Home) {
+		flushMouseEventStack();
+
+		_thrown = false;
+
+		home(ea, us);
+
+		return true;
+	}
+
+	return osgGA::StandardManipulator::handleKeyDown(ea, us);
+}
+
+bool PlayerFollowManipulator::handleMouseWheel(const osgGA::GUIEventAdapter& ea, osgGA::GUIActionAdapter& us) {
+	auto motion = ea.getScrollingMotion();
+
+	if(
+		motion != osgGA::GUIEventAdapter::SCROLL_UP &&
+		motion != osgGA::GUIEventAdapter::SCROLL_DOWN
+	) return false;
+
+	bool zoomIn = (motion == osgGA::GUIEventAdapter::SCROLL_UP);
+
+	if(_invertZoom) zoomIn = !zoomIn;
+
+	_distance *= zoomIn ? (1.0 / _wheelZoomFactor) : _wheelZoomFactor;
+	_distance = std::clamp(_distance, _distanceLimits.x(), _distanceLimits.y());
+
+	us.requestRedraw();
+
+	return true;
+}
+
+void PlayerFollowManipulator::_rotateByDelta(double dx, double dy) {
+	osg::Matrixd rotationMatrix;
+
+	rotationMatrix.makeRotate(_rotation);
+
+	osg::Vec3d sideVector = getSideVector(rotationMatrix);
+	osg::Vec3d localUp(0.0, 0.0, 1.0);
+	osg::Vec3d forwardVector = localUp ^ sideVector;
+
+	sideVector = forwardVector ^ localUp;
+
+	forwardVector.normalize();
+	sideVector.normalize();
+
+	osg::Quat rotateElevation;
+	osg::Quat rotateAzimuth;
+
+	rotateElevation.makeRotate(dy, sideVector);
+	rotateAzimuth.makeRotate(-dx, localUp);
+
+	_rotation = _rotation * rotateElevation * rotateAzimuth;
+}
+
+bool PlayerFollowManipulator::performMovementLeftMouseButton(double, double dx, double dy) {
+	_rotateByDelta(dx, dy);
+
+	return true;
+}
+
+bool PlayerFollowManipulator::performMouseDeltaMovement(float dx, float dy) {
+	_rotateByDelta(dx, dy);
+
+	return true;
+}
+
+// LEFT is PlayerFollowManipulator's own native (and only) rotate button - unlike
+// FirstPersonManipulator's RIGHT override (which borrows another button's math because the stock
+// class it extends has none of its own), this forwards to Base's OWN performMovementLeftMouseButton()
+// when LEFT is NOT the configured look button. When LEFT IS the look button, same capture-active
+// guard as FirstPersonManipulator's RIGHT override above - see PlayerManipulator<Base>'s class
+// comment for why there's no throw-aware path here worth preserving once CursorCapture takes over
+// (PlayerFollowManipulator never implements one to begin with).
 bool ThirdPersonManipulator::performMovementLeftMouseButton(double eventTimeDelta, double dx, double dy) {
 	if(!isLookButton(osgGA::GUIEventAdapter::LEFT_MOUSE_BUTTON)) {
-		return osgGA::NodeTrackerManipulator::performMovementLeftMouseButton(eventTimeDelta, dx, dy);
+		return osgx::PlayerFollowManipulator::performMovementLeftMouseButton(eventTimeDelta, dx, dy);
 	}
 
 	if(isCaptureActive()) return false;
@@ -684,9 +903,9 @@ bool PlayerMovementHandler::handle(const osgGA::GUIEventAdapter& ea, osgGA::GUIA
 
 	_lastFrameTime = t;
 
-	osg::MatrixTransform* pawn = _pawn.get();
+	osg::MatrixTransform* target = _target.get();
 
-	if(dt <= 0.0 || _moveBits == 0 || !pawn) return false;
+	if(dt <= 0.0 || _moveBits == 0 || !target) return false;
 
 	if(_moveBits & TURN_LEFT) _heading += osg::DegreesToRadians(_turnSpeed) * dt;
 	if(_moveBits & TURN_RIGHT) _heading -= osg::DegreesToRadians(_turnSpeed) * dt;
@@ -697,7 +916,7 @@ bool PlayerMovementHandler::handle(const osgGA::GUIEventAdapter& ea, osgGA::GUIA
 	if(_moveBits & MOVE_FORWARD) _position += forward;
 	if(_moveBits & MOVE_BACK) _position -= forward;
 
-	pawn->setMatrix(osg::Matrix::rotate(rotation) * osg::Matrix::translate(_position));
+	target->setMatrix(osg::Matrix::rotate(rotation) * osg::Matrix::translate(_position));
 
 	return false;
 }

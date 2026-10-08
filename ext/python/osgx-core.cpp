@@ -458,7 +458,7 @@ void bind_core(py::module_& m) {
 	// invertY are duplicated across these two bindings rather than shared via a common Python
 	// base, since PlayerManipulator<Base> itself can't be bound (it's a template, not a concrete
 	// type) and neither leaf's OWN C++ base (osgGA::FirstPersonManipulator/
-	// osgGA::NodeTrackerManipulator) is registered in Python either - same situation
+	// osgx::PlayerFollowManipulator) is registered in Python either - same situation
 	// ActionsManipulator<Base> below is already in (TrackballManipulator/OrbitManipulator/
 	// StandardManipulator aren't registered there either), so osgGA.CameraManipulator is as far up
 	// as any of these bindings can reach.
@@ -513,18 +513,17 @@ void bind_core(py::module_& m) {
 	>(
 		m,
 		"ThirdPersonManipulator",
-		"Turntable-follow osgGA.CameraManipulator orbiting trackNode at a fixed distance/height, "
-		"always looking at it (TrackerMode.NODE_CENTER_AND_AZIM, fixed - not exposed as a "
-		"setting). Left-drag orbit is driven by an internally-owned osgx.CursorCapture while "
-		"held - no manual capture wiring needed. No WASD - osgGA.OrbitManipulator has no "
-		"equivalent to moveForward()/moveRight() for this to drive."
+		"Turntable-follow osgGA.CameraManipulator orbiting trackNode at a configurable distance, "
+		"always looking at it and azimuth-locked to its facing (fixed behavior - not exposed as a "
+		"setting, see osgx::PlayerFollowManipulator in Manipulators.hpp). Left-drag orbit is "
+		"driven by an internally-owned osgx.CursorCapture while held - no manual capture wiring "
+		"needed. No WASD - osgx::PlayerFollowManipulator has no equivalent to moveForward()/"
+		"moveRight() for this to drive."
 	)
 		.def(py::init<>(), "Constructs a manipulator with no node set; call trackNode before use.")
 		.def_property(
 			"trackNode",
-			static_cast<osg::Node* (osgGA::NodeTrackerManipulator::*)()>(
-				&osgGA::NodeTrackerManipulator::getTrackNode
-			),
+			&osgx::ThirdPersonManipulator::getTrackNode,
 			&osgx::ThirdPersonManipulator::setTrackNode,
 			"The node the camera orbits and keeps azimuth-locked to."
 		)
@@ -539,8 +538,8 @@ void bind_core(py::module_& m) {
 			"lookButton",
 			&osgx::ThirdPersonManipulator::getLookButton,
 			&osgx::ThirdPersonManipulator::setLookButton,
-			"Which mouse button gates orbit/look (default LEFT_MOUSE_BUTTON, OrbitManipulator's "
-			"own native rotate button)."
+			"Which mouse button gates orbit/look (default LEFT_MOUSE_BUTTON, "
+			"PlayerFollowManipulator's own native - and only - rotate button)."
 		)
 		.def_property(
 			"sensitivity",

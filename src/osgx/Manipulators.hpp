@@ -17,7 +17,6 @@ OSGX_DISABLE_WARNINGS
 #include <osgGA/FirstPersonManipulator>
 #include <osgGA/GUIActionAdapter>
 #include <osgGA/GUIEventAdapter>
-#include <osgGA/NodeTrackerManipulator>
 #include <osgGA/StandardManipulator>
 #include <osgGA/TrackballManipulator>
 #include <osgViewer/View>
@@ -478,7 +477,8 @@ private:
 // Shares the "modern game camera" look concerns - sensitivity, Y-invert, a configurable
 // look-trigger button/style, AND osgx::CursorCapture hide+warp+accumulate - across every osgx
 // gaming-style manipulator built on a different osgGA::StandardManipulator-derived Base
-// (osgx::FirstPersonManipulator today; osgx::ThirdPersonManipulator below).
+// (osgx::FirstPersonManipulator and osgx::PlayerFollowManipulator today, the latter via
+// osgx::ThirdPersonManipulator below).
 //
 // Unlike osgx::OrbitAxisManipulator (see its own class comment), which deliberately leaves
 // CursorCapture composed at the application level so it stays ignorant of any one capture scheme,
@@ -486,33 +486,34 @@ private:
 // hide+warp+accumulate look is the expected default behavior, not an optional bolt-on.
 //
 // performMouseDeltaMovement(dx, dy) is the single hook both osgGA::FirstPersonManipulator and
-// osgGA::OrbitManipulator (parent of NodeTrackerManipulator) independently override at the same
-// StandardManipulator-declared signature - confirmed against the OSG 3.6.5 source, not assumed -
-// so overriding it once here and forwarding to Base:: with an adjusted delta covers every look
-// motion uniformly regardless of Base, whether it's driven by handle()'s FRAME-polled
+// osgx::PlayerFollowManipulator independently override at the same StandardManipulator-declared
+// signature, so overriding it once here and forwarding to Base:: with an adjusted delta covers
+// every look motion uniformly regardless of Base, whether it's driven by handle()'s FRAME-polled
 // CursorCapture::drain() below (both LookStyle::ALWAYS and, while held, CLICK_HOLD) or by a
 // leaf's own performMovement*Button override explicitly funneling into it as a fallback for when
 // CursorCapture itself couldn't be constructed (see isCaptureActive()).
 //
 // A held-button look (LookStyle::CLICK_HOLD) still needs a leaf's OWN performMovement*Button
-// override, because FirstPersonManipulator and OrbitManipulator map their LEFT/MIDDLE/RIGHT hooks
-// to unrelated actions (FP has no native right-button behavior at all; Orbit uses left=rotate,
-// middle=pan, right=zoom) - a uniform override here would wrongly apply look sensitivity to
-// Orbit's pan/zoom. isLookButton() is what a leaf's override checks; see osgx::ThirdPersonManipulator
-// for the shape. Deliberately NOT trying to preserve Base's own per-button math (e.g.
-// OrbitManipulator's throw/momentum-aware rotateTrackball()) once CursorCapture takes over a held
-// look-drag - every real motion sample while captured is a warp artifact as far as Base's own
-// _ga_t0/_ga_t1-based dx/dy tracking is concerned (the same reason
-// OrbitAxisManipulator::setLiveOrbitEnabled() exists), so a leaf's override must go fully inert
-// for that button while isCaptureActive(), deferring entirely to the once-per-frame
-// CursorCapture::drain() in handle() below instead of also processing the live drag event.
+// override, because FirstPersonManipulator and PlayerFollowManipulator map their LEFT/RIGHT hooks
+// to unrelated actions (FP has no native right-button behavior at all; PlayerFollowManipulator's
+// only native control IS left=rotate, with no separate pan/zoom-via-drag to share it with) - a
+// uniform override here would still need isLookButton() gating per leaf regardless. isLookButton()
+// is what a leaf's override checks; see osgx::ThirdPersonManipulator for the shape.
+// PlayerFollowManipulator never implements throw/momentum in the first place (see its own class
+// comment), so unlike a stock OSG orbit manipulator there's no inherited throw-aware path a leaf
+// needs to deliberately bypass once CursorCapture takes over a held look-drag - every real motion
+// sample while captured would be a warp artifact as far as Base's own _ga_t0/_ga_t1-based dx/dy
+// tracking is concerned (the same reason OrbitAxisManipulator::setLiveOrbitEnabled() exists), so a
+// leaf's override must still go fully inert for that button while isCaptureActive(), deferring
+// entirely to the once-per-frame CursorCapture::drain() in handle() below instead of also
+// processing the live drag event.
 // ================================================================================================
 template<typename T>
 concept OSGStandardManipulator = std::derived_from<T, osgGA::StandardManipulator>;
 
 // Hoisted out of PlayerManipulator<Base> itself - it doesn't involve Base at all, so keeping it a
 // template-nested type would give every instantiation (PlayerManipulator<osgGA::FirstPersonManipulator>::LookStyle
-// vs PlayerManipulator<osgGA::NodeTrackerManipulator>::LookStyle, ...) a DISTINCT C++ type despite
+// vs PlayerManipulator<osgx::PlayerFollowManipulator>::LookStyle, ...) a DISTINCT C++ type despite
 // identical meaning - harmless in C++ (nothing compares across them), but it would force
 // osgx::FirstPersonManipulator and osgx::ThirdPersonManipulator's Python bindings into two
 // separate py::enum_<> registrations with two separate Python types for what's conceptually one
@@ -747,34 +748,152 @@ private:
 };
 
 // ================================================================================================
+// PlayerFollowManipulator
+//
+// A from-scratch orbit/follow osgGA::StandardManipulator - NOT built on osgGA::OrbitManipulator/
+// NodeTrackerManipulator. Those inherit hidden behavior osgx::ThirdPersonManipulator doesn't fully
+// control: NodeTrackerManipulator tracks a node's getBound().center() (skewed off-center by
+// asymmetric attached geometry - the real bug that prompted this rebuild, see todo-manipulators.md),
+// performMovementMiddleMouseButton is silently overridden to do nothing (pan disabled without ever
+// being asked for), and getVerticalAxisFixed() silently branches between two unrelated rotate
+// codepaths. This class owns 100% of its own orbit math instead - same precedent as
+// osgx::OrbitAxisManipulator (built directly on bare osgGA::CameraManipulator for the same reason),
+// just one level up on osgGA::StandardManipulator since osgx::PlayerManipulator<Base>'s concept
+// requires it (performMouseDeltaMovement/performMovement*Button are declared there).
+//
+// setTrackNode(node) - NOT the inherited setNode()/getNode() (which keeps its ordinary OSG meaning
+// elsewhere: a home()-fitting bound subject) - tracks a node's live WORLD-SPACE TRANSLATION, read
+// fresh each call via getParentalNodePaths() (first parent path only - multi-parent tracked nodes
+// aren't disambiguated, a known simplification). No bounding-sphere math is involved anywhere in
+// this class, so unlike NodeTrackerManipulator this works correctly on an animating/skinned mesh
+// too, not just a static box.
+//
+// Orbit state is a single accumulated osg::Quat _rotation (NOT separate azimuth/elevation scalars)
+// plus _distance - this is a direct, understood port of osgGA::NodeTrackerManipulator's own
+// elevation/azimuth rotate formula (performMovementLeftMouseButton's getVerticalAxisFixed()==true
+// branch) and translate/rotate matrix chain (getMatrix()/getInverseMatrix()), chosen specifically
+// to reproduce the exact feel already user-verified live ("feels like a standard 3rd person game
+// controller") rather than risking a new feel from an invented spherical-coordinate scheme. The
+// camera's azimuth is additionally locked to the tracked node's own facing (extracted as yaw only
+// from its world rotation via atan2, ignoring any pitch/roll - matches
+// osgx::PlayerMovementHandler's own pure-yaw convention, and is the direct replacement for
+// NodeTrackerManipulator's TrackerMode::NODE_CENTER_AND_AZIM).
+//
+// No pan - not disabled, simply never implemented (performMovementMiddleMouseButton/
+// RightMouseButton are left at StandardManipulator's own no-op default). Zoom is scroll-wheel only
+// via handleMouseWheel(), with setInvertZoom()/getInvertZoom() and setDistanceLimits()/
+// getDistanceLimits() (a plain min/max clamp - NOT OrbitAxisManipulator's viewport-coverage-based
+// auto-clamp, which answers "keep this static object filling the frame" - the wrong question for a
+// camera that's supposed to stay a fixed distance behind a moving character).
+// ================================================================================================
+class PlayerFollowManipulator: public osgGA::StandardManipulator {
+public:
+	OSGX_META_Object(osgx, PlayerFollowManipulator)
+
+	explicit PlayerFollowManipulator(int flags=DEFAULT_SETTINGS): osgGA::StandardManipulator(flags) {}
+
+	OSGX_DISABLE_WARNINGS
+
+		PlayerFollowManipulator(
+			const PlayerFollowManipulator& m,
+			const osg::CopyOp& co=osg::CopyOp::SHALLOW_COPY
+		):
+		osgGA::StandardManipulator(m, co),
+		_trackNode(m._trackNode),
+		_rotation(m._rotation),
+		_distance(m._distance),
+		_distanceLimits(m._distanceLimits),
+		_wheelZoomFactor(m._wheelZoomFactor),
+		_invertZoom(m._invertZoom) {}
+
+	OSGX_ENABLE_WARNINGS
+
+	void setTrackNode(osg::Node* node) { _trackNode = node; }
+	osg::Node* getTrackNode() const { return _trackNode.get(); }
+
+	void setWheelZoomFactor(double f) { _wheelZoomFactor = f; }
+	double getWheelZoomFactor() const { return _wheelZoomFactor; }
+
+	void setDistanceLimits(double minDistance, double maxDistance) {
+		_distanceLimits.set(minDistance, maxDistance);
+	}
+
+	std::pair<double, double> getDistanceLimits() const {
+		return {_distanceLimits.x(), _distanceLimits.y()};
+	}
+
+	// Default false: scrolling "up" zooms in, matching the platform-native convention most other
+	// osgx manipulators (and most everything else) already use. Set true if it reads backwards.
+	void setInvertZoom(bool invert) { _invertZoom = invert; }
+	bool getInvertZoom() const { return _invertZoom; }
+
+	// StandardManipulator interface
+	void setTransformation(const osg::Vec3d& eye, const osg::Quat& rotation) override;
+	void setTransformation(const osg::Vec3d& eye, const osg::Vec3d& center, const osg::Vec3d& up) override;
+	void getTransformation(osg::Vec3d& eye, osg::Quat& rotation) const override;
+	void getTransformation(osg::Vec3d& eye, osg::Vec3d& center, osg::Vec3d& up) const override;
+
+	// CameraManipulator interface
+	void setByMatrix(const osg::Matrixd& m) override;
+	void setByInverseMatrix(const osg::Matrixd& m) override;
+	osg::Matrixd getMatrix() const override;
+	osg::Matrixd getInverseMatrix() const override;
+
+	void home(const osgGA::GUIEventAdapter& ea, osgGA::GUIActionAdapter& aa) override;
+
+protected:
+	bool handleKeyDown(const osgGA::GUIEventAdapter& ea, osgGA::GUIActionAdapter& us) override;
+	bool handleMouseWheel(const osgGA::GUIEventAdapter& ea, osgGA::GUIActionAdapter& us) override;
+	bool performMovementLeftMouseButton(double eventTimeDelta, double dx, double dy) override;
+	bool performMouseDeltaMovement(float dx, float dy) override;
+
+private:
+	// Shared by performMovementLeftMouseButton (drag path) and performMouseDeltaMovement
+	// (CursorCapture-drained path) - both receive conceptually the same "screen delta since last
+	// sample," just sourced differently. Ported verbatim from NodeTrackerManipulator's own
+	// elevation/azimuth update (see class comment) - no eventTimeDelta involved, matching the
+	// original (it only used eventTimeDelta for throw-aware trackball momentum, which this class
+	// deliberately never implements).
+	void _rotateByDelta(double dx, double dy);
+
+	// The tracked node's live world-space translation, plus a yaw-only quaternion derived from
+	// its world rotation (azimuth lock) - NOT its getBound().center(), see class comment.
+	void _computeTrackCenterAndAzimuth(osg::Vec3d& center, osg::Quat& azimuthRotation) const;
+
+	osg::ref_ptr<osg::Node> _trackNode;
+	osg::Quat _rotation;
+	double _distance{6.0};
+	osg::Vec2d _distanceLimits{1e-4, 1e6};
+	double _wheelZoomFactor{1.15};
+	bool _invertZoom{false};
+};
+
+// ================================================================================================
 // ThirdPersonManipulator
 //
-// A osgx::PlayerManipulator<osgGA::NodeTrackerManipulator> leaf - a turntable-follow camera that
-// orbits setTrackNode() (inherited from osgGA::NodeTrackerManipulator) at a configurable distance/
-// height, always looking at it. Look sensitivity, Y-invert, and LookStyle/look-button
-// configuration come from PlayerManipulator<Base>, exactly as osgx::FirstPersonManipulator; this
-// class owns only node-tracking setup. No WASD - OrbitManipulator (NodeTrackerManipulator's base)
-// has no equivalent to moveForward()/moveRight(), so there's no shared movement hook to add it
-// through.
+// A osgx::PlayerManipulator<osgx::PlayerFollowManipulator> leaf - a turntable-follow camera that
+// orbits setTrackNode() (inherited from osgx::PlayerFollowManipulator - see its own class comment
+// for why that's no longer osgGA::NodeTrackerManipulator) at a configurable distance, always
+// looking at it. Look sensitivity, Y-invert, and LookStyle/look-button configuration come from
+// PlayerManipulator<Base>, exactly as osgx::FirstPersonManipulator; this class owns only
+// node-tracking setup. No WASD - PlayerFollowManipulator has no equivalent to moveForward()/
+// moveRight(), so there's no shared movement hook to add it through (same reasoning as before,
+// unchanged by the rebuild).
 //
-// osgGA::OrbitManipulator maps LEFT=rotate/MIDDLE=pan/RIGHT=zoom natively, and LEFT's rotate IS
-// "look" here - so the default look button is LEFT, not PlayerManipulator<Base>'s RIGHT default,
-// and LookStyle defaults to CLICK_HOLD, not ALWAYS (an orbit camera that spins on every raw mouse
-// move with no button held would fight normal pan/zoom use). MIDDLE/RIGHT are left completely
-// untouched (pan/zoom, not look) - only the LEFT-button override below is involved, and it funnels
+// PlayerFollowManipulator's own native left-drag IS its only rotate control (no separate
+// pan/zoom-via-drag to share LEFT with, unlike OrbitManipulator) - so the default look button is
+// still LEFT, not PlayerManipulator<Base>'s RIGHT default, and LookStyle still defaults to
+// CLICK_HOLD, not ALWAYS (an orbit camera that spins on every raw mouse move with no button held
+// would fight normal zoom use). Only the LEFT-button override below is involved, and it funnels
 // into performMouseDeltaMovement() exactly like FirstPersonManipulator's RIGHT-button override
-// does, deliberately NOT preserving OrbitManipulator's own throw/momentum-aware rotate math (see
-// PlayerManipulator<Base>'s own class comment for why: CursorCapture taking over a held look-drag
-// makes Base's own per-event dx/dy tracking unusable anyway, so there is no throw-aware path left
-// worth keeping once it does).
+// does - PlayerFollowManipulator never implements throw/momentum in the first place (see its own
+// class comment), so there's no inherited throw-aware path to deliberately bypass here anymore.
 // ================================================================================================
-class ThirdPersonManipulator: public PlayerManipulator<osgGA::NodeTrackerManipulator> {
+class ThirdPersonManipulator: public PlayerManipulator<PlayerFollowManipulator> {
 public:
 	OSGX_META_Object(osgx, ThirdPersonManipulator)
 
 	ThirdPersonManipulator() {
-		setTrackerMode(NODE_CENTER_AND_AZIM);
-		setRotationMode(ELEVATION_AZIM);
 		setLookStyle(LookStyle::CLICK_HOLD);
 		setLookButton(osgGA::GUIEventAdapter::LEFT_MOUSE_BUTTON);
 	}
@@ -785,7 +904,7 @@ public:
 			const ThirdPersonManipulator& m,
 			const osg::CopyOp& co=osg::CopyOp::SHALLOW_COPY
 		):
-		PlayerManipulator<osgGA::NodeTrackerManipulator>(m, co) {}
+		PlayerManipulator<PlayerFollowManipulator>(m, co) {}
 
 	OSGX_ENABLE_WARNINGS
 
@@ -798,35 +917,35 @@ protected:
 //
 // Drives a tracked osg::MatrixTransform directly - NOT a CameraManipulator (those only ever
 // produce a view matrix; this mutates some OTHER node's transform, which a CameraManipulator has
-// no business doing). TANK-style only: W/S translate along the pawn's own current facing, A/D
-// rotate it in place (no strafe) - pairs naturally with ThirdPersonManipulator's
-// NODE_CENTER_AND_AZIM, since the camera just follows wherever the pawn turns, with no
-// camera-relative math needed.
+// no business doing). TANK-style only: W/S translate along the target's own current facing, A/D
+// rotate it in place (no strafe) - pairs naturally with osgx::PlayerFollowManipulator's
+// azimuth-lock-to-target-facing (see ThirdPersonManipulator), since the camera just follows
+// wherever the target turns, with no camera-relative math needed.
 //
-// CAMERA_RELATIVE (WASD relative to the camera's current azimuth, pawn turns to face its movement
-// direction) is deliberately not built yet - see todo-manipulators.md for the still-open question
-// of whether the eventual mode enum/constraint logic belongs here, partially in
+// CAMERA_RELATIVE (WASD relative to the camera's current azimuth, target turns to face its
+// movement direction) is deliberately not built yet - see todo-manipulators.md for the still-open
+// question of whether the eventual mode enum/constraint logic belongs here, partially in
 // osgx::PlayerManipulator<Base>, or somewhere else entirely.
 //
-// setPawn() snaps the controller's internal position from the pawn's current matrix translation
-// and resets heading to 0 (facing +Y) - it does not attempt to recover an existing heading from an
-// arbitrary incoming matrix. Owns the pawn's matrix outright from that point on: nothing else
-// should call setMatrix() on the same node while this is attached.
+// setTarget() snaps the controller's internal position from the target's current matrix
+// translation and resets heading to 0 (facing +Y) - it does not attempt to recover an existing
+// heading from an arbitrary incoming matrix. Owns the target's matrix outright from that point on:
+// nothing else should call setMatrix() on the same node while this is attached.
 // ================================================================================================
 class PlayerMovementHandler: public osgGA::GUIEventHandler {
 public:
-	explicit PlayerMovementHandler(osg::MatrixTransform* pawn=nullptr) { setPawn(pawn); }
+	explicit PlayerMovementHandler(osg::MatrixTransform* target=nullptr) { setTarget(target); }
 
-	void setPawn(osg::MatrixTransform* pawn) {
-		_pawn = pawn;
+	void setTarget(osg::MatrixTransform* target) {
+		_target = target;
 
-		if(pawn) {
-			_position = pawn->getMatrix().getTrans();
+		if(target) {
+			_position = target->getMatrix().getTrans();
 			_heading = 0.0;
 		}
 	}
 
-	osg::MatrixTransform* getPawn() const { return _pawn.get(); }
+	osg::MatrixTransform* getTarget() const { return _target.get(); }
 
 	// Units/second.
 	void setMoveSpeed(double speed) { _moveSpeed = speed; }
@@ -846,7 +965,7 @@ private:
 		TURN_RIGHT = 0x08
 	};
 
-	osg::observer_ptr<osg::MatrixTransform> _pawn;
+	osg::observer_ptr<osg::MatrixTransform> _target;
 	double _moveSpeed = 2.0;
 	double _turnSpeed = 90.0;
 	unsigned int _moveBits = 0;
