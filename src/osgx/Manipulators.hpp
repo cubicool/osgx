@@ -11,6 +11,7 @@ OSGX_DISABLE_WARNINGS
 #include <osg/Math>
 #include <osg/Matrix>
 #include <osg/Vec2>
+#include <osg/MatrixTransform>
 #include <osg/observer_ptr>
 #include <osgGA/CameraManipulator>
 #include <osgGA/FirstPersonManipulator>
@@ -790,6 +791,68 @@ public:
 
 protected:
 	bool performMovementLeftMouseButton(double eventTimeDelta, double dx, double dy) override;
+};
+
+// ================================================================================================
+// PlayerMovementHandler
+//
+// Drives a tracked osg::MatrixTransform directly - NOT a CameraManipulator (those only ever
+// produce a view matrix; this mutates some OTHER node's transform, which a CameraManipulator has
+// no business doing). TANK-style only: W/S translate along the pawn's own current facing, A/D
+// rotate it in place (no strafe) - pairs naturally with ThirdPersonManipulator's
+// NODE_CENTER_AND_AZIM, since the camera just follows wherever the pawn turns, with no
+// camera-relative math needed.
+//
+// CAMERA_RELATIVE (WASD relative to the camera's current azimuth, pawn turns to face its movement
+// direction) is deliberately not built yet - see todo-manipulators.md for the still-open question
+// of whether the eventual mode enum/constraint logic belongs here, partially in
+// osgx::PlayerManipulator<Base>, or somewhere else entirely.
+//
+// setPawn() snaps the controller's internal position from the pawn's current matrix translation
+// and resets heading to 0 (facing +Y) - it does not attempt to recover an existing heading from an
+// arbitrary incoming matrix. Owns the pawn's matrix outright from that point on: nothing else
+// should call setMatrix() on the same node while this is attached.
+// ================================================================================================
+class PlayerMovementHandler: public osgGA::GUIEventHandler {
+public:
+	explicit PlayerMovementHandler(osg::MatrixTransform* pawn=nullptr) { setPawn(pawn); }
+
+	void setPawn(osg::MatrixTransform* pawn) {
+		_pawn = pawn;
+
+		if(pawn) {
+			_position = pawn->getMatrix().getTrans();
+			_heading = 0.0;
+		}
+	}
+
+	osg::MatrixTransform* getPawn() const { return _pawn.get(); }
+
+	// Units/second.
+	void setMoveSpeed(double speed) { _moveSpeed = speed; }
+	double getMoveSpeed() const { return _moveSpeed; }
+
+	// Degrees/second.
+	void setTurnSpeed(double speed) { _turnSpeed = speed; }
+	double getTurnSpeed() const { return _turnSpeed; }
+
+	bool handle(const osgGA::GUIEventAdapter& ea, osgGA::GUIActionAdapter& aa) override;
+
+private:
+	enum MoveBit: unsigned int {
+		MOVE_FORWARD = 0x01,
+		MOVE_BACK = 0x02,
+		TURN_LEFT = 0x04,
+		TURN_RIGHT = 0x08
+	};
+
+	osg::observer_ptr<osg::MatrixTransform> _pawn;
+	double _moveSpeed = 2.0;
+	double _turnSpeed = 90.0;
+	unsigned int _moveBits = 0;
+	double _lastFrameTime = -1.0;
+	osg::Vec3d _position{0.0, 0.0, 0.0};
+	double _heading = 0.0; // radians about +Z; 0 faces +Y
 };
 
 // ================================================================================================

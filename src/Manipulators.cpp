@@ -654,4 +654,52 @@ bool ThirdPersonManipulator::performMovementLeftMouseButton(double eventTimeDelt
 	return performMouseDeltaMovement(static_cast<float>(dx), static_cast<float>(dy));
 }
 
+bool PlayerMovementHandler::handle(const osgGA::GUIEventAdapter& ea, osgGA::GUIActionAdapter&) {
+	const auto type = ea.getEventType();
+
+	if(type == osgGA::GUIEventAdapter::KEYDOWN) {
+		switch(ea.getKey()) {
+		case 'w': case 'W': _moveBits |= MOVE_FORWARD; return true;
+		case 's': case 'S': _moveBits |= MOVE_BACK; return true;
+		case 'a': case 'A': _moveBits |= TURN_LEFT; return true;
+		case 'd': case 'D': _moveBits |= TURN_RIGHT; return true;
+		default: return false;
+		}
+	}
+
+	if(type == osgGA::GUIEventAdapter::KEYUP) {
+		switch(ea.getKey()) {
+		case 'w': case 'W': _moveBits &= ~static_cast<unsigned int>(MOVE_FORWARD); return true;
+		case 's': case 'S': _moveBits &= ~static_cast<unsigned int>(MOVE_BACK); return true;
+		case 'a': case 'A': _moveBits &= ~static_cast<unsigned int>(TURN_LEFT); return true;
+		case 'd': case 'D': _moveBits &= ~static_cast<unsigned int>(TURN_RIGHT); return true;
+		default: return false;
+		}
+	}
+
+	if(type != osgGA::GUIEventAdapter::FRAME) return false;
+
+	const double t = ea.getTime();
+	const double dt = _lastFrameTime < 0.0 ? 0.0 : t - _lastFrameTime;
+
+	_lastFrameTime = t;
+
+	osg::MatrixTransform* pawn = _pawn.get();
+
+	if(dt <= 0.0 || _moveBits == 0 || !pawn) return false;
+
+	if(_moveBits & TURN_LEFT) _heading += osg::DegreesToRadians(_turnSpeed) * dt;
+	if(_moveBits & TURN_RIGHT) _heading -= osg::DegreesToRadians(_turnSpeed) * dt;
+
+	const osg::Quat rotation(_heading, osg::Vec3d(0.0, 0.0, 1.0));
+	const osg::Vec3d forward = rotation * osg::Vec3d(0.0, _moveSpeed * dt, 0.0);
+
+	if(_moveBits & MOVE_FORWARD) _position += forward;
+	if(_moveBits & MOVE_BACK) _position -= forward;
+
+	pawn->setMatrix(osg::Matrix::rotate(rotation) * osg::Matrix::translate(_position));
+
+	return false;
+}
+
 }

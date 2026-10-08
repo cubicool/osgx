@@ -29,12 +29,14 @@
 //              captured (hide+warp+accumulate) automatically - no manual osgx::CursorCapture
 //              wiring needed here, unlike "orbit" below - see osgx::PlayerManipulator<Base>'s own
 //              class comment in Manipulators.hpp for why.
-// thirdperson  osgx::ThirdPersonManipulator - orbits a slowly-rotating "pawn" marker (added to the
-//              default scene only; ignored when a model path is given) at a fixed distance/
-//              height, proving TrackerMode::NODE_CENTER_AND_AZIM keeps the camera's azimuth locked
-//              to the pawn's own facing instead of drifting independently. Left-drag to orbit
-//              manually in the meantime (the pawn keeps spinning regardless) - the cursor is
-//              captured automatically for the duration of the drag, same as firstperson above.
+// thirdperson  osgx::ThirdPersonManipulator - orbits a "pawn" marker (added to the default scene
+//              only; ignored when a model path is given) at a fixed distance/height, proving
+//              TrackerMode::NODE_CENTER_AND_AZIM keeps the camera's azimuth locked to the pawn's
+//              own facing instead of drifting independently. W/A/S/D drive the pawn itself via
+//              osgx::PlayerMovementHandler (TANK style - W/S move along its current facing, A/D
+//              turn in place, no strafe); left-drag still orbits the camera manually on top of
+//              that. The cursor is captured automatically for the duration of the drag, same as
+//              firstperson above.
 
 #include "osgx/CameraActions.hpp"
 #include "osgx/Callbacks.hpp"
@@ -58,6 +60,7 @@ OSGX_ENABLE_WARNINGS
 
 #include <iostream>
 #include <string>
+#include <utility>
 
 static osg::ref_ptr<osg::Group> createDefaultScene() {
 	auto root = osgx::make_ref<osg::Group>();
@@ -95,11 +98,20 @@ static osg::ref_ptr<osg::Group> createDefaultScene() {
 }
 
 // Adds a small "pawn" (body box + an offset facing marker, so its azimuth is visible at a glance)
-// to `root`, slowly rotating in place via setUpdateCallback() - proves
-// osgx::ThirdPersonManipulator's TrackerMode::NODE_CENTER_AND_AZIM keeps the camera's azimuth
-// locked to the tracked node's own heading instead of drifting independently. Returns the pawn's
-// transform for setTrackNode().
-static osg::ref_ptr<osg::MatrixTransform> addPawn(osg::Group* root) {
+// to `root`, resting on the floor at a fixed height - osgx::PlayerMovementHandler (added by the
+// caller, see the thirdperson branch below) owns the transform's matrix from then on, driving it
+// via WASD.
+//
+// Also adds an empty "anchor" child Group at the pawn's local origin, returned separately for
+// ThirdPersonManipulator::setTrackNode() - NOT the pawn transform itself. NodeTrackerManipulator
+// tracks a node's getBound().center(), not its local origin; tracking `pawn` directly would put
+// the look-at target at the union bound of the body box AND the off-center facing marker, visibly
+// off from the body's actual center. An empty Group has no bound of its own (its center() default
+// is (0,0,0), i.e. its own local origin), so tracking the anchor instead keeps the camera exactly
+// on the pawn's position regardless of whatever asymmetric geometry is attached to it - this also
+// preempts a worse version of the same problem once a skinned/animated model replaces this demo
+// box, whose bound would otherwise shift every frame as it animates.
+static std::pair<osg::ref_ptr<osg::MatrixTransform>, osg::ref_ptr<osg::Node>> addPawn(osg::Group* root) {
 	auto pawn = osgx::make_ref<osg::MatrixTransform>();
 	auto body = osgx::make_ref<osg::Geode>();
 	auto bodyShape = osgx::make_ref<osg::ShapeDrawable>(new osg::Box(osg::Vec3(), 0.6f, 0.6f, 1.2f));
@@ -115,23 +127,16 @@ static osg::ref_ptr<osg::MatrixTransform> addPawn(osg::Group* root) {
 	facingShape->setColor(osg::Vec4(1.0f, 0.1f, 0.1f, 1.0f));
 	facing->addDrawable(facingShape);
 
+	auto anchor = osgx::make_nref<osg::Group>("PawnAnchor");
+
 	pawn->addChild(body);
 	pawn->addChild(facing);
-
-	pawn->setUpdateCallback(new osgx::NodeLambdaCallback(
-		[](osg::Node* node, osg::NodeVisitor* nv) {
-			const double t = nv->getFrameStamp() ? nv->getFrameStamp()->getSimulationTime() : 0.0;
-
-			static_cast<osg::MatrixTransform*>(node)->setMatrix(
-				osg::Matrix::rotate(t * 0.5, osg::Vec3(0.0, 0.0, 1.0)) *
-				osg::Matrix::translate(0.0, 0.0, 0.6)
-			);
-		}
-	));
+	pawn->addChild(anchor);
+	pawn->setMatrix(osg::Matrix::translate(0.0, 0.0, 0.6));
 
 	root->addChild(pawn);
 
-	return pawn;
+	return {pawn, anchor};
 }
 
 // Bridges osgx::CursorCapture into OrbitAxisManipulator::orbitByDelta(): toggles capture on 'c',
@@ -248,13 +253,23 @@ int main(int argc, char** argv) {
 
 	else scene = createDefaultScene();
 
-	// thirdperson needs something to track - the pawn, when there's no explicit model (see the
-	// file header comment); otherwise the loaded model's own root, which at least proves orbit-
-	// follow on an arbitrary node, just without the spinning-azimuth demonstration.
+	// thirdperson needs something to track - the pawn's anchor (see addPawn()'s own comment for
+	// why not the pawn transform itself), when there's no explicit model (see the file header
+	// comment); otherwise the loaded model's own root, which at least proves orbit-follow on an
+	// arbitrary node, just without WASD movement (addPawn()'s PlayerMovementHandler pairing below
+	// only applies to the demo pawn, not an arbitrary loaded model).
 	osg::ref_ptr<osg::Node> trackTarget;
+	osg::ref_ptr<osg::MatrixTransform> pawn;
 
 	if(type == ManipulatorType::THIRDPERSON) {
-		trackTarget = modelPath ? scene->getChild(0) : addPawn(scene).get();
+		if(modelPath) trackTarget = scene->getChild(0);
+
+		else {
+			auto [pawnXform, anchor] = addPawn(scene);
+
+			pawn = pawnXform;
+			trackTarget = anchor;
+		}
 	}
 
 	viewer.setSceneData(scene);
@@ -428,8 +443,11 @@ int main(int argc, char** argv) {
 		manip->setInvertY(invertY);
 		viewer.setCameraManipulator(manip);
 
+		if(pawn.valid()) viewer.addEventHandler(osgx::make_ref<osgx::PlayerMovementHandler>(pawn.get()));
+
 		std::cout
 			<< "ThirdPersonManipulator" << std::endl
+			<< " W/S move the pawn forward/back, A/D turn it in place (TANK style, no strafe)" << std::endl
 			<< " Left drag orbit (tracks the pawn's own azimuth when not dragging)" << std::endl
 			<< " Middle drag pan, Scroll dolly zoom" << std::endl
 			<< " Space/Home reset view" << std::endl
