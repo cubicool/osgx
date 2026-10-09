@@ -4,6 +4,7 @@
 #include "osgx/Library.hpp"
 #include "osgx/Shader.hpp"
 #include "osgx/Shadow.hpp"
+#include "osgx/Skinning.hpp"
 
 OSGX_DISABLE_WARNINGS
 
@@ -37,7 +38,10 @@ namespace {
 // own StateSet (ON|OVERRIDE) - see ShadowMap::create()'s own comment for why. Uses OSG's
 // standard osg_Vertex/osg_ModelViewProjectionMatrix names (auto-bound by OSG, same as every other
 // osgx/pyosg-lighting shader - no explicit addBindAttribLocation() needed) so it works unmodified
-// against any subgraph, not just a specific vertex-attribute convention.
+// against any subgraph, not just a specific vertex-attribute convention. Calls osgx_ApplySkin()
+// unconditionally (same contract PBR_VERTEX_SHADER's own Hook::Skinning slot uses) - normal/tangent
+// are irrelevant to a depth-only pass, so zero vectors are passed; only skinned.position, which
+// osgx_ApplySkin()'s `skin` matrix computes independently of those two arguments, is ever used.
 constexpr const char DEPTH_ONLY_VERTEX_SHADER[] = R"GLSL(
 #version 460 core
 
@@ -45,8 +49,12 @@ in vec4 osg_Vertex;
 
 uniform mat4 osg_ModelViewProjectionMatrix;
 
+#pragma osgx::skinning SKINNING_DECL
+
 void main() {
-	gl_Position = osg_ModelViewProjectionMatrix * osg_Vertex;
+	osgx_SkinnedVertex skinned = osgx_ApplySkin(osg_Vertex, vec3(0.0), vec3(0.0));
+
+	gl_Position = osg_ModelViewProjectionMatrix * skinned.position;
 }
 )GLSL";
 
@@ -57,13 +65,45 @@ void main() {
 }
 )GLSL";
 
-osg::ref_ptr<osg::Program> makeDepthOnlyProgram() {
-	const std::array<osgx::ProgramShader, 2> shaders = {{
-		{osg::Shader::VERTEX, DEPTH_ONLY_VERTEX_SHADER},
-		{osg::Shader::FRAGMENT, DEPTH_ONLY_FRAGMENT_SHADER}
-	}};
+// `hooks` may substitute osgx::Hook::Skinning - see ShadowMap::create()'s own comment for the
+// full contract. Empty `hooks` (every pre-existing caller) keeps sharing ONE compiled/linked
+// Program process-wide via cachedProgram(), identical to this function's behavior before `hooks`
+// existed: the SKINNING_HOOK_IDENTITY text is folded in as a third ProgramShader entry rather than
+// a separately-attached osg::Shader object, so cachedProgram()'s own text-keyed cache still
+// dedupes it correctly. A real override builds its own Program via applyHooks() instead, the same
+// way osgx::PBRGBuffer::create() builds its hooked Program - shadow maps are built at scene-setup
+// time, not per-frame, so paying for a fresh Program object per skinned caster is not a real cost.
+osg::ref_ptr<osg::Program> makeDepthOnlyProgram(const osgx::HookList& hooks) {
+	if(hooks.empty()) {
+		const std::array<osgx::ProgramShader, 3> shaders = {{
+			{osg::Shader::VERTEX, osgx::resolveShaderLibs(DEPTH_ONLY_VERTEX_SHADER)},
+			{osg::Shader::VERTEX, osgx::resolveShaderLibs(osgx::SKINNING_HOOK_IDENTITY), "skinningHook"},
+			{osg::Shader::FRAGMENT, DEPTH_ONLY_FRAGMENT_SHADER}
+		}};
 
-	return osgx::cachedProgram("osgx_shadow_DepthOnly", shaders);
+		return osgx::cachedProgram("osgx_shadow_DepthOnly", shaders);
+	}
+
+	auto prog = osgx::make_nref<osg::Program>("osgx_shadow_DepthOnly");
+	auto* vertexShader = new osg::Shader(
+		osg::Shader::VERTEX, osgx::resolveShaderLibs(DEPTH_ONLY_VERTEX_SHADER)
+	);
+
+	vertexShader->setName(prog->getName() + ".vertex");
+	prog->addShader(vertexShader);
+
+	osgx::applyHooks(prog, hooks, {
+		{osgx::Hook::Skinning, osgx::cachedShader(
+			osg::Shader::VERTEX, osgx::resolveShaderLibs(osgx::SKINNING_HOOK_IDENTITY)
+		)}
+	});
+
+	auto* fragmentShader = new osg::Shader(osg::Shader::FRAGMENT, DEPTH_ONLY_FRAGMENT_SHADER);
+
+	fragmentShader->setName(prog->getName() + ".fragment");
+	prog->addShader(fragmentShader);
+
+	return prog;
 }
 
 // Distance-only Program for ShadowMap::createPoint()'s six-camera cube capture (installed via
@@ -74,6 +114,8 @@ osg::ref_ptr<osg::Program> makeDepthOnlyProgram() {
 // light (CaptureCubeMap positions all six there), so "distance to light" is just the
 // fragment's own view-space distance from the origin - no separate light-position uniform needed
 // here at all, only when SAMPLING the result later.
+// Calls osgx_ApplySkin() unconditionally, same as DEPTH_ONLY_VERTEX_SHADER above and for the same
+// reason - a skinned point-light caster otherwise casts from its bind pose.
 constexpr const char DISTANCE_ONLY_VERTEX_SHADER[] = R"GLSL(
 #version 460 core
 
@@ -84,9 +126,13 @@ uniform mat4 osg_ModelViewProjectionMatrix;
 
 out vec3 vViewPos;
 
+#pragma osgx::skinning SKINNING_DECL
+
 void main() {
-	vViewPos = (osg_ModelViewMatrix * osg_Vertex).xyz;
-	gl_Position = osg_ModelViewProjectionMatrix * osg_Vertex;
+	osgx_SkinnedVertex skinned = osgx_ApplySkin(osg_Vertex, vec3(0.0), vec3(0.0));
+
+	vViewPos = (osg_ModelViewMatrix * skinned.position).xyz;
+	gl_Position = osg_ModelViewProjectionMatrix * skinned.position;
 }
 )GLSL";
 
@@ -102,13 +148,38 @@ void main() {
 }
 )GLSL";
 
-osg::ref_ptr<osg::Program> makeDistanceOnlyProgram() {
-	const std::array<osgx::ProgramShader, 2> shaders = {{
-		{osg::Shader::VERTEX, DISTANCE_ONLY_VERTEX_SHADER},
-		{osg::Shader::FRAGMENT, DISTANCE_ONLY_FRAGMENT_SHADER}
-	}};
+// `hooks` - see makeDepthOnlyProgram()'s own comment; identical contract, separate Program family.
+osg::ref_ptr<osg::Program> makeDistanceOnlyProgram(const osgx::HookList& hooks) {
+	if(hooks.empty()) {
+		const std::array<osgx::ProgramShader, 3> shaders = {{
+			{osg::Shader::VERTEX, osgx::resolveShaderLibs(DISTANCE_ONLY_VERTEX_SHADER)},
+			{osg::Shader::VERTEX, osgx::resolveShaderLibs(osgx::SKINNING_HOOK_IDENTITY), "skinningHook"},
+			{osg::Shader::FRAGMENT, DISTANCE_ONLY_FRAGMENT_SHADER}
+		}};
 
-	return osgx::cachedProgram("osgx_shadow_DistanceOnly", shaders);
+		return osgx::cachedProgram("osgx_shadow_DistanceOnly", shaders);
+	}
+
+	auto prog = osgx::make_nref<osg::Program>("osgx_shadow_DistanceOnly");
+	auto* vertexShader = new osg::Shader(
+		osg::Shader::VERTEX, osgx::resolveShaderLibs(DISTANCE_ONLY_VERTEX_SHADER)
+	);
+
+	vertexShader->setName(prog->getName() + ".vertex");
+	prog->addShader(vertexShader);
+
+	osgx::applyHooks(prog, hooks, {
+		{osgx::Hook::Skinning, osgx::cachedShader(
+			osg::Shader::VERTEX, osgx::resolveShaderLibs(osgx::SKINNING_HOOK_IDENTITY)
+		)}
+	});
+
+	auto* fragmentShader = new osg::Shader(osg::Shader::FRAGMENT, DISTANCE_ONLY_FRAGMENT_SHADER);
+
+	fragmentShader->setName(prog->getName() + ".fragment");
+	prog->addShader(fragmentShader);
+
+	return prog;
 }
 
 // Starting point for ShadowMap::normalOffset, in texels of this map's own footprint - a world-
@@ -219,7 +290,8 @@ ShadowMap makeShadowMap(
 	const ShadowMap::Options& options,
 	const osg::Matrixd& lightView,
 	const osg::Matrixd& lightProj,
-	float texelWorldSize
+	float texelWorldSize,
+	const osgx::HookList& hooks
 ) {
 	ShadowMap result;
 
@@ -266,7 +338,7 @@ ShadowMap makeShadowMap(
 	// with just ON (the convention every osgx::PBRScene/pyosg-lighting Program uses) --
 	// see this function's own header comment for the full rationale.
 	camera->getOrCreateStateSet()->setAttributeAndModes(
-		makeDepthOnlyProgram(), osg::StateAttribute::ON | osg::StateAttribute::OVERRIDE
+		makeDepthOnlyProgram(hooks), osg::StateAttribute::ON | osg::StateAttribute::OVERRIDE
 	);
 
 	result.camera = camera;
@@ -289,7 +361,8 @@ ShadowMap makeShadowMap(
 ShadowMap ShadowMap::create(
 	const osg::Vec3& lightDirection,
 	const ShadowMap::Coverage& coverage,
-	const ShadowMap::Options& options
+	const ShadowMap::Options& options,
+	const HookList& hooks
 ) {
 	osg::Matrixd lightView, lightProj;
 	double extent = 0.0;
@@ -299,15 +372,16 @@ ShadowMap ShadowMap::create(
 	const float texelWorldSize = float(extent * 2.0 / double(options.size));
 
 	return makeShadowMap(
-		"osgx_shadow_DirectionalShadowMap", options, lightView, lightProj, texelWorldSize
+		"osgx_shadow_DirectionalShadowMap", options, lightView, lightProj, texelWorldSize, hooks
 	);
 }
 
 ShadowMap ShadowMap::create(
 	const osg::Vec3& lightDirection,
-	const ShadowMap::Coverage& coverage
+	const ShadowMap::Coverage& coverage,
+	const HookList& hooks
 ) {
-	return create(lightDirection, coverage, Options{});
+	return create(lightDirection, coverage, Options{}, hooks);
 }
 
 ShadowMap ShadowMap::createSpot(
@@ -315,7 +389,8 @@ ShadowMap ShadowMap::createSpot(
 	const osg::Vec3& direction,
 	float outerConeAngle,
 	const ShadowMap::Coverage& coverage,
-	const ShadowMap::Options& options
+	const ShadowMap::Options& options,
+	const HookList& hooks
 ) {
 	osg::Matrixd lightView, lightProj;
 	double distance = 0.0;
@@ -340,7 +415,7 @@ ShadowMap ShadowMap::createSpot(
 	);
 
 	return makeShadowMap(
-		"osgx_shadow_SpotShadowMap", options, lightView, lightProj, texelWorldSize
+		"osgx_shadow_SpotShadowMap", options, lightView, lightProj, texelWorldSize, hooks
 	);
 }
 
@@ -348,9 +423,10 @@ ShadowMap ShadowMap::createSpot(
 	const osg::Vec3& position,
 	const osg::Vec3& direction,
 	float outerConeAngle,
-	const ShadowMap::Coverage& coverage
+	const ShadowMap::Coverage& coverage,
+	const HookList& hooks
 ) {
-	return createSpot(position, direction, outerConeAngle, coverage, Options{});
+	return createSpot(position, direction, outerConeAngle, coverage, Options{}, hooks);
 }
 
 void ShadowMap::updateMatrix() {
@@ -438,7 +514,8 @@ ShadowMap ShadowMap::createPoint(
 	const osg::Vec3& position,
 	const ShadowMap::Coverage& coverage,
 	int cubeSize,
-	const ShadowMap::Options& options
+	const ShadowMap::Options& options,
+	const HookList& hooks
 ) {
 	ShadowMap result;
 
@@ -459,7 +536,7 @@ ShadowMap ShadowMap::createPoint(
 	cubeOptions.nearPlane = 0.05;
 	cubeOptions.farPlane = farPlane;
 	cubeOptions.format = CaptureCubeMap::Format::Distance;
-	cubeOptions.overrideProgram = makeDistanceOnlyProgram();
+	cubeOptions.overrideProgram = makeDistanceOnlyProgram(hooks);
 	cubeOptions.continuous = true;
 	// Clears every non-geometry texel to well past the far plane, so an unoccluded direction's
 	// comparison in osgx_ShadowFactorPoint() always reads as "no occluder" - the cube-map
@@ -488,9 +565,10 @@ ShadowMap ShadowMap::createPoint(
 ShadowMap ShadowMap::createPoint(
 	const osg::Vec3& position,
 	const ShadowMap::Coverage& coverage,
-	int cubeSize
+	int cubeSize,
+	const HookList& hooks
 ) {
-	return createPoint(position, coverage, cubeSize, Options{});
+	return createPoint(position, coverage, cubeSize, Options{}, hooks);
 }
 
 void ShadowMap::repositionPoint(

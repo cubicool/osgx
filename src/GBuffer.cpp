@@ -254,11 +254,28 @@ GBuffer GBuffer::create(
 
 	camera->setClearMask(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 	camera->setClearColor(osg::Vec4(0.0, 0.0, 0.0, 0.0));
-	// Without this, OSG's CullVisitor independently reclamps this camera's own near/far during
-	// its own cull pass (same mechanism as any nested camera - see ShadowMap's identical fix in
-	// Shadow.cpp) - a large receiver plane in view pushes the far plane out and crushes the
-	// depth texture's usable precision for everything closer to the camera on top of it.
-	camera->setComputeNearFarMode(osg::Camera::DO_NOT_COMPUTE_NEAR_FAR);
+	// MUST stay the default COMPUTE_NEAR_FAR_USING_BOUNDING_VOLUMES, not DO_NOT_COMPUTE_NEAR_FAR.
+	// This camera is RELATIVE_RF with an identity local projection, so its effective near/far is
+	// otherwise whatever the ENCLOSING camera's own projection happens to carry - usually an
+	// arbitrary/stale default (e.g. a fresh Viewer's near=1/far=10000), since a model living only
+	// under this nested RTT camera never contributes to the enclosing camera's own near/far
+	// auto-compute. A real-world-scale model (e.g. a glTF prop a few centimeters across) then sits
+	// entirely inside that default near plane and is silently clipped to nothing - every G-buffer
+	// attachment comes back blank. Auto-compute here privately tightens near/far to whatever THIS
+	// camera's own subtree actually contains, every frame, without writing back to the shared
+	// Camera object (same mechanism SSAO::radius's own comment in GBuffer.hpp, re:
+	// DepthProjectionCallback, describes) - this is what keeps a tiny model visible regardless of
+	// what the enclosing camera's projection says.
+	//
+	// Tradeoff: if a large receiver (e.g. a floor) shares this camera alongside a much smaller
+	// subject, auto-compute measures both, and the receiver can push the far plane out far enough
+	// to crush depth precision for the subject. DO_NOT_COMPUTE_NEAR_FAR "fixed" that by disabling
+	// the tightening outright, but that is what caused the silent-clipping bug above - a global,
+	// content-blind flag is the wrong tool for a scene-composition problem. If the precision
+	// tradeoff above resurfaces, tune it via the real scene it shows up in: `camera` is exposed on
+	// the returned GBuffer, so a caller can set a tighter camera->setNearFarRatio() (or split the
+	// receiver onto its own pass) once there is an actual case to tune against, rather than this
+	// function guessing a value blind.
 
 	// Dynamic attachment count (caller-chosen colorFormats span) - AttachmentList's initializer-
 	// list shape needs a compile-time-fixed count, so this stays a loop over RTT's inherited

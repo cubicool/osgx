@@ -555,6 +555,52 @@ void bind_core(py::module_& m) {
 		)
 	;
 
+	// osgx::PlayerMovementHandler (osgx/Manipulators.hpp) - NOT a CameraManipulator, a plain
+	// GUIEventHandler that mutates a tracked osg::MatrixTransform directly. Pairs with
+	// ThirdPersonManipulator.trackNode above (same target node on both sides).
+	py::class_<
+		osgx::PlayerMovementHandler,
+		osgGA::GUIEventHandler,
+		osg::ref_ptr<osgx::PlayerMovementHandler>
+	>(
+		m,
+		"PlayerMovementHandler",
+		"TANK-style WASD GUIEventHandler that drives a tracked osg.MatrixTransform directly - W/S "
+		"translate along the target's own current facing, A/D rotate it in place. Pairs naturally "
+		"with ThirdPersonManipulator.trackNode, which just follows wherever the target turns."
+	)
+		.def(
+			py::init<osg::MatrixTransform*>(), py::arg("target")=nullptr,
+			"Constructs the handler, optionally setting target immediately (same as calling "
+			"setTarget() right after)."
+		)
+		.def_property(
+			"target",
+			&osgx::PlayerMovementHandler::getTarget,
+			&osgx::PlayerMovementHandler::setTarget,
+			"The osg.MatrixTransform this handler owns and mutates. Setting it snaps the internal "
+			"position from the target's current matrix translation and resets heading to 0 (facing "
+			"+Y) - it does not recover an existing heading from an arbitrary incoming matrix."
+		)
+		.def_property(
+			"moveSpeed",
+			&osgx::PlayerMovementHandler::getMoveSpeed,
+			&osgx::PlayerMovementHandler::setMoveSpeed,
+			"W/S movement speed, in world units per second (default 2.0)."
+		)
+		.def_property(
+			"turnSpeed",
+			&osgx::PlayerMovementHandler::getTurnSpeed,
+			&osgx::PlayerMovementHandler::setTurnSpeed,
+			"A/D turn speed, in degrees per second (default 90.0)."
+		)
+		.def_property_readonly(
+			"movingForward",
+			&osgx::PlayerMovementHandler::isMovingForward,
+			"Whether W is currently held, independent of S/A/D."
+		)
+	;
+
 	py::class_<
 		osgx::MultiCameraManipulator,
 		osgGA::CameraManipulator,

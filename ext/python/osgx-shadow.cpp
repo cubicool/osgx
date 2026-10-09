@@ -200,15 +200,30 @@ void bind_shadow(py::module_& m) {
 		.def("valid", &osgx::ShadowMap::valid, "True if camera and depthTexture were successfully built.")
 		.def_static(
 			"create",
-			static_cast<osgx::ShadowMap (*) (
-				const osg::Vec3&, const osgx::ShadowMap::Coverage&, const osgx::ShadowMap::Options&
-			)>(&osgx::ShadowMap::create),
+			[](
+				const osg::Vec3& lightDirection,
+				const osgx::ShadowMap::Coverage& coverage,
+				const osgx::ShadowMap::Options& options,
+				py::object hooks
+			) {
+				return osgx::ShadowMap::create(
+					lightDirection,
+					coverage,
+					options,
+					pyx::unpack_one_or_many<osgx::HookList::value_type>(hooks)
+				);
+			},
 			"lightDirection"_a,
 			"coverage"_a,
 			"options"_a=osgx::ShadowMap::Options{},
+			"hooks"_a=py::dict(),
 			"Builds a directional shadow map (PRE_RENDER depth camera + shadow-matrix uniform) sized "
 			"and placed to keep near:far depth precision sane regardless of scene scale. `camera` "
-			"still needs adding to the scene graph by the caller."
+			"still needs adding to the scene graph by the caller. `hooks` may substitute "
+			"osgx.Hook.Skinning (a VERTEX shader defining osgx_ApplySkin(), e.g. "
+			"osgx.SKINNING_HOOK_LINEAR_BLEND wrapped in osgx.resolveShaderLibs()) - without it, a "
+			"skinned caster's shadow is cast from its bind pose, static, while its visible render "
+			"animates correctly."
 		)
 		.def(
 			"updateMatrix",
@@ -232,19 +247,34 @@ void bind_shadow(py::module_& m) {
 		)
 		.def_static(
 			"createSpot",
-			static_cast<osgx::ShadowMap (*) (
-				const osg::Vec3&, const osg::Vec3&, float, const osgx::ShadowMap::Coverage&,
-				const osgx::ShadowMap::Options&
-			)>(&osgx::ShadowMap::createSpot),
+			[](
+				const osg::Vec3& position,
+				const osg::Vec3& direction,
+				float outerConeAngle,
+				const osgx::ShadowMap::Coverage& coverage,
+				const osgx::ShadowMap::Options& options,
+				py::object hooks
+			) {
+				return osgx::ShadowMap::createSpot(
+					position,
+					direction,
+					outerConeAngle,
+					coverage,
+					options,
+					pyx::unpack_one_or_many<osgx::HookList::value_type>(hooks)
+				);
+			},
 			"position"_a,
 			"direction"_a,
 			"outerConeAngle"_a,
 			"coverage"_a,
 			"options"_a=osgx::ShadowMap::Options{},
+			"hooks"_a=py::dict(),
 			"Builds a spot light's shadow map: a PERSPECTIVE depth camera at `position` looking "
 			"along `direction`, covering `outerConeAngle` (radians, half-angle, as "
 			"LightSet.setSpot()). Near/far bracket the scene bound as seen from the light. A spot "
-			"map usually wants a smaller bias than a directional one (non-linear depth)."
+			"map usually wants a smaller bias than a directional one (non-linear depth). `hooks` - "
+			"see create()'s own docstring; identical contract."
 		)
 		.def(
 			"repositionSpot",
@@ -261,13 +291,26 @@ void bind_shadow(py::module_& m) {
 		)
 		.def_static(
 			"createPoint",
-			static_cast<osgx::ShadowMap (*) (
-				const osg::Vec3&, const osgx::ShadowMap::Coverage&, int, const osgx::ShadowMap::Options&
-			)>(&osgx::ShadowMap::createPoint),
+			[](
+				const osg::Vec3& position,
+				const osgx::ShadowMap::Coverage& coverage,
+				int cubeSize,
+				const osgx::ShadowMap::Options& options,
+				py::object hooks
+			) {
+				return osgx::ShadowMap::createPoint(
+					position,
+					coverage,
+					cubeSize,
+					options,
+					pyx::unpack_one_or_many<osgx::HookList::value_type>(hooks)
+				);
+			},
 			"position"_a,
 			"coverage"_a,
 			"cubeSize"_a=256,
 			"options"_a=osgx::ShadowMap::Options{},
+			"hooks"_a=py::dict(),
 			"Builds a point light's shadow map: an omnidirectional distance CUBE MAP (six "
 			"perspective views written by a distance-only Program) instead of a single 2D depth "
 			"camera - a point light needs visibility in every direction. `cubeSize` is separate "
@@ -275,7 +318,8 @@ void bind_shadow(py::module_& m) {
 			"start small (256, the default) and raise it once a demo's actually running. "
 			"options.extent is unused (no ortho box); options.margin sizes the far plane the same "
 			"way createSpot() does. Add point-shadow-casting geometry to the returned ShadowMap's "
-			"`casters` group (not `camera`, which is None for a point map)."
+			"`casters` group (not `camera`, which is None for a point map). `hooks` - see create()'s "
+			"own docstring; identical contract."
 		)
 		.def(
 			"repositionPoint",

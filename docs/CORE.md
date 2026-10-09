@@ -591,12 +591,16 @@ maps and `MAX_SHADOWED_CUBE` point maps at once (both `2` by default).
   `CaptureCubeMap`-backed `cubeCapture`/`casters` (point), plus `shadowMatrix`/`bias`/
   `normalOffset`/`strength`/`casterIndex` (which `LightSet` index this map shadows, default `0`) —
   read by `ShadowSet::add()`/`sync()`, not attached to a StateSet by `ShadowMap` itself.
-  - `ShadowMap::create(lightDirection, coverage, options={})` — builds an **orthographic**
+  - `ShadowMap::create(lightDirection, coverage, options={}, hooks={})` — builds an **orthographic**
     depth-only camera (the physically-correct frustum shape for a directional, parallel-ray light)
     with its own minimal depth-only `Program` (`ON|OVERRIDE`) — a caster's own, potentially
     expensive, main-render `Program` never runs during the shadow pass. Not glTF-alpha-mask aware
     by design; a caller needing alpha-cutout shadows overrides the Program on that geometry's own
-    StateSet.
+    StateSet. `hooks` may substitute `Hook::Skinning` (same contract `PBRGBuffer::create()`/
+    `PBRScene::create()` take) — the depth-only Program's vertex shader calls `osgx_ApplySkin()`
+    unconditionally, so a skinned caster's shadow tracks its animation instead of casting from the
+    bind pose. Empty `hooks` (the default, every pre-existing caller) still shares one compiled/
+    linked Program process-wide; a real override builds its own.
   - `updateMatrix()` — recomputes `shadowMatrix` from `lightView`/`lightProj` after mutating either
     directly.
   - `reposition(lightDirection, coverage, options={})` — repositions an *existing* `ShadowMap` in
@@ -604,17 +608,18 @@ maps and `MAX_SHADOWED_CUBE` point maps at once (both `2` by default).
     interactively-moving light (e.g. an ImGui-dragged direction). `create()` remains the right call
     for a light fixed at scene-build time. Call `ShadowSet::sync()` afterward if this map belongs
     to one.
-  - `ShadowMap::createSpot(position, direction, outerConeAngle, coverage, options={})` — a spot
-    light's map: a **perspective** depth-only camera at the light's position, looking along
+  - `ShadowMap::createSpot(position, direction, outerConeAngle, coverage, options={}, hooks={})` —
+    a spot light's map: a **perspective** depth-only camera at the light's position, looking along
     `direction` (ray travel direction and half-angle in radians, as `LightSet::setSpot()`),
     covering the outer cone. Near/far bracket the scene bound as seen from the light. Same
     camera/texture/uniforms as `create()`; perspective depth is non-linear, so a spot map usually
-    wants a smaller `bias` (`osgx-shadow --type spot` uses `0.0005`). `repositionSpot(...)` (same
-    arguments) is its `reposition()`.
-  - `ShadowMap::createPoint(position, coverage, cubeSize=256, options={})` — a point light's map:
-    an omnidirectional distance cube map (`CaptureCubeMap`, six real-time perspective views) since
-    a point light needs visibility in every direction. `repositionPoint(...)` is its
-    `reposition()`.
+    wants a smaller `bias` (`osgx-shadow --type spot` uses `0.0005`). `hooks` — same contract as
+    `create()`. `repositionSpot(...)` (same arguments, no `hooks`) is its `reposition()`.
+  - `ShadowMap::createPoint(position, coverage, cubeSize=256, options={}, hooks={})` — a point
+    light's map: an omnidirectional distance cube map (`CaptureCubeMap`, six real-time perspective
+    views) since a point light needs visibility in every direction. `hooks` — same contract as
+    `create()`, applied to the distance-only Program instead of the depth-only one.
+    `repositionPoint(...)` is its `reposition()`.
 - `ShadowSet` — aggregates however many `ShadowMap`s a scene has into the combined uniform arrays
   and `Hook::ShadowFactor` override `shader` that `PBRScene::Options::shadowSet`/
   `PBRLightingPass::Options::shadowSet` read:

@@ -955,6 +955,11 @@ public:
 	void setTurnSpeed(double speed) { _turnSpeed = speed; }
 	double getTurnSpeed() const { return _turnSpeed; }
 
+	// Whether W is currently held (independent of S/A/D) - for driving walk/idle animation state
+	// off the same key state this handler already tracks, rather than re-deriving it from
+	// frame-to-frame target position deltas.
+	bool isMovingForward() const { return (_moveBits & MOVE_FORWARD) != 0; }
+
 	bool handle(const osgGA::GUIEventAdapter& ea, osgGA::GUIActionAdapter& aa) override;
 
 private:

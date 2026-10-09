@@ -204,14 +204,26 @@ struct ShadowMap {
 	// - see this struct's own comment) - a caller whose casting geometry relies on alpha-cutout
 	// shadows needs to override this Program on that geometry's own StateSet with something
 	// alpha-aware (no existing pyosg-lighting example needs this yet).
+	//
+	// `hooks` may substitute osgx::Hook::Skinning (a VERTEX shader defining osgx_ApplySkin(), e.g.
+	// osgx::SKINNING_HOOK_LINEAR_BLEND wrapped in resolveShaderLibs() - same contract
+	// osgx::PBRGBuffer::create()/osgx::PBRScene::create() already take). The depth-only Program's
+	// own vertex shader calls osgx_ApplySkin() unconditionally, same as PBR_VERTEX_SHADER does -
+	// without this, a skinned caster's shadow is cast from its bind pose, static, while its visible
+	// render (through PBRGBuffer/PBRScene's own skinned Program) animates correctly. Empty `hooks`
+	// (every pre-existing caller) keeps sharing ONE compiled/linked Program process-wide, identical
+	// to this function's behavior before `hooks` existed; a real override builds its own Program
+	// instead - shadow maps are built at scene-setup time, not per-frame, so this is not a real cost.
 	static ShadowMap create(
 		const osg::Vec3& lightDirection,
 		const Coverage& coverage,
-		const Options& options
+		const Options& options,
+		const HookList& hooks={}
 	);
 	static ShadowMap create(
 		const osg::Vec3& lightDirection,
-		const Coverage& coverage
+		const Coverage& coverage,
+		const HookList& hooks={}
 	);
 
 	// Recomputes `shadowMatrix` from `lightView`/`lightProj` - call after mutating either
@@ -247,18 +259,21 @@ struct ShadowMap {
 	// used. Everything else - `camera`, `depthTexture`, the uniforms - is the same as create()'s.
 	// `bias` is compared in the map's non-linear depth, so a spot map usually wants a smaller bias
 	// than a directional one.
+	// `hooks` - see create()'s own comment; identical contract, same depth-only Program family.
 	static ShadowMap createSpot(
 		const osg::Vec3& position,
 		const osg::Vec3& direction,
 		float outerConeAngle,
 		const Coverage& coverage,
-		const Options& options
+		const Options& options,
+		const HookList& hooks={}
 	);
 	static ShadowMap createSpot(
 		const osg::Vec3& position,
 		const osg::Vec3& direction,
 		float outerConeAngle,
-		const Coverage& coverage
+		const Coverage& coverage,
+		const HookList& hooks={}
 	);
 
 	// reposition()'s counterpart for a createSpot() map.
@@ -282,17 +297,21 @@ struct ShadowMap {
 	// `cubeSize` is separate from Options::size (which this ignores) since it's six
 	// real-time cameras, not one - start small (256, the default) and raise it once the demo's
 	// actually running. `options.extent` is unused (no ortho box); `options.margin` sizes the far
-	// plane the same way createSpot() does.
+	// plane the same way createSpot() does. `hooks` - see create()'s own comment; the distance-only
+	// Program is a separate family from create()/createSpot()'s depth-only one but takes the same
+	// osgx::Hook::Skinning override.
 	static ShadowMap createPoint(
 		const osg::Vec3& position,
 		const Coverage& coverage,
 		int cubeSize,
-		const Options& options
+		const Options& options,
+		const HookList& hooks={}
 	);
 	static ShadowMap createPoint(
 		const osg::Vec3& position,
 		const Coverage& coverage,
-		int cubeSize=256
+		int cubeSize=256,
+		const HookList& hooks={}
 	);
 
 	// reposition()/repositionSpot()'s counterpart for a createPoint() map - re-aims the six capture
