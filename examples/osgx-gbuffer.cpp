@@ -680,10 +680,50 @@ int main(int argc, char** argv) {
 		}
 	));
 
+	// TEMPORARY A/B diagnostic for the glTF COLOR_0/osgx_hasVertexColor rollout (2026-10-09) -
+	// remove once blopp's own default (src/gltf/Mesh.cpp currently hardcodes `false`, "until I can
+	// decide if we really want this") is settled. 'c' cycles a 3-state OVERRIDE uniform on
+	// gbuffer.gbuffer.camera's own StateSet: normal (no override - whatever each primitive's own
+	// per-mesh uniform says, set by the glTF loader) -> forced OFF -> forced ON -> back to normal.
+	// Same win-over-children mechanism PBRGBuffer::create()'s own Program OVERRIDE already uses,
+	// just for one uniform instead of the whole Program - lets this stay independent of whatever
+	// the loader's own current default is, so flipping that default doesn't also break this toggle.
+	auto vertexColorOverride = osgx::make_ref<osg::Uniform>("osgx_hasVertexColor", false);
+	int vertexColorMode = 0; // 0 = normal (per-mesh), 1 = forced OFF, 2 = forced ON
+
+	viewer.addEventHandler(new osgx::LambdaKeyHandler(
+		'c',
+		[&, vertexColorOverride](const osgGA::GUIEventAdapter&, osgGA::GUIActionAdapter&) {
+			vertexColorMode = (vertexColorMode + 1) % 3;
+
+			auto* ss = gbuffer.gbuffer.camera->getOrCreateStateSet();
+
+			if(vertexColorMode == 0) ss->removeUniform(vertexColorOverride);
+			else {
+				vertexColorOverride->set(vertexColorMode == 2);
+				ss->addUniform(vertexColorOverride, osg::StateAttribute::OVERRIDE);
+			}
+
+			std::cout
+				<< "osgx-gbuffer: vertex color "
+				<< (
+					vertexColorMode == 0 ? "normal (per-mesh, as loaded)"
+					: vertexColorMode == 1 ? "FORCED OFF"
+					: "FORCED ON"
+				)
+				<< std::endl
+			;
+
+			return true;
+		}
+	));
+
 	std::cout
 		<< "osgx-gbuffer: deferred PBRGBuffer::create() + PBRLightingPass::create()" << std::endl
 		<< " 0=lit composite (default) 1=albedo 2=normal 3=material 4=emissive 5=depth 6=SSAO" << std::endl
 		<< " w=dump the shadow camera's own depth texture to osgx-gbuffer-shadow-depth.png" << std::endl
+		<< " c=cycle glTF COLOR_0 vertex color: normal/forced-off/forced-on (A/B comparison, temporary)"
+		<< std::endl
 	;
 
 #ifdef OSGX_IMGUI

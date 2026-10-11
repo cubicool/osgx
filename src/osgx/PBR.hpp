@@ -256,6 +256,7 @@ inline constexpr const char* PBR_VERTEX_SHADER = R"GLSL(
 in vec4 osg_Vertex;
 in vec3 osg_Normal;
 in vec4 osg_Tangent;
+in vec4 osg_Color;
 in vec2 osg_MultiTexCoord0;
 in vec2 osg_MultiTexCoord1;
 in vec2 osg_MultiTexCoord2;
@@ -268,6 +269,7 @@ uniform mat3 osg_NormalMatrix;
 out vec3 vNGeom;
 out vec3 vPosition;
 out vec4 vTangent;
+out vec4 vColor;
 out vec2 vBaseColorUV;
 out vec2 vNormalUV;
 out vec2 vOrmUV;
@@ -279,6 +281,7 @@ void main() {
 	osgx_SkinnedVertex skinned = osgx_ApplySkin(osg_Vertex, osg_Normal, osg_Tangent.xyz);
 	vec4 eyePos = osg_ModelViewMatrix * skinned.position;
 	vPosition = eyePos.xyz;
+	vColor = osg_Color;
 	vBaseColorUV = osg_MultiTexCoord0;
 	vNormalUV = osg_MultiTexCoord1;
 	vOrmUV = osg_MultiTexCoord2;
@@ -336,16 +339,38 @@ layout(binding = @osgx::material.orm@) uniform sampler2D osgx_ormMap;
 layout(binding = @osgx::material.emissive@) uniform sampler2D osgx_emissiveMap;
 )GLSL";
 
-// Reads MATERIAL_INPUTS into an osgx_Material (MATERIAL_STRUCT). Requires MATERIAL_INPUTS and
-// MATERIAL_STRUCT already in scope.
+// osgx_hasVertexColor is a loose (non-UBO) uniform, deliberately NOT a MATERIAL_INPUTS field:
+// whether a mesh's glTF COLOR_0 was present is a per-PRIMITIVE/mesh property, not a per-material
+// one (two primitives can share one material while differing on this), so it can't live inside
+// the shared std140 osgx_MaterialInputs struct. Set true only by the glTF loader
+// (src/gltf/Mesh.cpp, right where COLOR_0 is read) on that primitive's own Geometry StateSet;
+// every other caller (every pre-existing one) leaves it unset, which GL/OSG defaults to false -
+// GET_MATERIAL/GET_ALPHA below are no-ops for vertex color unless this is explicitly true.
+// Required specifically because an unbound generic vertex attribute (a mesh with no COLOR_0 that
+// did NOT go through the glTF loader's own baseColorFactor-filled fallback array) reads OpenGL's
+// default (0,0,0,1) - see osgx_GetShadingNormal()'s own comment on osg_Tangent for the identical
+// gotcha - and because the glTF loader's OWN fallback array is filled with baseColorFactor itself
+// (Mesh.cpp's "Fall back to a solid color if COLOR_0 is absent"), which would double-multiply
+// baseColorFactor into albedo if read unconditionally instead of gated by this flag.
+inline constexpr const char* VERTEX_COLOR_INPUTS = R"GLSL(
+uniform bool osgx_hasVertexColor;
+)GLSL";
+
+// Reads MATERIAL_INPUTS into an osgx_Material (MATERIAL_STRUCT). Requires MATERIAL_INPUTS,
+// MATERIAL_STRUCT, and VERTEX_COLOR_INPUTS already in scope.
 //
 // Every texture read here is conditioned on the matching `has*Map` flag rather than sampled
 // unconditionally: a factor-only material (no baseColorTexture/metallicRoughnessTexture/
 // occlusionTexture - common in the glTF-Sample-Models conformance set, e.g. Fox ships
 // roughnessFactor=0.58 with no texture at all) would otherwise read an unbound texture unit as
 // black/zero and silently discard the authored factor instead of falling back to it.
+//
+// `vertexColor` (PBR_VERTEX_SHADER's vColor, straight from glTF COLOR_0) multiplies into albedo
+// per glTF spec, gated by osgx_hasVertexColor - see VERTEX_COLOR_INPUTS' own comment for why this
+// can't just read vertexColor unconditionally. Applied BEFORE F0 is derived, not after, so a
+// metallic+vertex-colored material's F0 correctly reflects the full albedo.
 inline constexpr const char* GET_MATERIAL = R"GLSL(
-osgx_Material osgx_GetMaterial(vec2 baseColorUV, vec2 ormUV) {
+osgx_Material osgx_GetMaterial(vec2 baseColorUV, vec2 ormUV, vec4 vertexColor) {
 	osgx_Material mat;
 
 	// Base color is texture * factor (glTF), matching GET_ALPHA below; the loader does not
@@ -354,6 +379,7 @@ osgx_Material osgx_GetMaterial(vec2 baseColorUV, vec2 ormUV) {
 
 	if(bool(osgx_materialInputs.hasBaseColorMap))
 		mat.albedo *= texture(osgx_baseColorMap, baseColorUV).rgb;
+	if(osgx_hasVertexColor) mat.albedo *= vertexColor.rgb;
 	mat.ao = bool(osgx_materialInputs.hasOcclusion) ? texture(osgx_ormMap, ormUV).r : 1.0;
 	mat.roughness = bool(osgx_materialInputs.hasMetallicRoughnessMap)
 		? texture(osgx_ormMap, ormUV).g * osgx_materialInputs.roughnessFactor
@@ -385,16 +411,19 @@ vec3 osgx_GetEmissive(vec2 emissiveUV) {
 )GLSL";
 
 // Surface alpha from MATERIAL_INPUTS: the base color map's alpha (when present) times
-// baseColorFactor.a. Returned as a plain value, not baked into a discard, since BLEND callers want
-// the alpha itself; a MASK caller does its own
+// baseColorFactor.a, times glTF COLOR_0's own alpha channel when present (gated by
+// osgx_hasVertexColor - see VERTEX_COLOR_INPUTS' own comment). Returned as a plain value, not
+// baked into a discard, since BLEND callers want the alpha itself; a MASK caller does its own
 // `if(osgx_materialInputs.alphaMode == OSGX_ALPHA_MODE_MASK && alpha < osgx_materialInputs.alphaCutoff) discard;`.
-// Requires MATERIAL_INPUTS already in scope.
+// Requires MATERIAL_INPUTS and VERTEX_COLOR_INPUTS already in scope.
 inline constexpr const char* GET_ALPHA = R"GLSL(
-float osgx_GetAlpha(vec2 baseColorUV) {
+float osgx_GetAlpha(vec2 baseColorUV, float vertexAlpha) {
 	float alpha = bool(osgx_materialInputs.hasBaseColorMap)
 		? texture(osgx_baseColorMap, baseColorUV).a
 		: 1.0
 	;
+
+	if(osgx_hasVertexColor) alpha *= vertexAlpha;
 
 	return alpha * osgx_materialInputs.baseColorFactor.a;
 }

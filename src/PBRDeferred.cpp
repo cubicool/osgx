@@ -94,11 +94,12 @@ osgx_GBuffer osgx_GetGBuffer(vec2 uv) {
 constexpr const char GBUFFER_FRAGMENT_SHADER_SRC[] = R"GLSL(
 #version 460 core
 
-#pragma osgx::pbr MATERIAL_STRUCT, MATERIAL_INPUTS, GET_MATERIAL, GET_SHADING_NORMAL, GET_EMISSIVE, GET_ALPHA
+#pragma osgx::pbr MATERIAL_STRUCT, MATERIAL_INPUTS, VERTEX_COLOR_INPUTS, GET_MATERIAL, GET_SHADING_NORMAL, GET_EMISSIVE, GET_ALPHA
 
 in vec3 vNGeom;
 in vec3 vPosition;
 in vec4 vTangent;
+in vec4 vColor;
 in vec2 vBaseColorUV;
 in vec2 vNormalUV;
 in vec2 vOrmUV;
@@ -111,12 +112,12 @@ layout(location = 3) out vec4 gEmissive; // rgb = emissive (HDR), a = alpha cove
 layout(location = 4) out vec4 gPosition; // rgb = view-space position
 
 void main() {
-	float alpha = osgx_GetAlpha(vBaseColorUV);
+	float alpha = osgx_GetAlpha(vBaseColorUV, vColor.a);
 
 	if(osgx_materialInputs.alphaMode == OSGX_ALPHA_MODE_MASK && alpha < osgx_materialInputs.alphaCutoff) discard;
 
 	vec3 N = osgx_GetShadingNormal(vNGeom, vTangent, vPosition, vNormalUV);
-	osgx_Material mat = osgx_GetMaterial(vBaseColorUV, vOrmUV);
+	osgx_Material mat = osgx_GetMaterial(vBaseColorUV, vOrmUV, vColor);
 
 	gAlbedo = vec4(mat.albedo, mat.ao);
 	gNormal = vec4(normalize(N), 0.0);

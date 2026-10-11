@@ -17,6 +17,7 @@ OSGX_DISABLE_WARNINGS
 
 #include <osg/Geode>
 #include <osg/Geometry>
+#include <osg/Uniform>
 
 #include <osgDB/Options>
 
@@ -105,7 +106,17 @@ osg::Group* MeshBuilder::makeMesh(const tg3_mesh& mesh, int skinIdx) const {
 
 			if(tg3_str_equals_cstr(attrName, "POSITION")) geom->setVertexArray(_arrays[arrayIndex]);
 			else if(tg3_str_equals_cstr(attrName, "NORMAL")) geom->setNormalArray(_arrays[arrayIndex]);
-			else if(tg3_str_equals_cstr(attrName, "COLOR_0")) geom->setColorArray(_arrays[arrayIndex]);
+			else if(tg3_str_equals_cstr(attrName, "COLOR_0")) {
+				geom->setColorArray(_arrays[arrayIndex]);
+				// osgx::PBR.hpp's VERTEX_COLOR_INPUTS - unset (false) is the correct default for
+				// every OTHER primitive, including ones that fall through to the solid-color
+				// fallback below (filled with baseColorFactor, which must NOT also be read as a
+				// vertex color multiplier or it would apply twice).
+				//
+				// TODO: TEMPORARILY DISABLED, until I can decide if we really want this. :)
+				// In the meantime, it can be manually overridden for experimentation.
+				geom->getOrCreateStateSet()->addUniform(new osg::Uniform("osgx_hasVertexColor", false));
+			}
 			else if(tg3_str_equals_cstr(attrName, "TANGENT")) {
 				_arrays[arrayIndex]->setBinding(osg::Array::BIND_PER_VERTEX);
 

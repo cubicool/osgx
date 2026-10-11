@@ -34,8 +34,10 @@ OSGX_DISABLE_WARNINGS
 #include <osg/Group>
 #include <osg/Image>
 #include <osg/Notify>
+#include <osg/StateAttribute>
 #include <osg/Texture2D>
 #include <osg/TextureCubeMap>
+#include <osg/Uniform>
 #include <osg/Vec3>
 #include <osg/Vec4>
 #include <osg/observer_ptr>
@@ -527,6 +529,47 @@ int main(int argc, char** argv) {
 	}
 
 	else viewer.setCameraManipulator(new osgGA::TrackballManipulator());
+
+	// TEMPORARY A/B diagnostic for the glTF COLOR_0/osgx_hasVertexColor rollout (2026-10-09) -
+	// same toggle as examples/osgx-gbuffer.cpp's own 'c' key (see its comment for the full
+	// rationale); remove once blopp's own default (src/gltf/Mesh.cpp currently hardcodes `false`)
+	// is settled. Not gated behind --diagnostics - always available, independent of that flag.
+	// `model`'s own StateSet is where PBRScene::create() already attaches its Program (PBRScene.cpp),
+	// so it's a guaranteed ancestor of every primitive underneath carrying the per-mesh uniform.
+	auto vertexColorOverride = osgx::make_ref<osg::Uniform>("osgx_hasVertexColor", false);
+	int vertexColorMode = 0; // 0 = normal (per-mesh), 1 = forced OFF, 2 = forced ON
+
+	viewer.addEventHandler(new osgx::LambdaKeyHandler(
+		'c',
+		[&, vertexColorOverride](const osgGA::GUIEventAdapter&, osgGA::GUIActionAdapter&) {
+			vertexColorMode = (vertexColorMode + 1) % 3;
+
+			auto* ss = model->getOrCreateStateSet();
+
+			if(vertexColorMode == 0) ss->removeUniform(vertexColorOverride);
+			else {
+				vertexColorOverride->set(vertexColorMode == 2);
+				ss->addUniform(vertexColorOverride, osg::StateAttribute::OVERRIDE);
+			}
+
+			std::cout
+				<< "osgx-gltf-viewer: vertex color "
+				<< (
+					vertexColorMode == 0 ? "normal (per-mesh, as loaded)"
+					: vertexColorMode == 1 ? "FORCED OFF"
+					: "FORCED ON"
+				)
+				<< std::endl
+			;
+
+			return true;
+		}
+	));
+
+	std::cout
+		<< "c=cycle glTF COLOR_0 vertex color: normal/forced-off/forced-on (A/B comparison, temporary)"
+		<< std::endl
+	;
 
 	// Diagnostics, ported from pyosg-khronos-viewer.py: 1/2/3 pick debugMode; N/R toggle the
 	// normal/roughness maps.

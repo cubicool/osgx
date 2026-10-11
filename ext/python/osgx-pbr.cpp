@@ -28,6 +28,7 @@ void bind_pbr(py::module_& m) {
 	m.attr("TONEMAP_DECL") = osgx::TONEMAP_DECL;
 	m.attr("TONEMAP_HOOK_DEFAULT") = osgx::TONEMAP_HOOK_DEFAULT;
 	m.attr("MATERIAL_INPUTS") = osgx::MATERIAL_INPUTS;
+	m.attr("VERTEX_COLOR_INPUTS") = osgx::VERTEX_COLOR_INPUTS;
 	m.attr("GET_MATERIAL") = osgx::GET_MATERIAL;
 	m.attr("GET_EMISSIVE") = osgx::GET_EMISSIVE;
 	m.attr("GET_ALPHA") = osgx::GET_ALPHA;

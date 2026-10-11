@@ -210,6 +210,7 @@ void registerPBRShaderLibs() {
 		{"DIRECT_LIGHT", "osgx_DirectLight", DIRECT_LIGHT},
 		{"DIRECT_LIGHT_SPHERE", "osgx_DirectLightSphere", DIRECT_LIGHT_SPHERE},
 		{"MATERIAL_INPUTS", "osgx_MaterialInputs", MATERIAL_INPUTS},
+		{"VERTEX_COLOR_INPUTS", "osgx_hasVertexColor", VERTEX_COLOR_INPUTS},
 		{"GET_MATERIAL", "osgx_GetMaterial", GET_MATERIAL},
 		{"GET_EMISSIVE", "osgx_GetEmissive", GET_EMISSIVE},
 		{"GET_ALPHA", "osgx_GetAlpha", GET_ALPHA},

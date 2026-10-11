@@ -25,7 +25,7 @@ constexpr const char FULL_PBR_FRAGMENT_SHADER_SRC[] = R"GLSL(
 
 const float PI = 3.14159265359;
 
-#pragma osgx::pbr MATERIAL_STRUCT, MATERIAL_INPUTS, GET_MATERIAL, GET_SHADING_NORMAL, GET_EMISSIVE, GET_ALPHA, F_MULTISCATTER, SPECULAR_AA, TONEMAP_DECL
+#pragma osgx::pbr MATERIAL_STRUCT, MATERIAL_INPUTS, VERTEX_COLOR_INPUTS, GET_MATERIAL, GET_SHADING_NORMAL, GET_EMISSIVE, GET_ALPHA, F_MULTISCATTER, SPECULAR_AA, TONEMAP_DECL
 #pragma osgx::light DIRECT_LIGHTING_DECL
 #ifdef OSGX_PBR_ENVIRONMENT
 #pragma osgx::environment ENVIRONMENT_INPUTS, ENVIRONMENT_SAMPLE, ENVIRONMENT_LIGHTING
@@ -34,6 +34,7 @@ const float PI = 3.14159265359;
 in vec3 vNGeom;
 in vec3 vPosition;
 in vec4 vTangent;
+in vec4 vColor;
 in vec2 vBaseColorUV;
 in vec2 vNormalUV;
 in vec2 vOrmUV;
@@ -64,7 +65,7 @@ vec3 osgx_LinearToSRGB(vec3 c) {
 }
 
 void main() {
-	float alpha = osgx_GetAlpha(vBaseColorUV);
+	float alpha = osgx_GetAlpha(vBaseColorUV, vColor.a);
 
 	if(osgx_materialInputs.alphaMode == OSGX_ALPHA_MODE_MASK && alpha < osgx_materialInputs.alphaCutoff) discard;
 
@@ -74,7 +75,7 @@ void main() {
 	if(disableNormalMap != 0) N = normalize(vNGeom);
 #endif
 	vec3 V = normalize(-vPosition);
-	osgx_Material mat = osgx_GetMaterial(vBaseColorUV, vOrmUV);
+	osgx_Material mat = osgx_GetMaterial(vBaseColorUV, vOrmUV, vColor);
 
 
 #ifdef OSGX_PBR_DIAGNOSTICS
