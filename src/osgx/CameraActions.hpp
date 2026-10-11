@@ -79,21 +79,15 @@ struct Viewpoint {
 // way - something that never finishes can't be "removed on finish".
 class FlyToCallback: public osg::Callback {
 public:
-	// Note: delegates via explicit std::vector<...>{...} construction, not a bare {target}/
-	// {duration} braced-init-list - a single-element brace-list whose element type already
-	// matches this OTHER constructor's own parameter type is a better (identity) conversion than
-	// the vector's initializer_list constructor (a user-defined conversion), so a bare {target}
-	// resolves right back to THIS constructor - infinite self-delegation, caught at compile time
-	// ("constructor delegates to itself"), not a runtime bug, but worth this comment so nobody
-	// "simplifies" it back.
+	// Defined out of line: osg::Callback has a virtual osg::Object base, so with MSVC every
+	// constructor (delegating ones included) writes this class's vtable pointers, and those vtables
+	// are data that the osgx DLL cannot export without dllimport annotations.
 	FlyToCallback(
 		const Viewpoint& target,
 		double duration,
 		std::function<float(float)> ease=defaultEase,
 		osgAnimation::Motion::TimeBehaviour tb=osgAnimation::Motion::CLAMP
-	): FlyToCallback(
-		std::vector<Viewpoint>{target}, std::vector<double>{duration}, std::move(ease), tb
-	) {}
+	);
 
 	// waypoints.size() must equal durations.size() and be non-empty (throws std::invalid_argument
 	// otherwise). Leg i flies from waypoints[i - 1] (or the camera's captured starting pose, for

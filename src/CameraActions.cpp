@@ -46,6 +46,21 @@ float defaultEase(float t) {
 	return result;
 }
 
+// Delegates via explicit std::vector<...>{...} construction, not a bare {target}/{duration}
+// braced-init-list - a single-element brace-list whose element type already matches this OTHER
+// constructor's own parameter type is a better (identity) conversion than the vector's
+// initializer_list constructor (a user-defined conversion), so a bare {target} resolves right back
+// to THIS constructor - infinite self-delegation, caught at compile time ("constructor delegates
+// to itself"), not a runtime bug, but worth this comment so nobody "simplifies" it back.
+FlyToCallback::FlyToCallback(
+	const Viewpoint& target,
+	double duration,
+	std::function<float(float)> ease,
+	osgAnimation::Motion::TimeBehaviour tb
+): FlyToCallback(
+	std::vector<Viewpoint>{target}, std::vector<double>{duration}, std::move(ease), tb
+) {}
+
 FlyToCallback::FlyToCallback(
 	std::vector<Viewpoint> waypoints,
 	std::vector<double> durations,
