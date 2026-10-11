@@ -1,3 +1,8 @@
+import gc
+import sys
+import weakref
+
+import numpy as np
 import pytest
 
 import osgx
@@ -181,3 +186,205 @@ def test_profiler_timings_are_nonnegative_after_a_real_upload(viewer):
 	assert texture.getAverageWaitMilliseconds(contextID) >= 0.0
 	# Unexercised contexts report 0, not an error.
 	assert texture.getAverageUploadMilliseconds(contextID + 1) == 0.0
+
+class ScriptedSource:
+	"""A FrameSource returning whatever `frame` currently holds, or raising it if it's an exception."""
+
+	def __init__(self, frame):
+		self.frame = frame
+
+	def __call__(self):
+		if isinstance(self.frame, Exception):
+			raise self.frame
+
+		return self.frame
+
+def test_frame_size():
+	assert osgx.PBOTexture(TEX, TEX, GL_RGBA, SolidSource(CLEAR)).frameSize == TEX * TEX * 4
+	assert osgx.PBOTexture(TEX, TEX, GL_RGB, SolidSource(CLEAR)).frameSize == TEX * TEX * 3
+	assert osgx.PBOTexture(TEX, TEX, GL_RED, SolidSource(CLEAR)).frameSize == TEX * TEX
+
+def test_numpy_frame_renders_exact_color(viewer):
+	source = ScriptedSource(np.full((TEX, TEX, 4), (255, 0, 0, 255), dtype=np.uint8))
+
+	make_scene(viewer, osgx.PBOTexture(TEX, TEX, GL_RGBA, source))
+	warm_up(viewer, source)
+
+	assert center_pixel(render_once(viewer)) == (255, 0, 0, 255)
+
+def _assert_bad_frame_skipped(viewer, monkeypatch, bad, exc_type):
+	# Errors from the frame source happen inside the draw traversal, with no Python caller to raise
+	# to, so they're reported via sys.unraisablehook instead. Patched here in the test body, not in
+	# a fixture: pytest installs its own hook at the start of each test's call phase.
+	unraisable = []
+
+	monkeypatch.setattr(sys, "unraisablehook", unraisable.append)
+
+	good = bytes((0, 255, 0, 255)) * (TEX * TEX)
+	source = ScriptedSource(good)
+
+	make_scene(viewer, osgx.PBOTexture(TEX, TEX, GL_RGBA, source))
+	warm_up(viewer, source)
+
+	assert center_pixel(render_once(viewer)) == (0, 255, 0, 255)
+
+	source.frame = bad
+
+	assert center_pixel(render_once(viewer)) == (0, 255, 0, 255)
+	assert len(unraisable) == 1
+	assert unraisable[0].exc_type is exc_type
+
+	# The source recovers as soon as it returns a valid frame again.
+	source.frame = bytes((0, 0, 255, 255)) * (TEX * TEX)
+
+	assert center_pixel(render_once(viewer)) == (0, 0, 255, 255)
+	assert len(unraisable) == 1
+
+def test_short_frame_is_skipped(viewer, monkeypatch):
+	_assert_bad_frame_skipped(viewer, monkeypatch, bytes(TEX * TEX * 4 - 1), ValueError)
+
+def test_long_frame_is_skipped(viewer, monkeypatch):
+	_assert_bad_frame_skipped(viewer, monkeypatch, bytes(TEX * TEX * 4 + 4), ValueError)
+
+def test_strided_frame_is_skipped(viewer, monkeypatch):
+	strided = np.zeros((TEX, TEX, 8), dtype=np.uint8)[:, :, :4]
+
+	_assert_bad_frame_skipped(viewer, monkeypatch, strided, ValueError)
+
+def test_wrong_dtype_frame_is_skipped(viewer, monkeypatch):
+	_assert_bad_frame_skipped(viewer, monkeypatch, np.zeros(TEX * TEX * 4, dtype=np.float32), TypeError)
+
+def test_non_buffer_frame_is_skipped(viewer, monkeypatch):
+	_assert_bad_frame_skipped(viewer, monkeypatch, "not a buffer", TypeError)
+
+def test_raising_source_is_skipped(viewer, monkeypatch):
+	_assert_bad_frame_skipped(viewer, monkeypatch, RuntimeError("boom"), RuntimeError)
+
+def test_source_released_with_texture():
+	source = SolidSource(CLEAR)
+	ref = weakref.ref(source)
+	texture = osgx.PBOTexture(TEX, TEX, GL_RGBA, source)
+
+	del source
+	gc.collect()
+
+	assert ref() is not None
+
+	del texture
+	gc.collect()
+
+	assert ref() is None
+
+def test_replaced_source_released(viewer):
+	# Rendered first, so the source's last frame buffer is held too, not just the callable.
+	source = SolidSource((255, 0, 0, 255))
+	ref = weakref.ref(source)
+	texture = osgx.PBOTexture(TEX, TEX, GL_RGBA, source)
+
+	make_scene(viewer, texture)
+	render_once(viewer)
+
+	del source
+
+	texture.setFrameSource(SolidSource((0, 255, 0, 255)))
+	gc.collect()
+
+	assert ref() is None
+
+class SolidFrameSource(osgx.PBOTexture.FrameSource):
+	"""The FrameSource-subclass equivalent of SolidSource, recording the texture next() receives."""
+
+	def __init__(self, color):
+		super().__init__()
+
+		self.color = color
+		self.textures = []
+
+	def next(self, texture):
+		self.textures.append(texture)
+
+		return bytes(self.color) * (TEX * TEX)
+
+def test_frame_source_subclass_renders(viewer):
+	source = SolidFrameSource((255, 0, 255, 255))
+	texture = osgx.PBOTexture(TEX, TEX, GL_RGBA, source)
+
+	make_scene(viewer, texture)
+
+	assert center_pixel(render_once(viewer)) == (255, 0, 255, 255)
+	assert source.textures and all(t is texture for t in source.textures)
+
+def test_frame_source_subclass_kept_alive_while_set(viewer):
+	# No Python reference besides the texture's own: the slot must keep the subclass instance (and
+	# so its next() override) alive, or C++ would find no override to call.
+	texture = osgx.PBOTexture(TEX, TEX, GL_RGBA, SolidFrameSource((0, 255, 255, 255)))
+
+	gc.collect()
+
+	make_scene(viewer, texture)
+
+	assert center_pixel(render_once(viewer)) == (0, 255, 255, 255)
+
+def test_frame_source_property_identity():
+	source = SolidFrameSource(CLEAR)
+	texture = osgx.PBOTexture(TEX, TEX, GL_RGBA, source)
+
+	assert texture.frameSource is source
+
+	fn = SolidSource(CLEAR)
+	texture.frameSource = fn
+
+	assert texture.frameSource is fn
+
+	texture.frameSource = None
+
+	assert texture.frameSource is None
+	assert osgx.PBOTexture(TEX, TEX, GL_RGBA).frameSource is None
+
+def test_cleared_frame_source_keeps_previous_frame(viewer):
+	texture = osgx.PBOTexture(TEX, TEX, GL_RGBA, SolidSource((255, 255, 0, 255)))
+
+	make_scene(viewer, texture)
+	render_once(viewer)
+
+	texture.frameSource = None
+
+	assert center_pixel(render_once(viewer)) == (255, 255, 0, 255)
+
+def test_frame_source_subclass_without_next_is_skipped(viewer, monkeypatch):
+	class NoNext(osgx.PBOTexture.FrameSource):
+		pass
+
+	unraisable = []
+
+	monkeypatch.setattr(sys, "unraisablehook", unraisable.append)
+
+	texture = osgx.PBOTexture(TEX, TEX, GL_RGBA, SolidSource((0, 255, 0, 255)))
+
+	make_scene(viewer, texture)
+	render_once(viewer)
+
+	texture.frameSource = NoNext()
+
+	assert center_pixel(render_once(viewer)) == (0, 255, 0, 255)
+	assert len(unraisable) == 1
+	assert unraisable[0].exc_type is TypeError
+
+def test_frame_source_subclass_released_when_replaced():
+	source = SolidFrameSource(CLEAR)
+	ref = weakref.ref(source)
+	texture = osgx.PBOTexture(TEX, TEX, GL_RGBA, source)
+
+	del source
+	gc.collect()
+
+	assert ref() is not None
+
+	texture.frameSource = None
+	gc.collect()
+
+	assert ref() is None
+
+def test_invalid_frame_source_raises():
+	with pytest.raises(ValueError):
+		osgx.PBOTexture(TEX, TEX, GL_RGBA, 42)

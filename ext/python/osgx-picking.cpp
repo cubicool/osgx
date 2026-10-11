@@ -22,20 +22,20 @@ osgx::PickRule toPickRule(PickRuleKind kind) {
 	}
 }
 
-// Validates and unwraps a py::buffer for the N*N RGBA pick-rule functions below.
-const uint8_t* pickBufferPtr(const py::buffer& region, int n) {
-	py::buffer_info info = region.request();
-	auto totalBytes = static_cast<py::ssize_t>(info.size) * info.itemsize;
-	auto needed = static_cast<py::ssize_t>(n) * n * 4;
+// Validates a py::buffer as at least n*n C-contiguous RGBA8 pixels for the pick-rule functions
+// below; the returned BufferElements keeps the buffer view alive while a rule reads `data`.
+pyx::BufferElements<uint8_t> pickBuffer(const py::buffer& region, int n) {
+	if(n < 1) throw py::value_error("pick region size n must be >= 1, got " + std::to_string(n));
 
-	if(totalBytes < needed) {
-		throw std::runtime_error(
-			"pick region buffer too small: need " + std::to_string(needed) +
-			" bytes for n=" + std::to_string(n) + ", got " + std::to_string(totalBytes)
-		);
-	}
+	auto pixels = pyx::unpack_buffer<uint8_t>(region, 4);
+	auto needed = static_cast<size_t>(n) * static_cast<size_t>(n);
 
-	return reinterpret_cast<const uint8_t*>(info.ptr);
+	if(pixels.count < needed) throw py::value_error(
+		"pick region buffer too small: need " + std::to_string(needed) + " RGBA pixels for n=" +
+		std::to_string(n) + ", got " + std::to_string(pixels.count)
+	);
+
+	return pixels;
 }
 
 }
@@ -63,7 +63,7 @@ void bind_picking(py::module_& m) {
 
 	m.def(
 		"decodePickID",
-		[](py::buffer px) { return osgx::decodePickID(pickBufferPtr(px, 1)); },
+		[](py::buffer px) { return osgx::decodePickID(pickBuffer(px, 1).data); },
 		"pixel"_a,
 		"Decode a 32-bit pick ID from a 4-byte RGBA buffer: "
 		"R=bits[7:0], G=bits[15:8], B=bits[23:16], A=bits[31:24]."
@@ -89,7 +89,7 @@ void bind_picking(py::module_& m) {
 
 	m.def(
 		"pickCenter",
-		[](py::buffer region, int n) { return osgx::pickCenter(pickBufferPtr(region, n), n); },
+		[](py::buffer region, int n) { return osgx::pickCenter(pickBuffer(region, n).data, n); },
 		"region"_a, "n"_a,
 		"Center pixel wins - semantics identical to n=1; larger n widens the rasterized region. "
 		"`region` is a row-major RGBA buffer, n*n pixels, Y=0 at bottom-left (OpenGL convention)."
@@ -97,21 +97,21 @@ void bind_picking(py::module_& m) {
 
 	m.def(
 		"pickMostCoverage",
-		[](py::buffer region, int n) { return osgx::pickMostCoverage(pickBufferPtr(region, n), n); },
+		[](py::buffer region, int n) { return osgx::pickMostCoverage(pickBuffer(region, n).data, n); },
 		"region"_a, "n"_a,
 		"Most-covered non-zero ID wins - useful in dense or overlapping scenes."
 	);
 
 	m.def(
 		"pickNearestToCenter",
-		[](py::buffer region, int n) { return osgx::pickNearestToCenter(pickBufferPtr(region, n), n); },
+		[](py::buffer region, int n) { return osgx::pickNearestToCenter(pickBuffer(region, n).data, n); },
 		"region"_a, "n"_a,
 		"Non-zero ID nearest to center wins - good for snap-to-object / hover picking."
 	);
 
 	m.def(
 		"spiralPick",
-		[](py::buffer region, int n) { return osgx::spiralPick(pickBufferPtr(region, n), n); },
+		[](py::buffer region, int n) { return osgx::spiralPick(pickBuffer(region, n).data, n); },
 		"region"_a, "n"_a,
 		"Spirals outward from center ring by ring (Chebyshev distance), returning the first "
 		"non-zero ID found. Equivalent result to pickNearestToCenter but exits on the first hit - "

@@ -100,6 +100,10 @@ public:
 		_upload(state.get<osg::GLExtensions>(), ring);
 	}
 
+	std::size_t getFrameSize() const {
+		return static_cast<std::size_t>(_width) * static_cast<std::size_t>(_height) * bytesPerPixel(_format);
+	}
+
 	double getAverageWaitMilliseconds(unsigned int contextID) const {
 		if(contextID >= _rings.size()) return 0.0;
 
@@ -143,14 +147,10 @@ private:
 		osgx::aring_buffer<osg::Timer_t, PROFILE_SAMPLES> uploadTicks;
 	};
 
-	std::size_t _frameSize() const {
-		return static_cast<std::size_t>(_width) * static_cast<std::size_t>(_height) * bytesPerPixel(_format);
-	}
-
 	void _initRing(const osg::GLExtensions* ext, Ring& ring) const {
 		if(ring.initialized) return;
 
-		const std::size_t frameSize = _frameSize();
+		const std::size_t frameSize = getFrameSize();
 
 		ring.pbo.assign(_ringCapacity, 0);
 		ring.ptr.assign(_ringCapacity, nullptr);
@@ -181,8 +181,8 @@ private:
 	}
 
 	void _upload(const osg::GLExtensions* ext, Ring& ring) const {
-		const FrameSource& source = _owner->getFrameSource();
-		const void* data = source ? source() : nullptr;
+		FrameSource* source = _owner->getFrameSource();
+		const void* data = source ? source->next(*_owner) : nullptr;
 
 		if(!data) return;
 
@@ -205,7 +205,7 @@ private:
 
 		else ring.waitTicks.add(osg::Timer_t(0));
 
-		std::memcpy(ring.ptr[ring.index], data, _frameSize());
+		std::memcpy(ring.ptr[ring.index], data, getFrameSize());
 
 		ext->glBindBuffer(GL_PIXEL_UNPACK_BUFFER, ring.pbo[ring.index]);
 
@@ -238,10 +238,10 @@ PBOTexture::PBOTexture(
 	int width,
 	int height,
 	GLenum format,
-	FrameSource source,
+	FrameSource* source,
 	unsigned int ringCapacity
 ):
-_source(std::move(source)) {
+_source(source) {
 	setInternalFormat(static_cast<GLint>(GL_RGBA8));
 	setTextureSize(width, height);
 	setNumMipmapLevels(1);
@@ -256,8 +256,14 @@ _source(std::move(source)) {
 
 PBOTexture::~PBOTexture() {}
 
-void PBOTexture::setFrameSource(FrameSource source) {
-	_source = std::move(source);
+void PBOTexture::setFrameSource(FrameSource* source) {
+	_source = source;
+}
+
+std::size_t PBOTexture::getFrameSize() const {
+	const auto* subload = static_cast<const Subload*>(getSubloadCallback());
+
+	return subload ? subload->getFrameSize() : 0;
 }
 
 double PBOTexture::getAverageWaitMilliseconds(unsigned int contextID) const {

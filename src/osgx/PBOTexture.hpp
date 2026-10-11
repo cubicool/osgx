@@ -10,7 +10,9 @@ OSGX_DISABLE_WARNINGS
 
 OSGX_ENABLE_WARNINGS
 
+#include <cstddef>
 #include <functional>
+#include <type_traits>
 
 namespace osgx {
 
@@ -46,13 +48,40 @@ namespace osgx {
 // buffer/fence state that clone() can't meaningfully duplicate.
 class PBOTexture: public osg::Texture2D {
 public:
-	// Returns a pointer to exactly width*height*bytesPerPixel(format) bytes of new frame data, or
-	// nullptr if no new frame is ready yet (a no-op for that context this subload - e.g. the
-	// source hasn't produced a frame since the last one was consumed, so the texture keeps
-	// showing whatever it last uploaded). Called at most once per unique GL context this texture
-	// is applied under, per frame - the caller is responsible for its own thread-safety/framing
+	// Supplies new frame data on demand. Called at most once per unique GL context this texture is
+	// applied under, per frame - the implementation is responsible for its own thread-safety/framing
 	// (mbew's own iterate()/sync() contract is exactly this shape).
-	using FrameSource = std::function<const void*()>;
+	class FrameSource: public osg::Referenced {
+	public:
+		// Returns a pointer to exactly texture.getFrameSize() bytes of new frame data, or nullptr if
+		// no new frame is ready yet (a no-op for that context this subload - e.g. the source hasn't
+		// produced a frame since the last one was consumed, so the texture keeps showing whatever
+		// it last uploaded). The pointer only needs to stay valid until the next call.
+		virtual const void* next(const PBOTexture& texture) = 0;
+
+	protected:
+		~FrameSource() override = default;
+	};
+
+	// Adapts any callable returning `const void*` (e.g. a mutable lambda) to a FrameSource.
+	class FunctionFrameSource: public FrameSource {
+	public:
+		using Function = std::function<const void*()>;
+
+		explicit FunctionFrameSource(Function fn):
+		_fn(std::move(fn)) {
+		}
+
+		const void* next(const PBOTexture&) override {
+			return _fn ? _fn() : nullptr;
+		}
+
+	protected:
+		~FunctionFrameSource() override = default;
+
+	private:
+		Function _fn;
+	};
 
 	// width/height: texture + PBO ring dimensions in pixels. format: the upload format handed to
 	// glTexSubImage2D (GL_RGBA, GL_BGRA, GL_RGB, GL_BGR, GL_RG, or GL_RED; always paired with
@@ -63,12 +92,24 @@ public:
 		int width,
 		int height,
 		GLenum format,
-		FrameSource source,
+		FrameSource* source=nullptr,
 		unsigned int ringCapacity=3
 	);
 
-	void setFrameSource(FrameSource source);
-	const FrameSource& getFrameSource() const { return _source; }
+	// Wraps `fn` (any callable returning `const void*`) in a FunctionFrameSource.
+	template<typename F> requires std::is_invocable_r_v<const void*, F&>
+	PBOTexture(int width, int height, GLenum format, F&& fn, unsigned int ringCapacity=3):
+	PBOTexture(width, height, format, new FunctionFrameSource(std::forward<F>(fn)), ringCapacity) {
+	}
+
+	void setFrameSource(FrameSource* source);
+
+	FrameSource* getFrameSource() { return _source.get(); }
+	const FrameSource* getFrameSource() const { return _source.get(); }
+
+	// The exact number of bytes every non-null FrameSource::next() result must point to:
+	// width*height*bytesPerPixel(format), or 0 if format is unsupported.
+	std::size_t getFrameSize() const;
 
 	// Rolling averages (last 60 subloads) of CPU wall time in this context's upload path.
 	// getAverageWaitMilliseconds() isolates just the glClientWaitSync call - the actual CPU-
@@ -88,7 +129,7 @@ protected:
 private:
 	class Subload;
 
-	FrameSource _source;
+	osg::ref_ptr<FrameSource> _source;
 };
 
 }

@@ -72,7 +72,7 @@ def test_cursor_callback_in_window_check_polled_via_update_traversal():
 def test_cursor_capture_construction_and_properties():
 	# handle()'s hide+warp+accumulate logic needs a real MOVE/DRAG GUIEventAdapter to drive it
 	# (same osgGA.GUIEventAdapter constructor gap as CursorHandler above) -- coverage here is
-	# limited to construction and the captured/consume() surface.
+	# limited to construction and the captured/drain() surface.
 	view = osgViewer.Viewer()
 	capture = osgx.CursorCapture(view)
 
@@ -83,7 +83,7 @@ def test_cursor_capture_construction_and_properties():
 
 	assert capture.captured == True
 
-	delta = capture.consume()
+	delta = capture.drain()
 
 	assert (delta.x, delta.y) == (0.0, 0.0)
 

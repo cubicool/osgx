@@ -1,3 +1,8 @@
+import array
+
+import numpy as np
+import pytest
+
 import osgx
 
 from OpenSceneGraph import *
@@ -105,7 +110,7 @@ def test_pick_rule_buffer_too_small_raises():
 		osgx.pickCenter(bytes([0, 0, 0, 0]), 3) # needs 3*3*4=36 bytes, only got 4
 
 		assert False, "expected an exception for an undersized buffer"
-	except RuntimeError:
+	except ValueError:
 		pass
 
 def test_pick_id_allocator_hands_out_contiguous_ranges():
@@ -134,3 +139,55 @@ def test_picking_catalog_expands_encode_pragma():
 	assert "osgx_encodePickID" in resolved
 	# Bit layout must match decodePickID()'s R/G/B/A convention.
 	assert "0xFFu" in resolved
+
+PICK_RULES = (osgx.pickCenter, osgx.pickMostCoverage, osgx.pickNearestToCenter, osgx.spiralPick)
+
+def rgba(pickID):
+	"""The RGBA8 encoding decodePickID() expects: R=bits[7:0] ... A=bits[31:24]."""
+
+	return [(pickID >> shift) & 0xff for shift in (0, 8, 16, 24)]
+
+def center_region(n, pickID):
+	"""A row-major n*n RGBA8 region that is empty (ID 0) everywhere but its center pixel."""
+
+	ids = [0] * (n * n)
+	ids[(n // 2) * n + n // 2] = pickID
+
+	return np.array([rgba(i) for i in ids], dtype=np.uint8).reshape(n, n, 4)
+
+def test_decode_pick_id_buffer_types():
+	assert osgx.decodePickID(bytes(rgba(0x12345678))) == 0x12345678
+	assert osgx.decodePickID(np.array(rgba(0x12345678), dtype=np.uint8)) == 0x12345678
+	assert osgx.decodePickID(array.array("B", rgba(42))) == 42
+
+@pytest.mark.parametrize("rule", PICK_RULES)
+def test_pick_rule_finds_center_id(rule):
+	assert rule(center_region(3, 7), 3) == 7
+	assert rule(center_region(3, 7).tobytes(), 3) == 7
+
+@pytest.mark.parametrize("rule", PICK_RULES)
+def test_pick_rule_rejects_strided_view(rule):
+	# A sub-region sliced out of a larger readback is the natural call shape, but it's strided:
+	# reading it as packed n*n pixels would silently pick from the wrong pixels.
+	big = np.zeros((6, 6, 4), dtype=np.uint8)
+	big[1:4, 1:4] = center_region(3, 7)
+
+	with pytest.raises(ValueError):
+		rule(big[1:4, 1:4], 3)
+
+	assert rule(np.ascontiguousarray(big[1:4, 1:4]), 3) == 7
+
+@pytest.mark.parametrize("rule", PICK_RULES)
+def test_pick_rule_rejects_wrong_dtype(rule):
+	with pytest.raises(TypeError):
+		rule(center_region(3, 7).astype(np.float32), 3)
+
+@pytest.mark.parametrize("rule", PICK_RULES)
+def test_pick_rule_rejects_non_rgba_pixels(rule):
+	with pytest.raises(ValueError):
+		rule(np.zeros((3, 3, 3), dtype=np.uint8), 3)
+
+@pytest.mark.parametrize("rule", PICK_RULES)
+def test_pick_rule_rejects_non_positive_n(rule):
+	with pytest.raises(ValueError):
+		rule(center_region(3, 7), 0)
