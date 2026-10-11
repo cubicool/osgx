@@ -535,7 +535,6 @@ int main(int argc, char** argv) {
 	mainSS->setAttributeAndModes(lights);
 
 	osgx::ShadowMap::Options shadowOptions;
-	float shadowBias = shadowOptions.bias;
 
 	// Spot maps store perspective (non-linear) depth: a directional map's bias pushes shadows
 	// visibly off their casters there.
@@ -592,10 +591,12 @@ int main(int argc, char** argv) {
 
 	shadowSet.add(shadowMap);
 
-	// Seeds the directional panel's slider from the real auto-derived value create()/createSpot()
-	// just computed, rather than starting it at 0 and surprising the first drag.
+	// Seeds the directional panel's sliders from the real values create()/createSpot() just
+	// applied, rather than starting them at 0 and surprising the first drag.
+	float shadowBias = shadowOptions.bias;
 	float shadowNormalOffset = 0.0f;
 
+	if(shadowMap.bias) shadowMap.bias->get(shadowBias);
 	if(shadowMap.normalOffset) shadowMap.normalOffset->get(shadowNormalOffset);
 
 	// No depth-only Program set here anymore - ShadowMap::create()/createSpot() now install one

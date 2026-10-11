@@ -38,12 +38,19 @@ option(OSGX_BUILD_GLTF "Build the glTF osgDB plugin (osgdb_gltf) and the osgx::g
 option(OSGX_BUILD_DDS "Build the DDS osgDB plugin (osgdb_dds) with DDS DX10 BC7 support" ${OSGX_IS_TOP_LEVEL})
 option(OSGX_INSTALL "Generate osgx installation rules" ${OSGX_IS_TOP_LEVEL})
 
+# MSVC's /analyze (PREfast static analyzer) multiplies compile times, worst on the pybind11
+# binding translation units. Enable it when auditing analyzer findings, not for routine builds.
+option(OSGX_MSVC_ANALYZE "Enable MSVC's /analyze static analyzer (slow)" OFF)
+
 if(WIN32)
 	set(OSGX_WARNING_OPTIONS
 		/W4
 		/wd4100
-		/analyze
 	)
+
+	if(OSGX_MSVC_ANALYZE)
+		list(APPEND OSGX_WARNING_OPTIONS /analyze)
+	endif()
 elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
 	set(OSGX_WARNING_OPTIONS
 		-W
@@ -217,17 +224,10 @@ target_sources(osgx_core INTERFACE
 )
 set_target_properties(osgx_core PROPERTIES EXPORT_NAME core)
 
-# osgx is an implementation dependency of the Python extension.  With MSVC,
-# keeping it as a DLL would require every public class (including its vtables,
-# RTTI, and data) to carry a dllimport/dllexport annotation.  Link it statically
-# into its in-tree consumers instead; Linux retains the normal shared library.
-if(MSVC)
-	set(OSGX_LIBRARY_TYPE STATIC)
-else()
-	set(OSGX_LIBRARY_TYPE SHARED)
-endif()
-
-add_library(osgx ${OSGX_LIBRARY_TYPE}
+# osgx is shared on every platform. Process-wide state (the live osgx::Library) must exist exactly
+# once, and the Python extension and the osgDB plugins (osgdb_gltf, osgdb_ktx2) are separate
+# modules; a static osgx would give each of them a private copy of that state.
+add_library(osgx SHARED
 	src/Array.cpp
 	src/Aura.cpp
 	src/CameraActions.cpp
@@ -307,12 +307,19 @@ set_target_properties(osgx PROPERTIES
 	POSITION_INDEPENDENT_CODE ON
 )
 
-# The Python extension is also named "osgx" and MSVC emits an import library
-# beside it.  When osgx itself is static (the MSVC configuration above), both
-# would otherwise claim Release/osgx.lib.  Keep the logical CMake target name
-# stable while giving its implementation archive a distinct filename.
+# MSVC exports nothing from a DLL by default. WINDOWS_EXPORT_ALL_SYMBOLS exports every function, so
+# classes need no per-class annotations (MSVC emits vtables and RTTI in each consumer). It does not
+# cover data: a variable or static data member declared in a public header would still need
+# __declspec(dllimport) in consumers, so keep process-wide state behind functions (as
+# Library::instance() does).
+#
+# The Python extension is also named "osgx" and MSVC emits an import library beside it; both would
+# otherwise claim Release/osgx.lib, so this library's import library gets a distinct filename.
 if(MSVC)
-	set_target_properties(osgx PROPERTIES ARCHIVE_OUTPUT_NAME osgx_static)
+	set_target_properties(osgx PROPERTIES
+		WINDOWS_EXPORT_ALL_SYMBOLS ON
+		ARCHIVE_OUTPUT_NAME osgx_import
+	)
 endif()
 
 target_compile_options(osgx PRIVATE ${OSGX_WARNING_OPTIONS})
@@ -642,10 +649,10 @@ if(OSGX_BUILD_PYTHON AND Python3_Development.Module_FOUND)
 	)
 	osgx_compile_options(osgx_python_bindings)
 	# MSVC's /analyze reports C28182 from pybind11's dispatcher template even
-	# when the corresponding runtime path proves the pointer non-null.  This is
-	# an analyzer false positive at template-instantiation time; keep /analyze
-	# enabled and suppress only that diagnostic for the Python bindings.
-	if(MSVC)
+	# when the corresponding runtime path proves the pointer non-null. This is
+	# an analyzer false positive at template-instantiation time; suppress only
+	# that diagnostic for the Python bindings.
+	if(MSVC AND OSGX_MSVC_ANALYZE)
 		target_compile_options(osgx_python_bindings PRIVATE /wd28182)
 	endif()
 	set_target_properties(osgx_python_bindings PROPERTIES POSITION_INDEPENDENT_CODE ON)
