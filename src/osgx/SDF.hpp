@@ -32,6 +32,23 @@ OSGX_ENABLE_WARNINGS
 // (osgSlug_Mask_CoverageFor, osgSlug_Mask_Coverage, osgSlug_Mask_DebugMSDF) stayed behind, since
 // that part IS genuinely osgSlug-specific.
 //
+// A second batch (TILE below) was extracted 2026-10-12 from osgSlug's Atlas.shaders.cpp
+// (SHADER_LIB_SDF, `#pragma osgSlug sdf_lib`): sampling/reconstructing a sub-rect ("tile") of a
+// CALLER-OWNED shared atlas texture, addressed by a packed rect (texel-space) + frame (origin,
+// scale, range) pair, in whatever 2D coordinate space the caller's own `coord` means - osgx has
+// no opinion on that (osgSlug calls it "em space"; nothing here cares). Same clean-boundary
+// extraction as SHAPES: pure math, zero osgSlug state, just parameterized over an explicit
+// texture/rect/frame/coord instead of global uniforms. Renamed on the move, same convention as
+// SHAPES: osgSlug_SDF_TileTexel -> osgx_SDF_TileTexel, osgSlug_SDF_TileSample ->
+// osgx_SDF_TileSample. osgx_SDF_TileGradient is NEW (generalizes what used to be
+// osgSlug_SDF_Gradient's inline central-difference math, which had no osgx counterpart before).
+// osgx_SDF_BevelNormal's signature changed on the move: it now takes a precomputed gradient
+// vector instead of a coord + computing the gradient itself, decoupling it entirely from tile
+// addressing. Deliberately NOT moved: the "many tiles in one atlas, indexed per-fragment" SSBO
+// scheme (osgSlug's own `sdfTiles` buffer/binding) - that indexing concept, and the per-fragment
+// index that drives it, are osgSlug-specific; TILE's functions take an already-resolved single
+// rect/frame, agnostic to how the caller found it.
+//
 // Two renames happened during the move, to match slughorn::Mask::Type's own vocabulary (the
 // actual public data-model API) rather than the GLSL functions' own previously-independent
 // names: osgSlug_SDF_Box -> osgx_SDF_Rect, osgSlug_SDF_Pie -> osgx_SDF_Arc. Every other name
@@ -65,7 +82,7 @@ OSGX_ENABLE_WARNINGS
 namespace osgx {
 
 // The `#pragma osgx::sdf` catalog (registered by osgx::Library, expanded by resolveShaderLibs() in
-// Shader.hpp) has four entries:
+// Shader.hpp) has six entries:
 //
 //   SHAPES   - the nine closed-form functions listed above.
 //   SAMPLING - pure, texture-agnostic reconstruction helpers for BAKED distance fields (SDF or
@@ -93,6 +110,34 @@ namespace osgx {
 //              (resolveShaderLibs() does one pass, so TEXTURE's own source can't carry a nested
 //              pragma - see the note on SHAPES above). Needs `#version 430` or later
 //              (layout(binding=...) on both the sampler and the block).
+//   TILE     - pure, caller-owns-everything helpers for ONE tile (a sub-rect) of a shared atlas
+//              texture the caller packs many baked fields into. Unlike TEXTURE, this owns no
+//              uniform/SSBO of its own: texture, rect, frame, and sdfType are all explicit
+//              parameters, since how a caller indexes "which tile" (a fixed array, an SSBO keyed
+//              by a per-fragment index, whatever) is entirely its own concern.
+//                vec3 osgx_SDF_TileTexel(sampler2D tex, vec4 rect, vec4 frame, vec2 coord) - the
+//                    tile's raw texel (.rgb for MSDF, .r meaningful for plain SDF) at `coord`,
+//                    mapped via rect.xy + (coord - frame.xy) * frame.z and clamped to the tile's
+//                    own texels (so bilinear filtering can never read a neighbouring tile).
+//                float osgx_SDF_TileSample(sampler2D tex, vec4 rect, vec4 frame, vec2 coord, int
+//                    sdfType) - the scalar every consumer wants regardless of type (0 = SDF, 1 =
+//                    MSDF): 0.5 = edge, > 0.5 = inside.
+//                vec2 osgx_SDF_TileGradient(sampler2D tex, vec4 rect, vec4 frame, vec2 coord, int
+//                    sdfType) - central-difference gradient of the field, one tile texel wide,
+//                    points toward the interior. Prefer this over dFdx/dFdy(sd): screen-space
+//                    derivatives are constant per 2x2 hardware quad, quantizing anything built
+//                    from them (a bevel normal, a reflection vector) into pixel-scale blocks.
+//                vec3 osgx_SDF_BevelNormal(vec2 gradient, float sd, vec3 flatNormal, vec3
+//                    tangentU, vec3 tangentV, float bevelWidth, float bevelStrength) - tilts
+//                    flatNormal toward the shape's edge as sd approaches 0.5, for a smoothly
+//                    curved "dome"/bevel look instead of a flat facet. `gradient` is whatever
+//                    osgx_SDF_TileGradient returned (or your own equivalent); tangentU/tangentV
+//                    are the world-space axes gradient.xy map onto. Returns flatNormal unchanged
+//                    where sd < 0 or the bevel/gradient is negligible.
+//              REQUIRES `SAMPLING` listed BEFORE it (osgx_SDF_TileSample calls osgx_SDF_Median):
+//                #pragma osgx::sdf SAMPLING,TILE
+//   TILE_DECL - the same four signatures as TILE, declarations only - same SAMPLING_DECL pattern,
+//              for a second shader object in the same Program that only CALLS these.
 
 // ================================================================================================
 // SDF

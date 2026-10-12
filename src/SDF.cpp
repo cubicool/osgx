@@ -188,6 +188,88 @@ float osgx_SDF_Coverage(vec2 uv) {
 }
 )GLSL";
 
+// Extracted 2026-10-12 from osgSlug's Atlas.shaders.cpp (SHADER_LIB_SDF, `#pragma osgSlug
+// sdf_lib`) - see SDF.hpp's own extraction-history comment. Pure math over a CALLER-OWNED shared
+// atlas texture: texture/rect/frame/sdfType are all explicit parameters, unlike TEXTURE above
+// (which owns a single texture + uvRect via its own StateAttribute/UBO) - the caller indexes
+// "which tile" however it likes (osgSlug uses a per-fragment SSBO index; osgx has no opinion).
+constexpr const char* SDF_TILE_SRC = R"GLSL(
+vec3 osgx_SDF_TileTexel(sampler2D tex, vec4 rect, vec4 frame, vec2 coord) {
+	vec2 texel = clamp(
+		rect.xy + (coord - frame.xy) * frame.z,
+		rect.xy + 0.5,
+		rect.xy + rect.zw - 0.5
+	);
+
+	return texture(tex, texel / vec2(textureSize(tex, 0))).rgb;
+}
+
+float osgx_SDF_TileSample(sampler2D tex, vec4 rect, vec4 frame, vec2 coord, int sdfType) {
+	vec3 t = osgx_SDF_TileTexel(tex, rect, frame, coord);
+
+	if(sdfType == 0) return t.r;
+
+	return osgx_SDF_Median(t);
+}
+
+// One tile texel's worth of central difference. Points toward the interior - negate for an
+// edge-pointing direction (see osgx_SDF_BevelNormal below).
+vec2 osgx_SDF_TileGradient(sampler2D tex, vec4 rect, vec4 frame, vec2 coord, int sdfType) {
+	float d = 1.0 / frame.z;
+
+	return vec2(
+		osgx_SDF_TileSample(tex, rect, frame, coord + vec2(d, 0.0), sdfType)
+			- osgx_SDF_TileSample(tex, rect, frame, coord - vec2(d, 0.0), sdfType),
+		osgx_SDF_TileSample(tex, rect, frame, coord + vec2(0.0, d), sdfType)
+			- osgx_SDF_TileSample(tex, rect, frame, coord - vec2(0.0, d), sdfType)
+	) / (2.0 * d);
+}
+
+vec3 osgx_SDF_BevelNormal(
+	vec2 gradient,
+	float sd,
+	vec3 flatNormal,
+	vec3 tangentU,
+	vec3 tangentV,
+	float bevelWidth,
+	float bevelStrength
+) {
+	const float EPSILON = 0.0001;
+
+	if(sd < 0.0) return flatNormal;
+
+	float bevel = 1.0 - clamp((sd - 0.5) / bevelWidth, 0.0, 1.0);
+
+	if(bevel <= EPSILON) return flatNormal;
+
+	// Gradient points toward the interior; the bevel wants interior->edge, hence the negation.
+	vec2 grad = -gradient;
+	float gradLen = length(grad);
+
+	if(gradLen <= EPSILON) return flatNormal;
+
+	vec2 edgeDir = grad / gradLen;
+
+	return normalize(flatNormal + (tangentU * edgeDir.x + tangentV * edgeDir.y) * bevel * bevelStrength);
+}
+)GLSL";
+
+// Declaration-only twin of SDF_TILE_SRC, same SAMPLING_DECL pattern.
+constexpr const char* SDF_TILE_DECL_SRC = R"GLSL(
+vec3 osgx_SDF_TileTexel(sampler2D tex, vec4 rect, vec4 frame, vec2 coord);
+float osgx_SDF_TileSample(sampler2D tex, vec4 rect, vec4 frame, vec2 coord, int sdfType);
+vec2 osgx_SDF_TileGradient(sampler2D tex, vec4 rect, vec4 frame, vec2 coord, int sdfType);
+vec3 osgx_SDF_BevelNormal(
+	vec2 gradient,
+	float sd,
+	vec3 flatNormal,
+	vec3 tangentU,
+	vec3 tangentV,
+	float bevelWidth,
+	float bevelStrength
+);
+)GLSL";
+
 }
 
 void registerSDFShaderLibs() {
@@ -195,7 +277,9 @@ void registerSDFShaderLibs() {
 		{"SHAPES", "osgx_SDF_Circle", SDF_SHAPES_SRC},
 		{"SAMPLING", "osgx_SDF_Median", SDF_SAMPLING_SRC},
 		{"SAMPLING_DECL", "osgx_SDF_MedianDecl", SDF_SAMPLING_DECL_SRC},
-		{"TEXTURE", "osgx_SDF_Coverage", SDF_TEXTURE_SRC}
+		{"TEXTURE", "osgx_SDF_Coverage", SDF_TEXTURE_SRC},
+		{"TILE", "osgx_SDF_TileTexel", SDF_TILE_SRC},
+		{"TILE_DECL", "osgx_SDF_TileTexelDecl", SDF_TILE_DECL_SRC}
 	};
 
 	registerShaderLibs("osgx::sdf", libs);
