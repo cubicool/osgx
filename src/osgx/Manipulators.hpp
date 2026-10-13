@@ -570,7 +570,8 @@ public:
 	void setSensitivity(double s) { _sensitivity = s; }
 	double getSensitivity() const { return _sensitivity; }
 
-	// Default true: dragging/moving the mouse up looks up. Set false to restore the raw feel.
+	// Default false (not inverted), matching the common modern third/first-person convention.
+	// Set true for the flight-sim/FPS-minority feel some players prefer.
 	void setInvertY(bool invert) { _invertY = invert; }
 	bool getInvertY() const { return _invertY; }
 
@@ -676,7 +677,7 @@ private:
 	LookStyle _lookStyle = LookStyle::ALWAYS;
 	osgGA::GUIEventAdapter::MouseButtonMask _lookButton = osgGA::GUIEventAdapter::RIGHT_MOUSE_BUTTON;
 	double _sensitivity = 1.0;
-	bool _invertY = true;
+	bool _invertY = false;
 
 	osg::ref_ptr<CursorCapture> _capture;
 };
