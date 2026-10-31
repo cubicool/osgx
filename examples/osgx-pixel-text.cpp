@@ -1,5 +1,7 @@
 // vimrun! ./examples/osgx-pixel-text
 
+#include "osgx-example.hpp"
+
 #include "osgx/Core.hpp"
 #include "osgx/Library.hpp"
 #include "osgx/PixelText.hpp"
@@ -305,7 +307,11 @@ osg::ref_ptr<osg::Camera> makeHudLabel(std::string_view text, float scale=3.0f, 
 
 }
 
-int main(int, char**) {
+int main(int argc, char** argv) {
+	osg::ArgumentParser args(&argc, argv);
+
+	const auto options = example::readArguments(args);
+
 	auto lib = osgx::initialize();
 
 	auto root = osgx::make_ref<osg::Group>();
@@ -353,5 +359,5 @@ int main(int, char**) {
 
 	if(auto* mainViewport = viewer.getCamera()->getViewport()) hud->setViewport(mainViewport);
 
-	return viewer.run();
+	return example::run(viewer, options);
 }

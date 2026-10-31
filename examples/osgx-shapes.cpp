@@ -4,7 +4,8 @@
 // in the library: it is both a visual smoke test for their topology/attribute layout and a small,
 // readable starting point for applications that want the generated Geometry directly.
 
-#include "osgx/Headless.hpp"
+#include "osgx-example.hpp"
+
 #include "osgx/Library.hpp"
 #include "osgx/Shapes.hpp"
 #include "osgx/Warnings.hpp"
@@ -101,7 +102,7 @@ osg::ref_ptr<osg::Geode> makeShape(const Shape& entry, osg::Program* program) {
 int main(int argc, char** argv) {
 	osg::ArgumentParser arguments(&argc, argv);
 
-	auto headless = osgx::headless::readArguments(arguments);
+	const auto options = example::readArguments(arguments);
 	auto lib = osgx::initialize();
 	auto root = new osg::Group();
 	auto program = makeProgram();
@@ -162,5 +163,5 @@ int main(int argc, char** argv) {
 	viewer.getCamera()->setClearColor(osg::Vec4(0.04f, 0.05f, 0.10f, 1.0f));
 	viewer.addEventHandler(new osgViewer::StatsHandler());
 
-	return osgx::headless::run(viewer, headless);
+	return example::run(viewer, options);
 }

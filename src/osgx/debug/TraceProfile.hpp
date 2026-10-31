@@ -57,6 +57,9 @@ struct TraceNode {
 	// groups, objectLabel() ("ClassName@0x<address>"); else the Location's name.
 	std::string label;
 
+	// The TraceBuffer::index() of the thread that recorded the node (in its latest frame).
+	std::size_t thread = 0;
+
 	// Milliseconds per frame.
 	double inclusiveMs = 0.0;
 	double selfMs = 0.0;

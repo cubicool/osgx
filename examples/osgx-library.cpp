@@ -21,6 +21,8 @@
 // environment name under env/, both through osgx::findDataFile() (OSG_FILE_PATH).
 // Keys: +/- change AppGlobals' exposure.
 
+#include "osgx-example.hpp"
+
 #include "osgx/Callbacks.hpp"
 #include "osgx/Array.hpp"
 #include "osgx/Core.hpp"
@@ -129,6 +131,8 @@ void printSlots(osgx::Library& lib, const char* title) {
 
 int main(int argc, char** argv) {
 	osg::ArgumentParser args(&argc, argv);
+
+	const auto options = example::readArguments(args);
 
 	const bool reserve = !args.read("--no-reserve");
 	std::string envPath;
@@ -246,5 +250,5 @@ int main(int argc, char** argv) {
 
 	viewer.setSceneData(root);
 
-	return viewer.run();
+	return example::run(viewer, options);
 }

@@ -22,6 +22,8 @@
 // PickReadbackSync, PickReadbackAsync, PickCameraSync, and all pick helpers live in
 // osgx/Picking.hpp.
 
+#include "osgx-example.hpp"
+
 #include "osgx/Core.hpp"
 #include "osgx/Cursor.hpp"
 #include "osgx/Library.hpp"
@@ -96,6 +98,8 @@ osg::ref_ptr<osg::Group> createScene() {
 
 int main(int argc, char** argv) {
 	osg::ArgumentParser args(&argc, argv);
+
+	const auto options = example::readArguments(args);
 	auto lib = osgx::initialize(args);
 
 	bool useAsync = args.read("--async");
@@ -253,5 +257,5 @@ int main(int argc, char** argv) {
 
 	viewer.setSceneData(root);
 
-	return viewer.run();
+	return example::run(viewer, options);
 }

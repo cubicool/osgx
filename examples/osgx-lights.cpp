@@ -21,6 +21,8 @@
 // type's LightSet setter actually takes, including an independent enabled toggle. Without
 // OSGX_IMGUI, the example simply shows all four configured lights.
 
+#include "osgx-example.hpp"
+
 #include "osgx/osgx.hpp"
 #include "osgx/ImGui.hpp"
 
@@ -224,7 +226,11 @@ void applyState(const osgx::LightSet& lights, const LightsState& state) {
 
 }
 
-int main() {
+int main(int argc, char** argv) {
+	osg::ArgumentParser args(&argc, argv);
+
+	const auto options = example::readArguments(args);
+
 	auto lib = osgx::initialize();
 
 	auto root = osgx::make_ref<osg::Group>();
@@ -380,5 +386,5 @@ int main() {
 	}, osgx::imgui::SectionOptions::create(false, true));
 #endif
 
-	return viewer.run();
+	return example::run(viewer, options);
 }

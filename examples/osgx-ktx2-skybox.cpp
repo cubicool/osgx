@@ -5,6 +5,8 @@
 // scroll wheel : also adjusts mip level
 // c : toggle flat-cross display
 
+#include "osgx-example.hpp"
+
 #include "osgx/Library.hpp"
 #include "osgx/Warnings.hpp"
 
@@ -218,6 +220,10 @@ public:
 // ---------------------------------------------------------------------------
 
 int main(int argc, char* argv[]) {
+	osg::ArgumentParser args(&argc, argv);
+
+	const auto options = example::readArguments(args);
+
 	auto lib = osgx::initialize();
 
 	if(argc < 2) {
@@ -332,5 +338,5 @@ int main(int argc, char* argv[]) {
 		<< maxMip << " = roughest)" << std::endl
 		<< " 'c' to toggle flat-cross display" << std::endl;
 
-	return viewer.run();
+	return example::run(viewer, options);
 }

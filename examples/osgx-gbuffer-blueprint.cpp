@@ -44,6 +44,8 @@
 // C++ producer before now). Deliberately the plainest possible non-glTF consumer - no decals, no
 // per-face materials, no dice-specific anything.
 
+#include "osgx-example.hpp"
+
 #include "osgx/Core.hpp"
 #include "osgx/GBuffer.hpp"
 #include "osgx/gltf/Environment.hpp"
@@ -291,6 +293,8 @@ void main() {
 
 int main(int argc, char** argv) {
 	osg::ArgumentParser args(&argc, argv);
+
+	const auto options = example::readArguments(args);
 	auto lib = osgx::initialize(args);
 
 	args.getApplicationUsage()->setCommandLineUsage(
@@ -611,5 +615,5 @@ int main(int argc, char** argv) {
 	}, osgx::imgui::SectionOptions::create(false, true));
 #endif
 
-	return viewer.run();
+	return example::run(viewer, options);
 }

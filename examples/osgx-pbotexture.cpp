@@ -2,6 +2,8 @@
 // instead of the procedural RGBA noise source this example started with, to see whether mbew is
 // worth vendoring as an ext/ submodule. Revert to the noise FrameSource (see git history) if not.
 
+#include "osgx-example.hpp"
+
 #include "osgx/ImGui.hpp"
 #include "osgx/PBOTexture.hpp"
 
@@ -27,6 +29,10 @@ OSGX_ENABLE_WARNINGS
 #include <iostream>
 
 int main(int argc, char** argv) {
+	osg::ArgumentParser args(&argc, argv);
+
+	const auto options = example::readArguments(args);
+
 	const std::string path = argc > 1 ? argv[1] : std::string(getenv("HOME")) + "/dev/mbew/data/small.webm";
 	mbew::Context video = mbew::create(path);
 
@@ -114,5 +120,5 @@ int main(int argc, char** argv) {
 	std::cerr << "OSGX_IMGUI not compiled in - skipping the profiler section." << std::endl;
 #endif
 
-	return viewer.run();
+	return example::run(viewer, options);
 }

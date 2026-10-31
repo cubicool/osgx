@@ -8,6 +8,8 @@
 #include <cstdint>
 #include <cstdio>
 #include <optional>
+#include <string>
+#include <unordered_map>
 
 namespace osgx::imgui {
 
@@ -504,6 +506,12 @@ constexpr ImU32 OVER_BUDGET_TINT = IM_COL32(235, 55, 55, 110);
 constexpr ImU32 OVER_BUDGET_OUTLINE = IM_COL32(235, 55, 55, 255);
 constexpr ImU32 BUDGET_LINE_COLOR = IM_COL32(235, 55, 55, 170);
 
+const ImVec4 OVER_BUDGET_TEXT(0.92f, 0.22f, 0.22f, 1.0f);
+const ImVec4 NEAR_BUDGET_TEXT(0.95f, 0.70f, 0.20f, 1.0f);
+
+// The share of the budget from which a busy time is shown as near it (amber).
+constexpr double NEAR_BUDGET = 0.9;
+
 ImU32 phaseColor(debug::Phase phase) {
 	switch(phase) {
 		case debug::Phase::EVENT: return IM_COL32(170, 130, 230, 255);
@@ -520,10 +528,20 @@ struct Waterfall {
 	double axisMs;
 	double budgetMs;
 	double minMs;
+
+	// Per row (see waterfallKey()): whether it was shown, for the threshold's hysteresis.
+	std::unordered_map<std::string, bool>* shown;
 };
 
+std::string waterfallKey(const debug::TraceNode& node) {
+	return node.label + "@" + std::to_string(reinterpret_cast<std::uintptr_t>(node.object)) + "/"
+		+ debug::detail::toString(node.phase);
+}
+
 // Whether `node` gets a row: it ran in the frame, was not culled, and its CPU or GPU ms reaches
-// the minimum.
+// the threshold - or, if it was shown, half of it (hysteresis: a node whose time hovers around
+// the threshold does not blink in and out). Calling it again in the same frame gives the same
+// answer.
 bool waterfallVisible(const debug::TraceNode& node, const Waterfall& waterfall) {
 	if(node.frame != waterfall.frame || node.culled) return false;
 
@@ -532,8 +550,24 @@ bool waterfallVisible(const debug::TraceNode& node, const Waterfall& waterfall) 
 	if(!cpu) return false;
 
 	const auto gpu = debug::gpuSpan(node, waterfall.frame);
+	const double ms = std::max(cpu->ms, gpu ? gpu->ms : 0.0);
 
-	return cpu->ms >= waterfall.minMs || (gpu && gpu->ms >= waterfall.minMs);
+	bool& shown = (*waterfall.shown)[waterfallKey(node)];
+
+	shown = ms >= (shown ? waterfall.minMs * 0.5 : waterfall.minMs);
+
+	return shown;
+}
+
+// `label` and `ms`, amber from NEAR_BUDGET of the budget and red over it.
+void budgetText(const char* label, double ms, double budgetMs) {
+	if(ms > budgetMs) ImGui::TextColored(OVER_BUDGET_TEXT, "%s %.2f ms", label, ms);
+
+	else if(ms >= budgetMs * NEAR_BUDGET) {
+		ImGui::TextColored(NEAR_BUDGET_TEXT, "%s %.2f ms", label, ms);
+	}
+
+	else ImGui::Text("%s %.2f ms", label, ms);
 }
 
 // A bar over [y0, y1] from `span`'s start to its end, in the cell starting at x `left`, `width`
@@ -585,13 +619,24 @@ void waterfallTooltip(
 	ImGui::Separator();
 	ImGui::Text("CPU: %.3f ms, at %.3f ms", cpu.ms, cpu.startMs);
 
-	if(node.location == &debug::detail::swapLocation()) {
-		ImGui::TextDisabled("time in SwapBuffers: with vsync, mostly waiting for the display");
+	if(node.location == &debug::detail::profilerGroupLocation()) {
+		ImGui::TextDisabled("the profiler's own work (fold) and wait (readback), not the app's");
+	}
+
+	if(debug::detail::isWaitLocation(node.location)) {
+		ImGui::TextDisabled("a wait, not counted as CPU work (swap: for the display with vsync;");
+		ImGui::TextDisabled("readback: for the GPU, or where the driver blocks for vsync)");
 	}
 
 	if(node.count > 0.0) ImGui::Text("self %.3f ms, %.1f spans per frame", node.selfMs, node.count);
 
-	if(gpu) ImGui::Text("GPU: %.3f ms, at %.3f ms", gpu->ms, gpu->startMs);
+	if(gpu) {
+		ImGui::Text("GPU: %.3f ms (red: drawn from the row's start, as cost)", gpu->ms);
+		ImGui::TextDisabled(
+			"the GPU ran it %.3f ms after the CPU started it",
+			gpu->startMs - cpu.startMs
+		);
+	}
 
 	if(node.draws > 0.0) {
 		ImGui::Text("draws per frame: %.1f, first in draw order: %d", node.draws, node.drawOrder);
@@ -605,7 +650,10 @@ void waterfallTooltip(
 void waterfallRow(const debug::TraceNode& node, const Waterfall& waterfall, bool defaultOpen) {
 	const auto cpu = debug::cpuSpan(node, waterfall.frame);
 	const auto gpu = debug::gpuSpan(node, waterfall.frame);
-	const bool waiting = node.location == &debug::detail::swapLocation();
+	const bool waiting =
+		debug::detail::isWaitLocation(node.location) ||
+		node.location == &debug::detail::profilerGroupLocation()
+	;
 
 	const bool hasChildren = std::any_of(
 		node.children.begin(),
@@ -643,7 +691,6 @@ void waterfallRow(const debug::TraceNode& node, const Waterfall& waterfall, bool
 	const float width = ImGui::GetContentRegionAvail().x;
 	const float height = ImGui::GetTextLineHeight();
 	const float pad = ImGui::GetStyle().CellPadding.y;
-	const float split = gpu ? origin.y + height * 0.55f : origin.y + height;
 	auto* drawList = ImGui::GetWindowDrawList();
 
 	if(cpu) {
@@ -652,7 +699,7 @@ void waterfallRow(const debug::TraceNode& node, const Waterfall& waterfall, bool
 			origin.x,
 			width,
 			origin.y + 1.0f,
-			split,
+			origin.y + height,
 			*cpu,
 			waiting ? WAIT_COLOR : phaseColor(node.phase),
 			waiting,
@@ -660,14 +707,18 @@ void waterfallRow(const debug::TraceNode& node, const Waterfall& waterfall, bool
 		);
 	}
 
-	if(gpu) {
+	// The GPU time of the row's draws overlays the CPU bar from its start (below a band that keeps
+	// the CPU bar's length visible), running past it when the GPU takes longer.
+	if(cpu && gpu) {
+		const debug::TraceSpan cost{cpu->startMs, cpu->startMs + gpu->ms, gpu->ms};
+
 		waterfallBar(
 			drawList,
 			origin.x,
 			width,
-			split + 1.0f,
+			origin.y + height * 0.35f,
 			origin.y + height,
-			*gpu,
+			cost,
 			GPU_COLOR,
 			false,
 			waterfall
@@ -675,7 +726,8 @@ void waterfallRow(const debug::TraceNode& node, const Waterfall& waterfall, bool
 	}
 
 	if(waterfall.budgetMs < waterfall.axisMs) {
-		const float x = origin.x + width * static_cast<float>(waterfall.budgetMs / waterfall.axisMs);
+		const auto share = static_cast<float>(waterfall.budgetMs / waterfall.axisMs);
+		const float x = origin.x + width * share;
 
 		drawList->AddLine(
 			ImVec2(x, origin.y - pad),
@@ -717,11 +769,13 @@ void ProfilerSection::operator()(osg::RenderInfo& ri) {
 	ImGui::SameLine();
 	ImGui::TextDisabled("|");
 	ImGui::SameLine();
-	ImGui::SetNextItemWidth(ImGui::CalcTextSize(BUDGET_LABELS[0]).x + ImGui::GetFrameHeight() * 2.0f);
+	const float comboWidth = ImGui::CalcTextSize(BUDGET_LABELS[0]).x + ImGui::GetFrameHeight() * 2.0f;
+
+	ImGui::SetNextItemWidth(comboWidth);
 	ImGui::Combo("budget", &_budget, BUDGET_LABELS, static_cast<int>(BUDGET_HZ.size()));
 	ImGui::SameLine();
 	ImGui::SetNextItemWidth(ImGui::CalcTextSize("0.000").x + ImGui::GetFrameHeight());
-	ImGui::DragFloat("min ms", &_minMs, 0.005f, 0.0f, 5.0f, "%.3f");
+	ImGui::DragFloat("hide below ms", &_minMs, 0.005f, 0.0f, 5.0f, "%.3f");
 
 	const auto newest = _profiler->getProfileFrame();
 
@@ -734,37 +788,29 @@ void ProfilerSection::operator()(osg::RenderInfo& ri) {
 	const auto profile = _profiler->getProfile();
 	const double budgetMs = 1000.0 / BUDGET_HZ[static_cast<std::size_t>(_budget)];
 
-	const auto extent = debug::frameExtent(profile, *newest);
+	const auto load = debug::frameLoad(profile, *newest);
+
+	// Forgets rows not seen in a long while.
+	if(_shown.size() > 4096) _shown.clear();
 
 	const Waterfall waterfall{
 		*newest,
-		std::max(budgetMs, extent.totalMs),
+		std::max(budgetMs, load.endMs),
 		budgetMs,
-		static_cast<double>(_minMs)
+		static_cast<double>(_minMs),
+		&_shown
 	};
 
-	// The budget is compared with the frame's work; the swap's wait for the display is not work.
-	if(extent.workMs > budgetMs) {
-		ImGui::TextColored(
-			ImVec4(0.92f, 0.22f, 0.22f, 1.0f),
-			"frame %u: %.2f ms of work, over the %.2f ms budget",
-			*newest,
-			extent.workMs,
-			budgetMs
-		);
-	}
-
-	else {
-		ImGui::Text(
-			"frame %u: %.2f ms of work of the %.2f ms budget",
-			*newest,
-			extent.workMs,
-			budgetMs
-		);
-	}
-
+	// The budget is compared with busy times; waits (swap, readback) are not work.
+	ImGui::Text("frame %u:", *newest);
 	ImGui::SameLine();
-	ImGui::TextDisabled("(%.2f ms incl. swap)", extent.totalMs);
+	budgetText("CPU", load.cpuMs, budgetMs);
+	ImGui::SameLine();
+	budgetText("GPU", load.gpuMs, budgetMs);
+	ImGui::SameLine();
+	ImGui::Text("of the %.2f ms budget", budgetMs);
+	ImGui::SameLine();
+	ImGui::TextDisabled("(red = a row's GPU time, drawn from its start)");
 
 	constexpr ImGuiTableFlags tableFlags =
 		ImGuiTableFlags_BordersInnerV |
@@ -829,6 +875,51 @@ void Panel::draw(osg::RenderInfo& ri) {
 	}
 }
 
+namespace {
+
+// The ImGuiKey of an osgGA key: editing, navigation and modifier keys, and letters (for shortcuts
+// such as Ctrl+A/C/V; with Ctrl held, OSG may report a letter as its control code 1-26).
+ImGuiKey imguiKey(int key, bool ctrl) {
+	using Key = osgGA::GUIEventAdapter::KeySymbol;
+
+	switch(key) {
+		case Key::KEY_BackSpace: return ImGuiKey_Backspace;
+		case Key::KEY_Delete: return ImGuiKey_Delete;
+		case Key::KEY_Return: return ImGuiKey_Enter;
+		case Key::KEY_KP_Enter: return ImGuiKey_KeypadEnter;
+		case Key::KEY_Tab: return ImGuiKey_Tab;
+		case Key::KEY_Escape: return ImGuiKey_Escape;
+		case Key::KEY_Left: return ImGuiKey_LeftArrow;
+		case Key::KEY_Right: return ImGuiKey_RightArrow;
+		case Key::KEY_Up: return ImGuiKey_UpArrow;
+		case Key::KEY_Down: return ImGuiKey_DownArrow;
+		case Key::KEY_Home: return ImGuiKey_Home;
+		case Key::KEY_End: return ImGuiKey_End;
+		case Key::KEY_Page_Up: return ImGuiKey_PageUp;
+		case Key::KEY_Page_Down: return ImGuiKey_PageDown;
+		case Key::KEY_Insert: return ImGuiKey_Insert;
+		case Key::KEY_Control_L: return ImGuiKey_LeftCtrl;
+		case Key::KEY_Control_R: return ImGuiKey_RightCtrl;
+		case Key::KEY_Shift_L: return ImGuiKey_LeftShift;
+		case Key::KEY_Shift_R: return ImGuiKey_RightShift;
+		case Key::KEY_Alt_L: return ImGuiKey_LeftAlt;
+		case Key::KEY_Alt_R: return ImGuiKey_RightAlt;
+		case Key::KEY_Super_L: return ImGuiKey_LeftSuper;
+		case Key::KEY_Super_R: return ImGuiKey_RightSuper;
+		default: break;
+	}
+
+	if(key >= 'a' && key <= 'z') return static_cast<ImGuiKey>(ImGuiKey_A + (key - 'a'));
+
+	if(key >= 'A' && key <= 'Z') return static_cast<ImGuiKey>(ImGuiKey_A + (key - 'A'));
+
+	if(ctrl && key >= 1 && key <= 26) return static_cast<ImGuiKey>(ImGuiKey_A + (key - 1));
+
+	return ImGuiKey_None;
+}
+
+}
+
 bool Widget::handle(const osgGA::GUIEventAdapter& ea, osgGA::GUIActionAdapter& aa) {
 	if(!_initialized) {
 		osg::Camera* cam = _drawCamera.get();
@@ -862,7 +953,17 @@ bool Widget::handle(const osgGA::GUIEventAdapter& ea, osgGA::GUIActionAdapter& a
 		bool down = ea.getEventType() == osgGA::GUIEventAdapter::KEYDOWN;
 		int c = ea.getKey();
 
-		if(io.WantCaptureKeyboard && down && c >= 32 && c < 127) io.AddInputCharacter(
+		const auto mods = static_cast<unsigned int>(ea.getModKeyMask());
+		const bool ctrl = mods & osgGA::GUIEventAdapter::MODKEY_CTRL;
+
+		io.AddKeyEvent(ImGuiMod_Ctrl, ctrl);
+		io.AddKeyEvent(ImGuiMod_Shift, mods & osgGA::GUIEventAdapter::MODKEY_SHIFT);
+		io.AddKeyEvent(ImGuiMod_Alt, mods & osgGA::GUIEventAdapter::MODKEY_ALT);
+		io.AddKeyEvent(ImGuiMod_Super, mods & osgGA::GUIEventAdapter::MODKEY_SUPER);
+
+		if(const auto key = imguiKey(c, ctrl); key != ImGuiKey_None) io.AddKeyEvent(key, down);
+
+		if(io.WantCaptureKeyboard && down && !ctrl && c >= 32 && c < 127) io.AddInputCharacter(
 			static_cast<unsigned int>(c)
 		);
 

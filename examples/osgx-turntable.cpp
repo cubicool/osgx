@@ -3,6 +3,8 @@
 // A deliberately small staging ground for the turntable viewer. The procedural infinite grid is
 // always present; without a model path, colored cubes provide a quick scene-setup diagnostic.
 
+#include "osgx-example.hpp"
+
 #include "osgx/Core.hpp"
 #include "osgx/Cursor.hpp"
 #include "osgx/IBL.hpp"
@@ -390,6 +392,10 @@ private:
 }
 
 int main(int argc, char** argv) {
+	osg::ArgumentParser args(&argc, argv);
+
+	const auto options = example::readArguments(args);
+
 	auto lib = osgx::initialize();
 
 	std::string modelPath;
@@ -536,5 +542,5 @@ int main(int argc, char** argv) {
 		<< " --skybox raw.ktx2 displays a raw visual cubemap background" << std::endl
 	;
 
-	return viewer.run();
+	return example::run(viewer, options);
 }

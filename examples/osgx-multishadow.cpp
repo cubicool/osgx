@@ -24,8 +24,9 @@
 // Shaders/Program-building are otherwise identical to osgx-lights.cpp/osgx-shadow.cpp - see
 // either's header comment for why that's the whole point of the hook design.
 
+#include "osgx-example.hpp"
+
 #include "osgx/osgx.hpp"
-#include "osgx/Headless.hpp"
 #include "osgx/ImGui.hpp"
 
 OSGX_DISABLE_WARNINGS
@@ -201,7 +202,7 @@ void addBox(const BoxSpec& spec, osg::Group& casters, osg::Group& receivers) {
 int main(int argc, char** argv) {
 	osg::ArgumentParser args(&argc, argv);
 
-	auto headless = osgx::headless::readArguments(args);
+	const auto options = example::readArguments(args);
 	auto lib = osgx::initialize(args);
 
 	// --- Table: tabletop + 4 legs, casts/receives the directional "sun" shadow. -------------------
@@ -392,5 +393,5 @@ int main(int argc, char** argv) {
 	}, osgx::imgui::SectionOptions::create(false, true));
 #endif
 
-	return osgx::headless::run(viewer, headless);
+	return example::run(viewer, options);
 }

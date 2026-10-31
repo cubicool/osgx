@@ -215,10 +215,12 @@ private:
 // Profiler::attach() for when that is safe) and, when invoked, draws the newest profiled frame as
 // a waterfall (the ImGui form of Profiler::reportWaterfall()): a collapsible tree of the phases
 // and their nodes with CPU and GPU ms, and per row a bar where the node ran within the frame
-// (phase-colored CPU bar, GPU bar beneath it), on an axis of the frame budget (or the frame, if
-// longer) with the budget marked and the part of a bar past it red. Nodes shorter than the
-// minimum (CPU and GPU) are left out with their subtrees. Hovering a row shows its details.
-// Controls: SYNC/ASYNC queries, Refresh, the budget (refresh rate) and the minimum ms.
+// (phase-colored CPU bar, GPU bar beneath it; waits such as the swap grey), on an axis of the
+// frame budget (or the frame, if longer) with the budget marked and the part of a bar past it
+// tinted red. The header compares the frame's CPU and GPU busy times (debug::frameLoad()) with
+// the budget: amber from 90%, red over it. Nodes below the threshold (CPU and GPU) are left out
+// with their subtrees; a shown node stays until it drops below half of it. Hovering a row shows
+// its details. Controls: SYNC/ASYNC queries, Refresh, the budget (refresh rate), the threshold.
 // Pass to Widget::addSection() or use Widget::addProfilerSection() shortcut.
 class ProfilerSection {
 public:
@@ -236,6 +238,9 @@ private:
 	// An index into the budget presets (30, 60, 90, 120, 144 Hz).
 	int _budget = 1;
 	float _minMs = 0.05f;
+
+	// Whether each row was shown last frame (the threshold's hysteresis).
+	std::unordered_map<std::string, bool> _shown;
 };
 
 // Reusable osgx::imgui content for an application-owned Dear ImGui frame. Panel

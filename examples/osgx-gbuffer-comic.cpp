@@ -110,6 +110,8 @@
 //      empty, nothing else is ever drawn there to be occluded by. Only relevant if this shader is
 //      ever reused in a multi-object scene with real geometry behind/around the hatched model.
 
+#include "osgx-example.hpp"
+
 #include "osgx/Core.hpp"
 #include "osgx/GBuffer.hpp"
 #include "osgx/gltf/Environment.hpp"
@@ -547,6 +549,8 @@ void main() {
 
 int main(int argc, char** argv) {
 	osg::ArgumentParser args(&argc, argv);
+
+	const auto options = example::readArguments(args);
 	auto lib = osgx::initialize(args);
 
 	args.getApplicationUsage()->setCommandLineUsage(
@@ -968,5 +972,5 @@ int main(int argc, char** argv) {
 	}, osgx::imgui::SectionOptions::create(false, true));
 #endif
 
-	return viewer.run();
+	return example::run(viewer, options);
 }

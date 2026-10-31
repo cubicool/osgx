@@ -1,5 +1,7 @@
 //vimrun! ./examples/osgx-eventhandler
 
+#include "osgx-example.hpp"
+
 #include "osgx/Callbacks.hpp"
 #include "osgx/Core.hpp"
 #include "osgx/Library.hpp"
@@ -16,6 +18,10 @@ OSGX_ENABLE_WARNINGS
 using namespace osgx::literals;
 
 int main(int argc, char** argv) {
+	osg::ArgumentParser args(&argc, argv);
+
+	const auto options = example::readArguments(args);
+
 	auto lib = osgx::initialize();
 
 	osgViewer::Viewer viewer;
@@ -44,5 +50,5 @@ int main(int argc, char** argv) {
 		}
 	));
 
-	return viewer.run();
+	return example::run(viewer, options);
 }

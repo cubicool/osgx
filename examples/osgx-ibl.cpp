@@ -3,6 +3,8 @@
 // Generic IBL inspection tool. It intentionally knows about HDR input and osgx bake products,
 // but not glTF, KTX2, or any application-specific material setup.
 
+#include "osgx-example.hpp"
+
 #include "osgx/Core.hpp"
 #include "osgx/GGXPrefilter.hpp"
 #include "osgx/LambertianBake.hpp"
@@ -470,6 +472,10 @@ osg::ref_ptr<osg::TextureCubeMap> loadRawCubemapRGBA32F(std::string_view pattern
 }
 
 int main(int argc, char** argv) {
+	osg::ArgumentParser args(&argc, argv);
+
+	const auto exampleOptions = example::readArguments(args);
+
 	auto lib = osgx::initialize();
 
 	enum class Mode { Lambertian, GGX };
@@ -700,5 +706,5 @@ int main(int argc, char** argv) {
 			<< "Controls: 'c' toggles diffuse skybox/cross; 'p' toggles the raw HDR panorama" << std::endl;
 	}
 
-	return viewer.run();
+	return example::run(viewer, exampleOptions);
 }

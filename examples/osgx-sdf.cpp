@@ -17,6 +17,8 @@
 //
 // Zoom in and out with the trackball - edges should stay crisp and evenly antialiased at any scale.
 
+#include "osgx-example.hpp"
+
 #include "osgx/Core.hpp"
 #include "osgx/Library.hpp"
 #include "osgx/SDF.hpp"
@@ -156,6 +158,10 @@ osg::ref_ptr<osg::Geode> makeField(
 }
 
 int main(int argc, char** argv) {
+	osg::ArgumentParser args(&argc, argv);
+
+	const auto options = example::readArguments(args);
+
 	auto lib = osgx::initialize();
 
 	if(argc < 2) {
@@ -268,5 +274,5 @@ int main(int argc, char** argv) {
 	viewer.getCamera()->setClearColor(osg::Vec4(0.04f, 0.05f, 0.10f, 1.0f));
 	viewer.addEventHandler(new osgViewer::StatsHandler());
 
-	return viewer.run();
+	return example::run(viewer, options);
 }

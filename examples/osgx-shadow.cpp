@@ -54,6 +54,8 @@
 //    gizmo (osgx::LightGizmos) reads the same live osgx::LightSet, so it and the shadow
 //    track the dragged direction together with no manual sync code.
 
+#include "osgx-example.hpp"
+
 #include "osgx/osgx.hpp"
 #include "osgx/ImGui.hpp"
 
@@ -439,6 +441,8 @@ struct FlickerWobbleCallback: osg::NodeCallback {
 
 int main(int argc, char** argv) {
 	osg::ArgumentParser args(&argc, argv);
+
+	const auto options = example::readArguments(args);
 
 	auto lib = osgx::initialize(args);
 
@@ -919,5 +923,5 @@ int main(int argc, char** argv) {
 	}, osgx::imgui::SectionOptions::create(false, true));
 #endif
 
-	return viewer.run();
+	return example::run(viewer, options);
 }

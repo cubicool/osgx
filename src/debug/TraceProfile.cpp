@@ -27,6 +27,7 @@ struct Node {
 	std::string name;
 	const char* className = nullptr;
 	std::string label;
+	std::size_t thread = 0;
 
 	double inclusiveMs = 0.0;
 	double selfMs = 0.0;
@@ -162,6 +163,7 @@ void copyOut(const Node& from, TraceNode& to) {
 	to.name = from.name;
 	to.className = from.className;
 	to.label = from.label;
+	to.thread = from.thread;
 	to.inclusiveMs = from.inclusiveMs;
 	to.selfMs = from.selfMs;
 	to.drawMs = from.drawMs;
@@ -188,6 +190,7 @@ struct TraceProfile::Impl {
 
 	// Reused across frames.
 	std::vector<std::vector<TraceRecord>> records;
+	std::vector<std::size_t> threads;
 	std::unordered_map<DrawKey, DrawCost, DrawKeyHash> drawCosts;
 	std::vector<ClockSample> clockSamples;
 	CameraNames names;
@@ -205,6 +208,7 @@ struct TraceProfile::Impl {
 
 	void fold(
 		const std::vector<TraceRecord>& sourceRecords,
+		std::size_t thread,
 		unsigned int frame,
 		osg::Timer_t origin
 	);
@@ -213,6 +217,7 @@ struct TraceProfile::Impl {
 
 void TraceProfile::Impl::fold(
 	const std::vector<TraceRecord>& sourceRecords,
+	std::size_t thread,
 	unsigned int frame,
 	osg::Timer_t origin
 ) {
@@ -324,8 +329,28 @@ void TraceProfile::Impl::fold(
 			parent = &child(*parent, phase, nullptr, record.camera, record.camera, name, "Camera");
 			parent->touched = true;
 			parent->frame = frame;
+			parent->thread = thread;
 
 			markStart(parent->frameStartMs, recordMs);
+
+			// The profiler's own spans go into one group under the camera.
+			if(detail::isProfilerLocation(record.location)) {
+				parent = &child(
+					*parent,
+					phase,
+					&detail::profilerGroupLocation(),
+					record.camera,
+					nullptr,
+					{},
+					nullptr
+				);
+
+				parent->touched = true;
+				parent->frame = frame;
+				parent->thread = thread;
+
+				markStart(parent->frameStartMs, recordMs);
+			}
 
 			// A span of the camera itself (its drawing) is the camera group's own.
 			if(record.object == static_cast<const osg::Object*>(record.camera)) {
@@ -348,6 +373,7 @@ void TraceProfile::Impl::fold(
 
 		node.touched = true;
 		node.frame = frame;
+		node.thread = thread;
 
 		markStart(node.frameStartMs, recordMs);
 
@@ -508,7 +534,12 @@ bool TraceProfile::add(unsigned int frame, const CameraNames& cameraNames) {
 
 		if(!range->closed || range->first < buffer->tail()) return false;
 
-		if(impl.records.size() <= used) impl.records.emplace_back();
+		if(impl.records.size() <= used) {
+			impl.records.emplace_back();
+			impl.threads.emplace_back();
+		}
+
+		impl.threads[used] = buffer->index();
 
 		auto& records = impl.records[used++];
 
@@ -552,7 +583,7 @@ bool TraceProfile::add(unsigned int frame, const CameraNames& cameraNames) {
 
 	if(!origin) return false;
 
-	for(std::size_t s = 0; s < used; s++) impl.fold(impl.records[s], frame, *origin);
+	for(std::size_t s = 0; s < used; s++) impl.fold(impl.records[s], impl.threads[s], frame, *origin);
 
 	for(auto& phase : impl.phases) {
 		phase.frame = frame;

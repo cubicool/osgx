@@ -33,6 +33,8 @@
 // Tune those fields in that order. The final image should never be the only evidence for whether a
 // slider works.
 
+#include "osgx-example.hpp"
+
 #include "osgx/Core.hpp"
 #include "osgx/GBuffer.hpp"
 #include "osgx/ImGui.hpp"
@@ -269,7 +271,11 @@ void main() {
 
 }
 
-int main() {
+int main(int argc, char** argv) {
+	osg::ArgumentParser args(&argc, argv);
+
+	const auto options = example::readArguments(args);
+
 	auto lib = osgx::initialize();
 
 	osgViewer::Viewer viewer;
@@ -462,5 +468,5 @@ int main() {
 	}, osgx::imgui::SectionOptions::create(false, true));
 #endif
 
-	return viewer.run();
+	return example::run(viewer, options);
 }

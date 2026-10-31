@@ -22,6 +22,7 @@ OSGX_ENABLE_WARNINGS
 #include <algorithm>
 #include <cstdint>
 #include <cstdio>
+#include <map>
 #include <optional>
 #include <string>
 #include <utility>
@@ -40,7 +41,8 @@ constexpr Location EVENT_NODE("event", Phase::EVENT);
 constexpr Location CAMERA_DRAW("camera", Phase::DRAW);
 constexpr Location READBACK("readback", Phase::DRAW);
 constexpr Location PROFILE_FOLD("profile", Phase::DRAW);
-constexpr Location SWAP("swap", Phase::DRAW);
+constexpr Location SWAP("SwapBuffers", Phase::DRAW);
+constexpr Location PROFILER_GROUP("osgx profiler", Phase::DRAW);
 constexpr Location GPU_CLOCK("gpu clock", Phase::DRAW);
 
 unsigned int frameNumber(const osg::RenderInfo& ri) {
@@ -241,8 +243,16 @@ const Location& drawableLocation() {
 	return DRAWABLE;
 }
 
-const Location& swapLocation() {
-	return SWAP;
+const Location& profilerGroupLocation() {
+	return PROFILER_GROUP;
+}
+
+bool isProfilerLocation(const Location* location) {
+	return location == &READBACK || location == &PROFILE_FOLD;
+}
+
+bool isWaitLocation(const Location* location) {
+	return location == &SWAP || location == &READBACK;
 }
 
 const Location& gpuClockLocation() {
@@ -704,13 +714,10 @@ namespace {
 struct WaterfallRow {
 	const TraceNode* node;
 	std::size_t depth;
-	bool gpu;
-	double startMs;
-	double endMs;
+	TraceSpan cpu;
 
-	// The row's ms: endMs - startMs, except for a GPU row (the GPU ms of its draws, which may
-	// leave gaps between them).
-	double ms;
+	// The GPU ms of the node's draws (its subtree's); negative without any.
+	double gpuMs;
 };
 
 void waterfallRows(
@@ -732,9 +739,7 @@ void waterfallRows(
 
 		if(cpu->ms < minMs && !(gpu && gpu->ms >= minMs)) continue;
 
-		rows.push_back({&child, depth, false, cpu->startMs, cpu->endMs, cpu->ms});
-
-		if(gpu) rows.push_back({&child, depth, true, gpu->startMs, gpu->endMs, gpu->ms});
+		rows.push_back({&child, depth, *cpu, gpu ? gpu->ms : -1.0});
 
 		if(depth < maxDepth) waterfallRows(child, newest, depth + 1, maxDepth, minMs, rows);
 	}
@@ -742,27 +747,51 @@ void waterfallRows(
 
 }
 
-FrameExtent frameExtent(const std::array<TraceNode, 4>& profile, unsigned int frame) {
-	FrameExtent extent;
+namespace {
+
+// Extends `endMs` to where the waterfall bars of `node` and its descendants in `frame` end: their
+// CPU spans, and their GPU times drawn from their CPU starts.
+void addBarEnd(const TraceNode& node, unsigned int frame, double& endMs) {
+	if(node.frame != frame) return;
+
+	if(const auto cpu = cpuSpan(node, frame)) {
+		endMs = std::max(endMs, cpu->endMs);
+
+		if(const auto gpu = gpuSpan(node, frame)) endMs = std::max(endMs, cpu->startMs + gpu->ms);
+	}
+
+	for(const auto& child : node.children) addBarEnd(child, frame, endMs);
+}
+
+// Adds the self time of `node` and its descendants in `frame` to their threads, waits excluded.
+// Self times partition each thread's spans in time, so the sums are its busy time.
+void addBusy(const TraceNode& node, unsigned int frame, std::map<std::size_t, double>& busy) {
+	if(node.frame != frame) return;
+
+	if(node.count > 0.0 && !detail::isWaitLocation(node.location)) busy[node.thread] += node.selfMs;
+
+	for(const auto& child : node.children) addBusy(child, frame, busy);
+}
+
+}
+
+FrameLoad frameLoad(const std::array<TraceNode, 4>& profile, unsigned int frame) {
+	FrameLoad load;
+	std::map<std::size_t, double> busy;
 
 	for(const auto& phase : profile) {
-		for(const auto& node : phase.children) {
-			const auto cpu = cpuSpan(node, frame);
-
-			if(!cpu) continue;
-
-			extent.totalMs = std::max(extent.totalMs, cpu->endMs);
-
-			if(node.location != &SWAP) extent.workMs = std::max(extent.workMs, cpu->endMs);
-		}
+		addBusy(phase, frame, busy);
+		addBarEnd(phase, frame, load.endMs);
 
 		if(const auto gpu = gpuSpan(phase, frame)) {
-			extent.totalMs = std::max(extent.totalMs, gpu->endMs);
-			extent.workMs = std::max(extent.workMs, gpu->endMs);
+			load.gpuMs += gpu->ms;
+			load.gpuStartMs = gpu->startMs;
 		}
 	}
 
-	return extent;
+	for(const auto& [thread, ms] : busy) load.cpuMs = std::max(load.cpuMs, ms);
+
+	return load;
 }
 
 void Profiler::reportWaterfall(
@@ -785,8 +814,9 @@ void Profiler::reportWaterfall(
 
 	for(const auto& phase : profile) waterfallRows(phase, *newest, 0, maxDepth, minMs, rows);
 
-	const auto extent = frameExtent(profile, *newest);
-	const double axisMs = std::max(budgetMs, extent.totalMs);
+	const auto load = frameLoad(profile, *newest);
+	const double axisMs = std::max(budgetMs, load.endMs);
+
 	const auto column = [&](double ms) {
 		return static_cast<std::size_t>(std::clamp(ms / axisMs, 0.0, 1.0) * static_cast<double>(width));
 	};
@@ -798,13 +828,15 @@ void Profiler::reportWaterfall(
 	std::snprintf(
 		line,
 		sizeof(line),
-		"osgx::debug::Profiler: frame %u, %.2f ms of work%s (budget %.2f ms), "
-		"%.2f ms incl. swap, averages",
+		"osgx::debug::Profiler: frame %u: CPU %.2f ms%s, GPU %.2f ms%s (budget %.2f ms); "
+		"bars end at %.2f ms; \"#\" = GPU time from the row's start; averages",
 		*newest,
-		extent.workMs,
-		extent.workMs > budgetMs ? " OVER BUDGET" : "",
+		load.cpuMs,
+		load.cpuMs > budgetMs ? " OVER" : "",
+		load.gpuMs,
+		load.gpuMs > budgetMs ? " OVER" : "",
 		budgetMs,
-		extent.totalMs
+		load.endMs
 	);
 
 	out << line << std::endl;
@@ -817,27 +849,37 @@ void Profiler::reportWaterfall(
 
 		if(budgetColumn < width) bar[budgetColumn] = '|';
 
-		const auto first = std::min(column(row.startMs), width - 1);
-		const auto last = std::max(first + 1, column(row.endMs));
+		const auto first = std::min(column(row.cpu.startMs), width - 1);
+		const auto last = std::max(first + 1, column(row.cpu.endMs));
 
 		char fill = row.depth == 0 ? '=' : '-';
 
-		if(row.gpu) fill = '#';
-
-		else if(node->location == &SWAP) fill = '.';
+		if(detail::isWaitLocation(node->location)) fill = '.';
 
 		for(std::size_t c = first; c < last && c < width; c++) bar[c] = fill;
 
+		// Only the columns the GPU time covers, so a short GPU time leaves the CPU bar visible.
+		if(row.gpuMs >= 0.0) {
+			const auto gpuLast = column(row.cpu.startMs + row.gpuMs);
+
+			for(std::size_t c = first; c < gpuLast && c < width; c++) bar[c] = '#';
+		}
+
 		const auto label = std::string(row.depth * 2, ' ') + node->label;
+
+		char gpu[16] = "";
+
+		if(row.gpuMs >= 0.0) std::snprintf(gpu, sizeof(gpu), "%.3f", row.gpuMs);
 
 		std::snprintf(
 			line,
 			sizeof(line),
-			"  #%03zu  %-6s  %-36.36s%9.3f  |",
+			"  #%03zu  %-6s  %-36.36s%9.3f%9s  |",
 			i,
-			row.gpu ? "GPU" : detail::toString(node->phase),
+			detail::toString(node->phase),
 			label.c_str(),
-			row.ms
+			row.cpu.ms,
+			gpu
 		);
 
 		out << line << bar << "|" << std::endl;

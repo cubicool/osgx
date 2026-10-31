@@ -41,6 +41,8 @@
 //              that. The cursor is captured automatically for the duration of the drag, same as
 //              firstperson above.
 
+#include "osgx-example.hpp"
+
 #include "osgx/CameraActions.hpp"
 #include "osgx/Callbacks.hpp"
 #include "osgx/Core.hpp"
@@ -195,6 +197,10 @@ static bool parseType(const std::string& s, ManipulatorType& type) {
 }
 
 int main(int argc, char** argv) {
+	osg::ArgumentParser args(&argc, argv);
+
+	const auto options = example::readArguments(args);
+
 	auto lib = osgx::initialize();
 
 	osgViewer::Viewer viewer;
@@ -479,5 +485,5 @@ int main(int argc, char** argv) {
 		;
 	}
 
-	return viewer.run();
+	return example::run(viewer, options);
 }

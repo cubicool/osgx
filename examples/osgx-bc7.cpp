@@ -4,6 +4,8 @@
 // ordinary image path, this preserves the compressed blocks and authored mip chain on the GPU.
 // Zoom with the trackball to inspect both the base level and mip filtering.
 
+#include "osgx-example.hpp"
+
 #include "osgx/CompressedTexture.hpp"
 
 OSGX_DISABLE_WARNINGS
@@ -26,6 +28,10 @@ OSGX_ENABLE_WARNINGS
 #include <iostream>
 
 int main(int argc, char* argv[]) {
+	osg::ArgumentParser args(&argc, argv);
+
+	const auto options = example::readArguments(args);
+
 	if(argc != 2) {
 		std::cerr << "Usage: " << argv[0] << " file.dds" << std::endl;
 
@@ -75,5 +81,5 @@ int main(int argc, char* argv[]) {
 	viewer.addEventHandler(new osgViewer::StatsHandler);
 	viewer.setUpViewInWindow(80, 80, 1280, 720);
 
-	return viewer.run();
+	return example::run(viewer, options);
 }

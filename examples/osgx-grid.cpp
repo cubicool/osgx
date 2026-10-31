@@ -1,5 +1,7 @@
 // vimrun! ./examples/osgx-grid
 
+#include "osgx-example.hpp"
+
 #include "osgx/Core.hpp"
 #include "osgx/Grid.hpp"
 #include "osgx/Library.hpp"
@@ -366,6 +368,10 @@ void addGridRoom(osg::Group* root) {
 }
 
 int main(int argc, char** argv) {
+	osg::ArgumentParser args(&argc, argv);
+
+	const auto options = example::readArguments(args);
+
 	auto lib = osgx::initialize();
 
 	bool orthoMode = argc > 1 && std::string(argv[1]) == "ortho";
@@ -422,7 +428,7 @@ int main(int argc, char** argv) {
 	// camera from immediately stomping it with a second COLOR_BUFFER_BIT clear.
 	if(orthoMode) viewer.getCamera()->setClearMask(GL_DEPTH_BUFFER_BIT);
 
-	auto r = viewer.run();
+	auto r = example::run(viewer, options);
 
 	return r;
 }

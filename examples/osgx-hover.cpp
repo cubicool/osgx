@@ -14,6 +14,8 @@
 //
 // Scene: five spheres, pick IDs 1-5. ID 0 = background.
 
+#include "osgx-example.hpp"
+
 #include "osgx/Core.hpp"
 #include "osgx/Library.hpp"
 #include "osgx/Picking.hpp"
@@ -94,6 +96,8 @@ osg::ref_ptr<osg::Group> createScene(std::unordered_map<uint32_t, PickEntry>& ob
 
 int main(int argc, char** argv) {
 	osg::ArgumentParser args(&argc, argv);
+
+	const auto options = example::readArguments(args);
 	auto lib = osgx::initialize(args);
 
 	bool async = args.read("--async");
@@ -200,5 +204,5 @@ int main(int argc, char** argv) {
 
 	viewer.setSceneData(root);
 
-	return viewer.run();
+	return example::run(viewer, options);
 }

@@ -97,9 +97,17 @@ namespace detail {
 	// their object rather than a named operation.
 	bool isNodeLocation(const Location* location);
 
-	// The Location of the buffer swap spans (CPU time in SwapBuffers; with vsync mostly blocked
-	// waiting for the display, not working).
-	const Location& swapLocation();
+	// Whether spans at `location` are the profiler's own per-frame work rather than the
+	// application's: the query readback and the profile fold. The profile groups them under one
+	// node per camera at profilerGroupLocation() ("osgx profiler").
+	bool isProfilerLocation(const Location* location);
+	const Location& profilerGroupLocation();
+
+	// Whether spans at `location` are waits rather than work: the buffer swap (with vsync mostly
+	// blocked until the display takes a frame) and the query readback (blocked until the GPU
+	// finishes, under SYNC, and sometimes where the driver blocks for vsync instead of in the
+	// swap).
+	bool isWaitLocation(const Location* location);
 
 	// The Location of ProfilerFinalCallback's once-per-frame GPU clock sample: an INSTANT whose
 	// object is the GraphicsContext, tick the CPU time and gpuBegin (= gpuEnd) the GL_TIMESTAMP
@@ -291,15 +299,23 @@ private:
 	void _traced(T& node);
 };
 
-// Where a frame ends, in ms from its start: its work (the last CPU or GPU span, buffer swaps
-// excluded) and everything (swaps included; with vsync a swap blocks until the display takes the
-// frame, so the total stays near the refresh period however little work there is).
-struct FrameExtent {
-	double workMs = 0.0;
-	double totalMs = 0.0;
+// The load of a frame in ms: the CPU busy time of its busiest thread (the self time of every node
+// that thread recorded, waits excluded: detail::isWaitLocation()), the GPU busy time (its draws'
+// GPU time), where its waterfall bars end (CPU spans, waits included, and each node's GPU time
+// drawn from its CPU start), and where its GPU work starts (ms from the frame's start; -1 without
+// GPU times). Busy times are what a budget is compared with: where spans end includes waiting
+// (with vsync, a frame always ends near the refresh period). The GPU runs a draw some time after
+// the CPU issues it (one frame later, overlapping the next frame's CPU work, when queries are read
+// ASYNC), so a waterfall shows a node's GPU time as its cost, drawn from its CPU start, not at the
+// time the GPU ran it.
+struct FrameLoad {
+	double cpuMs = 0.0;
+	double gpuMs = 0.0;
+	double endMs = 0.0;
+	double gpuStartMs = -1.0;
 };
 
-FrameExtent frameExtent(const std::array<TraceNode, 4>& profile, unsigned int frame);
+FrameLoad frameLoad(const std::array<TraceNode, 4>& profile, unsigned int frame);
 
 // Installs the profiler on a viewer: a ProfilerCallback on every drawable of each view's scene
 // data, via ProfilerVisitor; one shared ProfilerFinalCallback on
@@ -342,14 +358,15 @@ public:
 	void report(std::ostream& out) const;
 
 	// Writes the newest frame as a waterfall: a row per node down to `maxDepth` levels below each
-	// phase (traversal/submission order), each with its ms and a bar from its start to its end
-	// within the frame (averages, like the profile). Below each DRAW row with draws in its subtree,
-	// a GPU row spans their GPU work (first start to last end) and shows their total GPU ms. The axis spans
-	// `budgetMs` or the frame, if longer, in `width` columns; "|" marks the budget. Bars are "=" for
-	// top-level nodes, "-" below, "#" for the GPU and "." for buffer swaps (waiting, not work; the
-	// budget is compared with the frame's work, FrameExtent::workMs). A node without spans of its
-	// own (a CULL camera group) spans its children. Nodes shorter than `minMs` (GPU included) are left out
-	// with everything below them, culled nodes too.
+	// phase (traversal/submission order) with its CPU and GPU ms and a bar from its start to its
+	// end within the frame (averages, like the profile); the GPU time of the node's draws (its
+	// subtree's) overlays the bar as "#" from the same start, running past it when the GPU takes
+	// longer than the CPU (see FrameLoad). The axis spans `budgetMs` or the frame, if longer, in
+	// `width` columns; "|" marks the budget. Bars are "=" for top-level nodes, "-" below and "."
+	// for waits (detail::isWaitLocation()). The header compares the frame's CPU and GPU busy times
+	// (frameLoad()) with the budget. A node without spans of its own (a CULL camera group) spans
+	// its children. Nodes shorter than `minMs` (CPU and GPU) are left out with everything below
+	// them, culled nodes too.
 	void reportWaterfall(
 		std::ostream& out,
 		double budgetMs=1000.0 / 60.0,
