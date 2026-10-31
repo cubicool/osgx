@@ -104,9 +104,12 @@ bool hasJointWeights(osg::Node* node);
 // world matrices are read from the scene graph as they are; whatever moves the joints (an
 // animation callback, application code) is independent of the Skin.
 //
-// A joint whose first parent is another joint of the same Skin composes its local matrix onto that
-// joint's world matrix; any other joint uses getWorldMatrices().front(). Joints are held by
-// observer_ptr: a joint deleted from the graph keeps its last palette entry.
+// World matrices (of the joints and of the mesh) follow first parents up to the root, the same path
+// getWorldMatrices().front() takes, with an absolute-reference-frame or root Camera ending the path
+// as in osg::computeLocalToWorld(). Each node's world matrix is composed once per computePalette()
+// call, so ancestors shared by many joints (including non-joint nodes between them, such as pivot
+// transforms) cost one matrix product each. Joints are held by observer_ptr: a joint deleted from
+// the graph keeps its last palette entry.
 // ================================================================================================
 class Skin: public osg::Referenced {
 public:
@@ -122,6 +125,15 @@ public:
 	// false if `mesh` is null.
 	bool computePalette(const osg::Node* mesh, osg::MatrixfArray& palette);
 
+	// As above, but world matrices are computed by the first call for a given `frameNumber` and
+	// reused by later calls with the same `frameNumber`, so every mesh sharing this Skin poses the
+	// skeleton once per frame. A joint moved after that first call is seen on the next frame.
+	bool computePalette(
+		const osg::Node* mesh,
+		osg::MatrixfArray& palette,
+		unsigned int frameNumber
+	);
+
 	// Makes `mesh` a skinned mesh of this Skin: gives it its own palette (a MatrixfArray backed by
 	// a ShaderStorageBufferObject), bound in its StateSet at the "osgx::joints" slot, and a
 	// SkinPaletteCallback update callback that recomputes it every update traversal. Geometry under
@@ -130,15 +142,16 @@ public:
 	osg::MatrixfArray* attach(osg::Node* mesh);
 
 private:
-	osg::Matrixd _computeJointWorld(std::size_t jointIndex);
+	const osg::Matrixd& _computeWorld(const osg::Node* node);
+	bool _writePalette(const osg::Node* mesh, osg::MatrixfArray& palette);
 
 	std::vector<osg::observer_ptr<osg::MatrixTransform>> _joints;
 	std::vector<osg::Matrixf> _inverseBindMatrices;
-	std::unordered_map<const osg::Node*, std::size_t> _jointIndices;
 
-	// Scratch reused by every computePalette() call.
-	std::vector<osg::Matrixd> _jointWorlds;
-	std::vector<char> _jointWorldComputed;
+	// Per-node world matrices, valid for _worldsFrame while _worldsCached is true.
+	std::unordered_map<const osg::Node*, osg::Matrixd> _worlds;
+	bool _worldsCached = false;
+	unsigned int _worldsFrame = 0;
 };
 
 // The update callback Skin::attach() installs. The palette's storage buffer binding is created with

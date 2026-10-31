@@ -326,7 +326,7 @@ int main(int argc, char** argv) {
 
 	args.getApplicationUsage()->setCommandLineUsage(
 		std::string(args.getApplicationName()) +
-		" <model.gltf> (--hdr <path> | --env <manifest.gltf> | --official-ibl <dir>) [--camera <camera.gltf>] [--capture <path.png>] [--samples <count>] [--debug [mode]] [--animation]"
+		" <model.gltf> (--hdr <path> | --env <manifest.gltf> | --official-ibl <dir>) [--camera <camera.gltf>] [--capture <path.png>] [--samples <count>] [--debug [mode]] [--animation] [--profile]"
 	);
 	args.getApplicationUsage()->addCommandLineOption(
 		"--hdr <path>",
@@ -361,6 +361,10 @@ int main(int argc, char** argv) {
 		"whole model, so unskinned meshes in a partly skinned model deform wrongly)"
 	);
 	args.getApplicationUsage()->addCommandLineOption(
+		"--profile",
+		"Show an ImGui panel with per-drawable GPU timings for the model (ImGui builds only)"
+	);
+	args.getApplicationUsage()->addCommandLineOption(
 		"--debug [mode]",
 		"combined, diffuse, specular, base-color, roughness, metallic, normal-texture, normal-texture-raw, geometry-normal, shading-normal, geometry-tangent, bitangent, linear-diffuse, linear-specular, or linear-combined"
 	);
@@ -381,6 +385,7 @@ int main(int argc, char** argv) {
 	const bool haveCamera = args.read("--camera", cameraPath);
 	const bool captureRequested = args.read("--capture", capturePath);
 	const bool animation = args.read("--animation");
+	const bool profile = args.read("--profile");
 	args.read("--samples", samples);
 	const int debugPos = args.find("--debug");
 	const bool diagnostics = debugPos >= 0;
@@ -650,47 +655,57 @@ int main(int argc, char** argv) {
 
 	if(animation && !player) std::cout << "--animation: the model has no animations" << std::endl;
 
-#ifdef OSGX_IMGUI
-	if(animation && player) {
-		// Dear ImGui's single global context is not safe across several OSG draw threads.
-		viewer.setThreadingModel(osgViewer::Viewer::SingleThreaded);
-
-		auto* gui = new osgx::imgui::Widget(viewer);
-
-		gui->addSection("Animation", [&player](osg::RenderInfo&) {
-			for(std::size_t i = 0; i < player.getNumAnimations(); i++) {
-				std::string name = player.getAnimationName(i);
-
-				if(name.empty()) name = "animation " + std::to_string(i);
-
-				ImGui::PushID(static_cast<int>(i));
-
-				if(ImGui::Selectable(name.c_str(), player.getCurrentAnimationIndex() == i)) {
-					player.playAnimation(i);
-				}
-
-				ImGui::PopID();
-			}
-
-			if(ImGui::Button(player.getPlaying() ? "Pause" : "Play")) player.togglePlaying();
-
-			ImGui::SameLine();
-
-			if(ImGui::Button("Restart")) player.restart();
-		});
-	}
-#else
-	if(animation && player) {
-		std::cout << "--animation: built without ImGui, no animation panel" << std::endl;
-	}
-#endif
-
+	// Set before the ImGui profiler appends its FINAL_DRAW callback, which then wraps this one;
+	// setFinalDrawCallback() afterward would replace the profiler's.
 	osg::ref_ptr<FramebufferPNG> capture;
 
 	if(captureRequested) {
 		capture = new FramebufferPNG(viewer.getCamera(), capturePath);
 		viewer.getCamera()->setFinalDrawCallback(capture);
 	}
+
+#ifdef OSGX_IMGUI
+	const bool animationPanel = animation && player;
+
+	if(animationPanel || profile) {
+		// Dear ImGui's single global context is not safe across several OSG draw threads.
+		viewer.setThreadingModel(osgViewer::Viewer::SingleThreaded);
+
+		auto* gui = new osgx::imgui::Widget(viewer);
+
+		if(profile) gui->addProfilerSection(viewer, model.get(), true);
+
+		if(animationPanel) {
+			gui->addSection("Animation", [&player](osg::RenderInfo&) {
+				for(std::size_t i = 0; i < player.getNumAnimations(); i++) {
+					std::string name = player.getAnimationName(i);
+
+					if(name.empty()) name = "animation " + std::to_string(i);
+
+					ImGui::PushID(static_cast<int>(i));
+
+					if(ImGui::Selectable(name.c_str(), player.getCurrentAnimationIndex() == i)) {
+						player.playAnimation(i);
+					}
+
+					ImGui::PopID();
+				}
+
+				if(ImGui::Button(player.getPlaying() ? "Pause" : "Play")) player.togglePlaying();
+
+				ImGui::SameLine();
+
+				if(ImGui::Button("Restart")) player.restart();
+			});
+		}
+	}
+#else
+	if(animation && player) {
+		std::cout << "--animation: built without ImGui, no animation panel" << std::endl;
+	}
+
+	if(profile) std::cout << "--profile: built without ImGui, no profiler panel" << std::endl;
+#endif
 
 	while(!viewer.done()) {
 		viewer.frame();

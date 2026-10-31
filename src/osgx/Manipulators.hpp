@@ -754,7 +754,7 @@ private:
 // A from-scratch orbit/follow osgGA::StandardManipulator - NOT built on osgGA::OrbitManipulator/
 // NodeTrackerManipulator. Those inherit hidden behavior osgx::ThirdPersonManipulator doesn't fully
 // control: NodeTrackerManipulator tracks a node's getBound().center() (skewed off-center by
-// asymmetric attached geometry - the real bug that prompted this rebuild, see todo-manipulators.md),
+// asymmetric attached geometry),
 // performMovementMiddleMouseButton is silently overridden to do nothing (pan disabled without ever
 // being asked for), and getVerticalAxisFixed() silently branches between two unrelated rotate
 // codepaths. This class owns 100% of its own orbit math instead - same precedent as
@@ -924,9 +924,8 @@ protected:
 // wherever the target turns, with no camera-relative math needed.
 //
 // CAMERA_RELATIVE (WASD relative to the camera's current azimuth, target turns to face its
-// movement direction) is deliberately not built yet - see todo-manipulators.md for the still-open
-// question of whether the eventual mode enum/constraint logic belongs here, partially in
-// osgx::PlayerManipulator<Base>, or somewhere else entirely.
+// movement direction) is deliberately not built yet - whether its mode enum/constraint logic
+// belongs here, partially in osgx::PlayerManipulator<Base>, or somewhere else is undecided.
 //
 // setTarget() snaps the controller's internal position from the target's current matrix
 // translation and resets heading to 0 (facing +Y) - it does not attempt to recover an existing

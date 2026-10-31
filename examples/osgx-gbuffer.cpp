@@ -500,15 +500,14 @@ int main(int argc, char** argv) {
 	// - sqrt(2) covers the square's own corners, the furthest points from floorCenter. Without
 	// this, the floor extends well past the shadow frustum's model-sized default coverage
 	// (extent ~= boundRadius * margin, margin 1.3 by default) and the outer ring of the floor
-	// silently reads as unshadowed - see ai/todo-shadow.md's "chopped off" writeup, case (a).
+	// silently reads as unshadowed.
 	const osgx::ShadowMap::Coverage shadowCoverage{
 		boundCenter, boundRadius, floorCenter, floorHalfSize * 1.42f
 	};
 	// Moderate ~45 degree angle - offset enough to cast a clearly visible shadow without the
 	// extreme grazing angles that stress-test the shadow frustum's tight, model-sized coverage.
 	// (A straight-overhead default briefly lived here while diagnosing low-poly faceted self-
-	// acne against osgx::ShadowMap::normalOffset - see ai/todo-shadow.md's now-resolved
-	// scale-aware bias item; this reverts to the original angled default now that it's shipped.)
+	// acne against osgx::ShadowMap::normalOffset; this is the original angled default.)
 	// Not const: the ImGui "Directional Light" section below drags this live (see
 	// ShadowMap::reposition() further down).
 	osg::Vec3 lightDir = osg::Vec3(0.6f, 0.4f, -0.6f);

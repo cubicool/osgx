@@ -387,9 +387,10 @@ void TextureLoader::applyFormatAndSampler(
 			static_cast<osg::Texture::WrapMode>(sampler.wrap_t)
 		);
 	}
+	// A texture with no sampler uses the glTF default sampler: REPEAT in both directions.
 	else {
-		texture->setWrap(osg::Texture::WRAP_S, osg::Texture::CLAMP_TO_EDGE);
-		texture->setWrap(osg::Texture::WRAP_T, osg::Texture::CLAMP_TO_EDGE);
+		texture->setWrap(osg::Texture::WRAP_S, osg::Texture::REPEAT);
+		texture->setWrap(osg::Texture::WRAP_T, osg::Texture::REPEAT);
 	}
 }
 

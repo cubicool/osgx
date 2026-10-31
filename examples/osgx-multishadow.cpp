@@ -265,7 +265,7 @@ int main(int argc, char** argv) {
 
 	// Sun's coverage: the table is the caster; the whole floor is the receiver (sqrt(2) covers the
 	// floor square's own corners, same convention as osgx-shadow.cpp) - without this, the floor's
-	// outer ring would silently read as unshadowed (ai/todo-shadow.md's "chopped off" writeup).
+	// outer ring would silently read as unshadowed.
 	const osgx::ShadowMap::Coverage sunCoverage{
 		osg::Vec3(0.0f, 0.0f, 0.75f), 2.2f, osg::Vec3(), floorHalfSize * 1.42f
 	};

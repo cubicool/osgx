@@ -496,8 +496,7 @@ int main(int argc, char** argv) {
 	// Caster bound is the scene's own objects; receiver bound is the (much larger) floor square
 	// beneath them, centered at the origin per makeFloor() below - sqrt(2) covers the square's own
 	// corners. Every scene's floorHalfSize (6.0) comfortably exceeds boundRadius*margin (~2.9-4.6
-	// by default), so without this the floor's outer ring would silently read as unshadowed - see
-	// ai/todo-shadow.md's "chopped off" writeup, case (a).
+	// by default), so without this the floor's outer ring would silently read as unshadowed.
 	const osgx::ShadowMap::Coverage sceneCoverage{
 		scene->boundCenter, scene->boundRadius, osg::Vec3(), scene->floorHalfSize * 1.42f
 	};

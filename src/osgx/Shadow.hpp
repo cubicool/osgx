@@ -62,14 +62,12 @@ inline constexpr int MAX_SHADOWED_2D = 2;
 inline constexpr int MAX_SHADOWED_CUBE = 2;
 
 struct ShadowMap {
-	// The scene-bound pair every create()/createSpot()/createPoint()/reposition*() overload used
-	// to take as two separate positional arguments (`sceneBoundCenter`, `sceneBoundRadius`) -
-	// bundled here per the "too many long position-order-dependent positional arguments" complaint
-	// in ai/todo-shadow.md, then grown to carry the Codex Overview's own `ShadowCoverage` idea
-	// (caster bounds distinct from requested receiver bounds - see `receiverCenter`/
-	// `receiverRadius`/`bound()` below). Deliberately NOT folded into Options itself - unlike
-	// Options, which is genuinely shared verbatim across repositioning calls, `position`/
-	// `direction`/`outerConeAngle` stay their own light-kind-specific arguments outside of either.
+	// The scene-bound pair every create()/createSpot()/createPoint()/reposition*() overload takes,
+	// bundled instead of two long position-order-dependent arguments, plus caster bounds distinct
+	// from requested receiver bounds (see `receiverCenter`/`receiverRadius`/`bound()` below).
+	// Deliberately NOT folded into Options itself - unlike Options, which is genuinely shared
+	// verbatim across repositioning calls, `position`/`direction`/`outerConeAngle` stay their own
+	// light-kind-specific arguments outside of either.
 	struct Coverage {
 		// What must be RENDERED into the depth map - geometry outside this bound may be clipped
 		// out of the shadow camera's own cull pass and simply never cast at all.
@@ -81,8 +79,7 @@ struct ShadowMap {
 		// never extend past the caster bound itself," matching every existing caller exactly -
 		// same 0-is-auto sentinel convention as Options::extent. Left UNSET rather than defaulted
 		// to the caster bound, so bound() below can tell "no receiver given" apart from "receiver
-		// happens to equal the caster." See ai/todo-shadow.md's "chopped off" writeup for why a
-		// receiver outside the caster-only bound silently reads as unshadowed rather than erroring.
+		// happens to equal the caster."
 		osg::Vec3 receiverCenter;
 		float receiverRadius = 0.0f;
 

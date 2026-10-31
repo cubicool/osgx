@@ -185,8 +185,8 @@ osg::ref_ptr<osg::Program> makeDistanceOnlyProgram(const osgx::HookList& hooks) 
 // Starting point for ShadowMap::normalOffset, in texels of this map's own footprint - a world-
 // space margin proportional to what one texel actually covers, not a fixed literal. 1.5 texels
 // is deliberately modest (enough to clear ordinary quantization/facet-slope acne without
-// visible peter-panning on the table-test scene); not yet exposed as its own Options field -
-// see ai/todo-shadow.md's scale-aware bias item for why.
+// visible peter-panning on the table-test scene). Not an Options field: the derived
+// ShadowMap::normalOffset uniform can be set directly, and `bias` remains the raw escape hatch.
 constexpr float NORMAL_OFFSET_TEXELS = 1.5f;
 
 // Shared by ShadowMap::create()/ShadowMap::reposition() - the only difference

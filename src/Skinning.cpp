@@ -8,11 +8,11 @@
 OSGX_DISABLE_WARNINGS
 
 #include <osg/BufferObject>
+#include <osg/Camera>
+#include <osg/FrameStamp>
 #include <osg/Geometry>
 
 OSGX_ENABLE_WARNINGS
-
-#include <algorithm>
 
 namespace osgx {
 
@@ -74,72 +74,79 @@ Skin::Skin(
 	const std::vector<osg::Matrixf>& inverseBindMatrices
 ):
 _joints(joints.begin(), joints.end()),
-_inverseBindMatrices(inverseBindMatrices),
-_jointWorlds(joints.size()),
-_jointWorldComputed(joints.size()) {
+_inverseBindMatrices(inverseBindMatrices) {
 	_inverseBindMatrices.resize(joints.size(), osg::Matrixf::identity());
-
-	for(std::size_t i = 0; i < joints.size(); i++) {
-		if(joints[i]) _jointIndices.emplace(joints[i], i);
-	}
 }
 
 std::size_t Skin::getNumJoints() const {
 	return _joints.size();
 }
 
-osg::Matrixd Skin::_computeJointWorld(std::size_t jointIndex) {
-	if(_jointWorldComputed[jointIndex]) return _jointWorlds[jointIndex];
+const osg::Matrixd& Skin::_computeWorld(const osg::Node* node) {
+	auto it = _worlds.find(node);
 
-	osg::ref_ptr<osg::MatrixTransform> joint;
-
-	_joints[jointIndex].lock(joint);
+	if(it != _worlds.end()) return it->second;
 
 	osg::Matrixd world;
+	const osg::Camera* camera = node->asCamera();
 
-	if(joint) {
-		auto parent = joint->getNumParents() ?
-			_jointIndices.find(joint->getParent(0)) :
-			_jointIndices.end()
-		;
+	// An absolute or root Camera ends the path without contributing, as in
+	// osg::computeLocalToWorld(path, ignoreCameras=true).
+	if(
+		!camera ||
+		(camera->getReferenceFrame() == osg::Transform::RELATIVE_RF && camera->getNumParents())
+	) {
+		if(node->getNumParents()) world = _computeWorld(node->getParent(0));
 
-		if(parent != _jointIndices.end()) {
-			world = joint->getMatrix() * _computeJointWorld(parent->second);
-		}
-		else {
-			osg::MatrixList worlds = joint->getWorldMatrices();
-
-			world = worlds.empty() ? joint->getMatrix() : worlds.front();
+		if(const osg::Transform* transform = node->asTransform()) {
+			transform->computeLocalToWorldMatrix(world, nullptr);
 		}
 	}
 
-	_jointWorlds[jointIndex] = world;
-	_jointWorldComputed[jointIndex] = 1;
-
-	return world;
+	return _worlds.emplace(node, world).first->second;
 }
 
 bool Skin::computePalette(const osg::Node* mesh, osg::MatrixfArray& palette) {
+	_worlds.clear();
+	_worldsCached = false;
+
+	return _writePalette(mesh, palette);
+}
+
+bool Skin::computePalette(
+	const osg::Node* mesh,
+	osg::MatrixfArray& palette,
+	unsigned int frameNumber
+) {
+	if(!_worldsCached || _worldsFrame != frameNumber) {
+		_worlds.clear();
+		_worldsCached = true;
+		_worldsFrame = frameNumber;
+	}
+
+	return _writePalette(mesh, palette);
+}
+
+bool Skin::_writePalette(const osg::Node* mesh, osg::MatrixfArray& palette) {
 	if(!mesh) return false;
 
-	osg::Matrixd worldToMesh;
-	osg::MatrixList meshWorlds = mesh->getWorldMatrices();
-
-	if(!meshWorlds.empty()) worldToMesh.invert(meshWorlds.front());
+	osg::Matrixd worldToMesh = osg::Matrixd::inverse(_computeWorld(mesh));
 
 	if(palette.size() != _joints.size()) palette.resize(
 		static_cast<unsigned int>(_joints.size()),
 		osg::Matrixf::identity()
 	);
 
-	std::fill(_jointWorldComputed.begin(), _jointWorldComputed.end(), 0);
-
 	for(std::size_t i = 0; i < _joints.size(); i++) {
-		if(!_joints[i].valid()) continue;
+		osg::ref_ptr<osg::MatrixTransform> joint;
+
+		_joints[i].lock(joint);
+
+		if(!joint) continue;
 
 		osg::Matrixd inverseBind = _inverseBindMatrices[i];
 
-		palette[i] = osg::Matrixf(inverseBind * _computeJointWorld(i) * worldToMesh);
+		palette[i] = osg::Matrixf(inverseBind * _computeWorld(joint.get()) * worldToMesh);
 	}
 
 	palette.dirty();
@@ -189,7 +196,10 @@ osg::MatrixfArray* SkinPaletteCallback::getPalette() const {
 void SkinPaletteCallback::operator()(osg::Node* node, osg::NodeVisitor* nv) {
 	resolveBinding(_bindingResolved, _binding.get(), "osgx::joints");
 
-	_skin->computePalette(node, *_palette);
+	const osg::FrameStamp* frameStamp = nv ? nv->getFrameStamp() : nullptr;
+
+	if(frameStamp) _skin->computePalette(node, *_palette, frameStamp->getFrameNumber());
+	else _skin->computePalette(node, *_palette);
 
 	traverse(node, nv);
 }
