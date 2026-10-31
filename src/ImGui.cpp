@@ -2,8 +2,12 @@
 
 #ifdef OSGX_IMGUI
 
+#include <algorithm>
+#include <array>
 #include <bit>
 #include <cstdint>
+#include <cstdio>
+#include <optional>
 
 namespace osgx::imgui {
 
@@ -484,21 +488,213 @@ void ProfilerSection::refresh() {
 
 namespace {
 
-struct ProfilerRow {
-	std::string path;
-	const debug::TraceNode* node;
+constexpr std::array<double, 5> BUDGET_HZ{30.0, 60.0, 90.0, 120.0, 144.0};
+
+constexpr const char* BUDGET_LABELS[]{
+	"30 Hz (33.3 ms)",
+	"60 Hz (16.7 ms)",
+	"90 Hz (11.1 ms)",
+	"120 Hz (8.3 ms)",
+	"144 Hz (6.9 ms)"
 };
 
-// Rows for every drawn drawable and culled node under `node`, in scene order, with "/"-joined
-// paths of their labels.
-void profilerRows(const debug::TraceNode& node, const std::string& path, std::vector<ProfilerRow>& rows) {
-	for(const auto& child : node.children) {
-		const auto childPath = path.empty() ? child.label : path + "/" + child.label;
+constexpr ImU32 GPU_COLOR = IM_COL32(230, 90, 140, 255);
+constexpr ImU32 WAIT_COLOR = IM_COL32(130, 130, 130, 150);
+constexpr ImU32 OVER_BUDGET_TINT = IM_COL32(235, 55, 55, 110);
+constexpr ImU32 OVER_BUDGET_OUTLINE = IM_COL32(235, 55, 55, 255);
+constexpr ImU32 BUDGET_LINE_COLOR = IM_COL32(235, 55, 55, 170);
 
-		if(child.draws > 0.0 || child.culled) rows.push_back({childPath, &child});
-
-		profilerRows(child, childPath, rows);
+ImU32 phaseColor(debug::Phase phase) {
+	switch(phase) {
+		case debug::Phase::EVENT: return IM_COL32(170, 130, 230, 255);
+		case debug::Phase::UPDATE: return IM_COL32(90, 150, 240, 255);
+		case debug::Phase::CULL: return IM_COL32(100, 200, 115, 255);
+		case debug::Phase::DRAW: return IM_COL32(240, 165, 75, 255);
 	}
+
+	return IM_COL32_WHITE;
+}
+
+struct Waterfall {
+	unsigned int frame;
+	double axisMs;
+	double budgetMs;
+	double minMs;
+};
+
+// Whether `node` gets a row: it ran in the frame, was not culled, and its CPU or GPU ms reaches
+// the minimum.
+bool waterfallVisible(const debug::TraceNode& node, const Waterfall& waterfall) {
+	if(node.frame != waterfall.frame || node.culled) return false;
+
+	const auto cpu = debug::cpuSpan(node, waterfall.frame);
+
+	if(!cpu) return false;
+
+	const auto gpu = debug::gpuSpan(node, waterfall.frame);
+
+	return cpu->ms >= waterfall.minMs || (gpu && gpu->ms >= waterfall.minMs);
+}
+
+// A bar over [y0, y1] from `span`'s start to its end, in the cell starting at x `left`, `width`
+// wide; unless `waiting`, the part past the budget is tinted and outlined red.
+void waterfallBar(
+	ImDrawList* drawList,
+	float left,
+	float width,
+	float y0,
+	float y1,
+	const debug::TraceSpan& span,
+	ImU32 color,
+	bool waiting,
+	const Waterfall& waterfall
+) {
+	auto x = [&](double ms) {
+		return left + width * static_cast<float>(std::clamp(ms / waterfall.axisMs, 0.0, 1.0));
+	};
+
+	const float x0 = x(span.startMs);
+	const float x1 = std::max(x(span.endMs), x0 + 1.0f);
+	const float budget = x(waterfall.budgetMs);
+
+	drawList->AddRectFilled(ImVec2(x0, y0), ImVec2(x1, y1), color);
+
+	if(x1 > budget && !waiting) {
+		const ImVec2 overMin(std::max(x0, budget), y0);
+		const ImVec2 overMax(x1, y1);
+
+		drawList->AddRectFilled(overMin, overMax, OVER_BUDGET_TINT);
+		drawList->AddRect(overMin, overMax, OVER_BUDGET_OUTLINE);
+	}
+}
+
+void waterfallTooltip(
+	const debug::TraceNode& node,
+	const debug::TraceSpan& cpu,
+	const std::optional<debug::TraceSpan>& gpu
+) {
+	ImGui::BeginTooltip();
+	ImGui::TextUnformatted(node.label.c_str());
+
+	const char* phase = debug::detail::toString(node.phase);
+
+	if(node.className) ImGui::TextDisabled("%s, %s", node.className, phase);
+
+	else ImGui::TextDisabled("%s", phase);
+
+	ImGui::Separator();
+	ImGui::Text("CPU: %.3f ms, at %.3f ms", cpu.ms, cpu.startMs);
+
+	if(node.location == &debug::detail::swapLocation()) {
+		ImGui::TextDisabled("time in SwapBuffers: with vsync, mostly waiting for the display");
+	}
+
+	if(node.count > 0.0) ImGui::Text("self %.3f ms, %.1f spans per frame", node.selfMs, node.count);
+
+	if(gpu) ImGui::Text("GPU: %.3f ms, at %.3f ms", gpu->ms, gpu->startMs);
+
+	if(node.draws > 0.0) {
+		ImGui::Text("draws per frame: %.1f, first in draw order: %d", node.draws, node.drawOrder);
+	}
+
+	ImGui::TextDisabled("moving averages, frame %u", node.frame);
+	ImGui::EndTooltip();
+}
+
+// The row of `node` and, if open, its visible children's rows.
+void waterfallRow(const debug::TraceNode& node, const Waterfall& waterfall, bool defaultOpen) {
+	const auto cpu = debug::cpuSpan(node, waterfall.frame);
+	const auto gpu = debug::gpuSpan(node, waterfall.frame);
+	const bool waiting = node.location == &debug::detail::swapLocation();
+
+	const bool hasChildren = std::any_of(
+		node.children.begin(),
+		node.children.end(),
+		[&waterfall](const debug::TraceNode& child) { return waterfallVisible(child, waterfall); }
+	);
+
+	ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_SpanAllColumns;
+
+	if(!hasChildren) flags |= ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
+
+	if(defaultOpen) flags |= ImGuiTreeNodeFlags_DefaultOpen;
+
+	ImGui::TableNextRow();
+	ImGui::TableSetColumnIndex(0);
+
+	// Siblings with the same label (one name on several nodes) are told apart by their object.
+	ImGui::PushID(node.object);
+
+	const bool open = ImGui::TreeNodeEx(node.label.c_str(), flags);
+
+	if(ImGui::IsItemHovered() && cpu) waterfallTooltip(node, *cpu, gpu);
+
+	ImGui::TableSetColumnIndex(1);
+
+	if(cpu) ImGui::Text("%.3f", cpu->ms);
+
+	ImGui::TableSetColumnIndex(2);
+
+	if(gpu) ImGui::Text("%.3f", gpu->ms);
+
+	ImGui::TableSetColumnIndex(3);
+
+	const ImVec2 origin = ImGui::GetCursorScreenPos();
+	const float width = ImGui::GetContentRegionAvail().x;
+	const float height = ImGui::GetTextLineHeight();
+	const float pad = ImGui::GetStyle().CellPadding.y;
+	const float split = gpu ? origin.y + height * 0.55f : origin.y + height;
+	auto* drawList = ImGui::GetWindowDrawList();
+
+	if(cpu) {
+		waterfallBar(
+			drawList,
+			origin.x,
+			width,
+			origin.y + 1.0f,
+			split,
+			*cpu,
+			waiting ? WAIT_COLOR : phaseColor(node.phase),
+			waiting,
+			waterfall
+		);
+	}
+
+	if(gpu) {
+		waterfallBar(
+			drawList,
+			origin.x,
+			width,
+			split + 1.0f,
+			origin.y + height,
+			*gpu,
+			GPU_COLOR,
+			false,
+			waterfall
+		);
+	}
+
+	if(waterfall.budgetMs < waterfall.axisMs) {
+		const float x = origin.x + width * static_cast<float>(waterfall.budgetMs / waterfall.axisMs);
+
+		drawList->AddLine(
+			ImVec2(x, origin.y - pad),
+			ImVec2(x, origin.y + height + pad),
+			BUDGET_LINE_COLOR
+		);
+	}
+
+	ImGui::Dummy(ImVec2(width, height));
+
+	if(open && hasChildren) {
+		for(const auto& child : node.children) {
+			if(waterfallVisible(child, waterfall)) waterfallRow(child, waterfall, false);
+		}
+
+		ImGui::TreePop();
+	}
+
+	ImGui::PopID();
 }
 
 }
@@ -518,91 +714,81 @@ void ProfilerSection::operator()(osg::RenderInfo& ri) {
 
 	if(ImGui::Button("Refresh")) refresh();
 
+	ImGui::SameLine();
+	ImGui::TextDisabled("|");
+	ImGui::SameLine();
+	ImGui::SetNextItemWidth(ImGui::CalcTextSize(BUDGET_LABELS[0]).x + ImGui::GetFrameHeight() * 2.0f);
+	ImGui::Combo("budget", &_budget, BUDGET_LABELS, static_cast<int>(BUDGET_HZ.size()));
+	ImGui::SameLine();
+	ImGui::SetNextItemWidth(ImGui::CalcTextSize("0.000").x + ImGui::GetFrameHeight());
+	ImGui::DragFloat("min ms", &_minMs, 0.005f, 0.0f, 5.0f, "%.3f");
+
 	const auto newest = _profiler->getProfileFrame();
-	const auto profile = _profiler->getProfile();
 
-	std::vector<ProfilerRow> rows;
+	if(!newest) {
+		ImGui::TextDisabled("no frames yet");
 
-	profilerRows(profile[static_cast<std::size_t>(debug::Phase::CULL)], "", rows);
-
-	auto current = [&newest](const debug::TraceNode& node) {
-		return newest && node.frame == *newest && !node.culled;
-	};
-
-	double totalGpuMs = 0.0;
-
-	for(const auto& row : rows) {
-		if(current(*row.node)) totalGpuMs += row.node->gpuMs;
+		return;
 	}
 
+	const auto profile = _profiler->getProfile();
+	const double budgetMs = 1000.0 / BUDGET_HZ[static_cast<std::size_t>(_budget)];
+
+	const auto extent = debug::frameExtent(profile, *newest);
+
+	const Waterfall waterfall{
+		*newest,
+		std::max(budgetMs, extent.totalMs),
+		budgetMs,
+		static_cast<double>(_minMs)
+	};
+
+	// The budget is compared with the frame's work; the swap's wait for the display is not work.
+	if(extent.workMs > budgetMs) {
+		ImGui::TextColored(
+			ImVec4(0.92f, 0.22f, 0.22f, 1.0f),
+			"frame %u: %.2f ms of work, over the %.2f ms budget",
+			*newest,
+			extent.workMs,
+			budgetMs
+		);
+	}
+
+	else {
+		ImGui::Text(
+			"frame %u: %.2f ms of work of the %.2f ms budget",
+			*newest,
+			extent.workMs,
+			budgetMs
+		);
+	}
+
+	ImGui::SameLine();
+	ImGui::TextDisabled("(%.2f ms incl. swap)", extent.totalMs);
+
 	constexpr ImGuiTableFlags tableFlags =
-		ImGuiTableFlags_Borders |
+		ImGuiTableFlags_BordersInnerV |
 		ImGuiTableFlags_RowBg |
 		ImGuiTableFlags_ScrollY |
 		ImGuiTableFlags_Resizable |
 		ImGuiTableFlags_SizingStretchProp;
 
-	if(ImGui::BeginTable("gpu_stats", 5, tableFlags)) {
+	if(ImGui::BeginTable("waterfall", 4, tableFlags)) {
+		char axis[48];
+
+		std::snprintf(axis, sizeof(axis), "0 - %.1f ms", waterfall.axisMs);
+
 		ImGui::TableSetupScrollFreeze(0, 1);
-		ImGui::TableSetupColumn("Drawable Path", ImGuiTableColumnFlags_WidthStretch);
-		ImGui::TableSetupColumn("#", ImGuiTableColumnFlags_WidthFixed, 28.0f);
-		ImGui::TableSetupColumn("CPU (us)", ImGuiTableColumnFlags_WidthFixed, 64.0f);
-		ImGui::TableSetupColumn("GPU (us)", ImGuiTableColumnFlags_WidthFixed, 64.0f);
-		ImGui::TableSetupColumn("% of GPU", ImGuiTableColumnFlags_WidthFixed, 80.0f);
+		ImGui::TableSetupColumn("node", ImGuiTableColumnFlags_WidthStretch, 2.0f);
+		const float msWidth = ImGui::CalcTextSize("00.000").x;
+
+		ImGui::TableSetupColumn("CPU ms", ImGuiTableColumnFlags_WidthFixed, msWidth);
+		ImGui::TableSetupColumn("GPU ms", ImGuiTableColumnFlags_WidthFixed, msWidth);
+		ImGui::TableSetupColumn(axis, ImGuiTableColumnFlags_WidthStretch, 3.0f);
 		ImGui::TableHeadersRow();
 
-		for(const auto& row : rows) {
-			const auto& node = *row.node;
-			const bool live = current(node);
-			const float fraction = totalGpuMs > 0.0 && live
-				? static_cast<float>(node.gpuMs / totalGpuMs)
-				: 0.0f
-			;
-
-			char pctLabel[16];
-			std::snprintf(pctLabel, sizeof(pctLabel), "%.1f%%", fraction * 100.0f);
-
-			// ProgressBar rows are taller than plain-text rows (it's a framed
-			// widget); AlignTextToFramePadding() lines the plain-text cells up
-			// with that height instead of sitting top-left in the extra space.
-			ImGui::TableNextRow();
-			ImGui::TableSetColumnIndex(0);
-			ImGui::AlignTextToFramePadding();
-
-			if(live) ImGui::TextUnformatted(row.path.c_str());
-			else ImGui::TextDisabled("%s", row.path.c_str());
-
-			if(ImGui::IsItemHovered()) ImGui::SetTooltip("%s", row.path.c_str());
-
-			// Dimmed (not zeroed/blanked) when culled or stale: these are the last
-			// measured values, not live ones, but not zero-cost either.
-			ImGui::TableSetColumnIndex(1);
-			ImGui::AlignTextToFramePadding();
-
-			if(node.drawOrder < 0) ImGui::TextDisabled("-");
-			else if(live) ImGui::Text("%d", node.drawOrder);
-			else ImGui::TextDisabled("%d", node.drawOrder);
-
-			ImGui::TableSetColumnIndex(2);
-			ImGui::AlignTextToFramePadding();
-
-			if(live) ImGui::Text("%.2f", node.drawMs * 1000.0);
-			else ImGui::TextDisabled("%.2f", node.drawMs * 1000.0);
-
-			ImGui::TableSetColumnIndex(3);
-			ImGui::AlignTextToFramePadding();
-
-			if(live) ImGui::Text("%.2f", node.gpuMs * 1000.0);
-			else ImGui::TextDisabled("%.2f", node.gpuMs * 1000.0);
-
-			ImGui::TableSetColumnIndex(4);
-
-			if(!live) {
-				ImGui::AlignTextToFramePadding();
-				ImGui::TextDisabled(node.culled ? "CULLED" : "STALE");
-			}
-
-			else ImGui::ProgressBar(fraction, ImVec2(-1.0f, 0.0f), pctLabel);
+		for(const auto& phase : profile) {
+			if(waterfallVisible(phase, waterfall)) waterfallRow(phase, waterfall, true);
 		}
 
 		ImGui::EndTable();

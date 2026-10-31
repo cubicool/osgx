@@ -212,10 +212,13 @@ private:
 };
 
 // Callable that attaches its own debug::Profiler to the view's viewer on construction (see
-// Profiler::attach() for when that is safe) and, when invoked, draws the profile as a table: one
-// row per drawn drawable and per culled node, in scene order under each camera, with draw CPU and
-// GPU time, draw order and share of GPU time, plus a SYNC/ASYNC toggle. Culled and stale rows
-// (absent from the newest frame) are dimmed.
+// Profiler::attach() for when that is safe) and, when invoked, draws the newest profiled frame as
+// a waterfall (the ImGui form of Profiler::reportWaterfall()): a collapsible tree of the phases
+// and their nodes with CPU and GPU ms, and per row a bar where the node ran within the frame
+// (phase-colored CPU bar, GPU bar beneath it), on an axis of the frame budget (or the frame, if
+// longer) with the budget marked and the part of a bar past it red. Nodes shorter than the
+// minimum (CPU and GPU) are left out with their subtrees. Hovering a row shows its details.
+// Controls: SYNC/ASYNC queries, Refresh, the budget (refresh rate) and the minimum ms.
 // Pass to Widget::addSection() or use Widget::addProfilerSection() shortcut.
 class ProfilerSection {
 public:
@@ -229,6 +232,10 @@ public:
 
 private:
 	osg::ref_ptr<debug::Profiler> _profiler;
+
+	// An index into the budget presets (30, 60, 90, 120, 144 Hz).
+	int _budget = 1;
+	float _minMs = 0.05f;
 };
 
 // Reusable osgx::imgui content for an application-owned Dear ImGui frame. Panel

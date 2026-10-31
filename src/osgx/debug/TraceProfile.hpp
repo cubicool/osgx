@@ -69,6 +69,12 @@ struct TraceNode {
 	double count = 0.0;
 	double draws = 0.0;
 
+	// Milliseconds from the frame's start (its earliest record on any thread) to the node's first
+	// record in the frame, and to its first draw's GPU start (-1 without GPU times; DRAW nodes of
+	// drawables only, mapped onto CPU time by the drawing thread's "gpu clock" sample).
+	double startMs = 0.0;
+	double gpuStartMs = -1.0;
+
 	// From the latest frame the node appeared in: whether the cull visitor rejected it, and the
 	// submission index of its first draw (-1 if not drawn).
 	bool culled = false;
@@ -79,6 +85,24 @@ struct TraceNode {
 
 	std::list<TraceNode> children;
 };
+
+// Where a node ran within the frame `frame`, in ms from the frame's start (TraceNode::startMs),
+// and its ms.
+struct TraceSpan {
+	double startMs = 0.0;
+	double endMs = 0.0;
+	double ms = 0.0;
+};
+
+// The node's CPU span: its own spans (startMs, inclusiveMs), else the union of its children's in
+// `frame` (a group without spans of its own, such as a CULL camera or a phase root). ms is
+// endMs - startMs. Empty if neither ran in `frame`.
+std::optional<TraceSpan> cpuSpan(const TraceNode& node, unsigned int frame);
+
+// The GPU span of the draws of the node and its descendants in `frame`: first GPU start to last
+// GPU end, ms their total GPU time (gaps between draws make it less than endMs - startMs). Empty
+// without draws that have GPU times.
+std::optional<TraceSpan> gpuSpan(const TraceNode& node, unsigned int frame);
 
 class TraceProfile {
 public:

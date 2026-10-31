@@ -7,6 +7,8 @@ OSGX_DISABLE_WARNINGS
 
 OSGX_ENABLE_WARNINGS
 
+#include <algorithm>
+#include <cstdint>
 #include <cstring>
 #include <functional>
 #include <utility>
@@ -32,6 +34,8 @@ struct Node {
 	double gpuMs = 0.0;
 	double count = 0.0;
 	double draws = 0.0;
+	double startMs = 0.0;
+	double gpuStartMs = -1.0;
 	bool culled = false;
 	int drawOrder = -1;
 	unsigned int frame = 0;
@@ -45,6 +49,8 @@ struct Node {
 	double frameGpuMs = 0.0;
 	double frameCount = 0.0;
 	double frameDraws = 0.0;
+	double frameStartMs = -1.0;
+	double frameGpuStartMs = -1.0;
 	bool frameCulled = false;
 	int frameDrawOrder = -1;
 
@@ -137,6 +143,17 @@ void blend(double& average, double value, double alpha) {
 	average += alpha * (value - average);
 }
 
+// Keeps the earliest start of the frame (frame values are -1 until set).
+void markStart(double& frameStart, double ms) {
+	if(frameStart < 0.0 || ms < frameStart) frameStart = ms;
+}
+
+// A "gpu clock" sample: a CPU tick and the GL_TIMESTAMP read at the same moment.
+struct ClockSample {
+	osg::Timer_t tick;
+	std::uint64_t gpuNs;
+};
+
 void copyOut(const Node& from, TraceNode& to) {
 	to.phase = from.phase;
 	to.location = from.location;
@@ -151,6 +168,8 @@ void copyOut(const Node& from, TraceNode& to) {
 	to.gpuMs = from.gpuMs;
 	to.count = from.count;
 	to.draws = from.draws;
+	to.startMs = from.startMs;
+	to.gpuStartMs = from.gpuStartMs;
 	to.culled = from.culled;
 	to.drawOrder = from.drawOrder;
 	to.frame = from.frame;
@@ -170,6 +189,7 @@ struct TraceProfile::Impl {
 	// Reused across frames.
 	std::vector<std::vector<TraceRecord>> records;
 	std::unordered_map<DrawKey, DrawCost, DrawKeyHash> drawCosts;
+	std::vector<ClockSample> clockSamples;
 	CameraNames names;
 
 	struct Open {
@@ -183,11 +203,20 @@ struct TraceProfile::Impl {
 
 	std::array<std::vector<Open>, 4> stacks;
 
-	void fold(const std::vector<TraceRecord>& sourceRecords, unsigned int frame);
+	void fold(
+		const std::vector<TraceRecord>& sourceRecords,
+		unsigned int frame,
+		osg::Timer_t origin
+	);
 	void finish(Node& node, unsigned int frame, bool joinDraws);
 };
 
-void TraceProfile::Impl::fold(const std::vector<TraceRecord>& sourceRecords, unsigned int frame) {
+void TraceProfile::Impl::fold(
+	const std::vector<TraceRecord>& sourceRecords,
+	unsigned int frame,
+	osg::Timer_t origin
+) {
+	const auto* timer = osg::Timer::instance();
 	const auto& culled = detail::culledLocation();
 	const auto& drawable = detail::drawableLocation();
 	const auto& gpuClock = detail::gpuClockLocation();
@@ -195,17 +224,46 @@ void TraceProfile::Impl::fold(const std::vector<TraceRecord>& sourceRecords, uns
 
 	for(auto& stack : stacks) stack.clear();
 
+	clockSamples.clear();
+
+	for(const auto& record : sourceRecords) {
+		if(record.location == &gpuClock && record.gpuBegin) {
+			clockSamples.push_back({record.tick, record.gpuBegin});
+		}
+	}
+
+	// The GPU start of a drawable's draw in ms from `origin`, through this thread's clock sample
+	// closest in time; negative if the draw has no GPU times or the thread no sample.
+	auto gpuStart = [&](const TraceRecord& enter) {
+		if(enter.gpuEnd <= enter.gpuBegin || clockSamples.empty()) return -1.0;
+
+		auto distance = [&enter](const ClockSample& sample) {
+			return sample.tick > enter.tick ? sample.tick - enter.tick : enter.tick - sample.tick;
+		};
+
+		const auto& sample = *std::min_element(
+			clockSamples.begin(),
+			clockSamples.end(),
+			[&distance](const ClockSample& a, const ClockSample& b) { return distance(a) < distance(b); }
+		);
+
+		const auto offsetNs = static_cast<std::int64_t>(enter.gpuBegin - sample.gpuNs);
+
+		return timer->delta_m(origin, sample.tick) + static_cast<double>(offsetNs) / 1.0e6;
+	};
+
 	for(const auto& record : sourceRecords) {
 		if(record.location == &gpuClock) continue;
 
 		const auto phase = record.location->phase;
+		const double recordMs = timer->delta_m(origin, record.tick);
 		auto& stack = stacks[static_cast<std::size_t>(phase)];
 
 		if(record.kind == TraceRecord::Kind::LEAVE) {
 			if(stack.empty()) continue;
 
 			const auto open = stack.back();
-			const double ms = osg::Timer::instance()->delta_m(open.enter->tick, record.tick);
+			const double ms = timer->delta_m(open.enter->tick, record.tick);
 
 			stack.pop_back();
 
@@ -233,6 +291,10 @@ void TraceProfile::Impl::fold(const std::vector<TraceRecord>& sourceRecords, uns
 				node.frameDrawMs += ms;
 				node.frameGpuMs += gpuMs;
 				node.frameDraws += 1.0;
+
+				const auto start = gpuStart(*open.enter);
+
+				if(start >= 0.0) markStart(node.frameGpuStartMs, start);
 
 				if(node.frameDrawOrder < 0) node.frameDrawOrder = drawOrder;
 
@@ -263,6 +325,8 @@ void TraceProfile::Impl::fold(const std::vector<TraceRecord>& sourceRecords, uns
 			parent->touched = true;
 			parent->frame = frame;
 
+			markStart(parent->frameStartMs, recordMs);
+
 			// A span of the camera itself (its drawing) is the camera group's own.
 			if(record.object == static_cast<const osg::Object*>(record.camera)) {
 				self = parent;
@@ -284,6 +348,8 @@ void TraceProfile::Impl::fold(const std::vector<TraceRecord>& sourceRecords, uns
 
 		node.touched = true;
 		node.frame = frame;
+
+		markStart(node.frameStartMs, recordMs);
 
 		if(record.kind == TraceRecord::Kind::INSTANT) {
 			if(record.location == &culled) node.frameCulled = true;
@@ -318,6 +384,7 @@ void TraceProfile::Impl::finish(Node& node, unsigned int frame, bool joinDraws) 
 			node.gpuMs = node.frameGpuMs;
 			node.count = node.frameCount;
 			node.draws = node.frameDraws;
+			node.startMs = node.frameStartMs;
 			node.averaged = true;
 		}
 
@@ -328,6 +395,13 @@ void TraceProfile::Impl::finish(Node& node, unsigned int frame, bool joinDraws) 
 			blend(node.gpuMs, node.frameGpuMs, alpha);
 			blend(node.count, node.frameCount, alpha);
 			blend(node.draws, node.frameDraws, alpha);
+			blend(node.startMs, node.frameStartMs, alpha);
+		}
+
+		if(node.frameGpuStartMs >= 0.0) {
+			if(node.gpuStartMs < 0.0) node.gpuStartMs = node.frameGpuStartMs;
+
+			else blend(node.gpuStartMs, node.frameGpuStartMs, alpha);
 		}
 
 		node.culled = node.frameCulled;
@@ -340,6 +414,8 @@ void TraceProfile::Impl::finish(Node& node, unsigned int frame, bool joinDraws) 
 		node.frameGpuMs = 0.0;
 		node.frameCount = 0.0;
 		node.frameDraws = 0.0;
+		node.frameStartMs = -1.0;
+		node.frameGpuStartMs = -1.0;
 		node.frameCulled = false;
 		node.frameDrawOrder = -1;
 	}
@@ -351,6 +427,55 @@ void TraceProfile::Impl::finish(Node& node, unsigned int frame, bool joinDraws) 
 	});
 
 	node.cursor = node.children.end();
+}
+
+std::optional<TraceSpan> cpuSpan(const TraceNode& node, unsigned int frame) {
+	if(node.frame == frame && node.count > 0.0) {
+		return TraceSpan{node.startMs, node.startMs + node.inclusiveMs, node.inclusiveMs};
+	}
+
+	std::optional<TraceSpan> span;
+
+	for(const auto& child : node.children) {
+		if(child.frame != frame) continue;
+
+		if(const auto c = cpuSpan(child, frame)) {
+			if(!span) span = c;
+
+			else {
+				span->startMs = std::min(span->startMs, c->startMs);
+				span->endMs = std::max(span->endMs, c->endMs);
+			}
+		}
+	}
+
+	if(span) span->ms = span->endMs - span->startMs;
+
+	return span;
+}
+
+std::optional<TraceSpan> gpuSpan(const TraceNode& node, unsigned int frame) {
+	std::optional<TraceSpan> span;
+
+	if(node.frame == frame && node.phase == Phase::DRAW && node.draws > 0.0 && node.gpuStartMs >= 0.0) {
+		span = TraceSpan{node.gpuStartMs, node.gpuStartMs + node.gpuMs, node.gpuMs};
+	}
+
+	for(const auto& child : node.children) {
+		if(child.frame != frame) continue;
+
+		if(const auto c = gpuSpan(child, frame)) {
+			if(!span) span = c;
+
+			else {
+				span->startMs = std::min(span->startMs, c->startMs);
+				span->endMs = std::max(span->endMs, c->endMs);
+				span->ms += c->ms;
+			}
+		}
+	}
+
+	return span;
 }
 
 TraceProfile::TraceProfile(std::size_t window):
@@ -413,7 +538,21 @@ bool TraceProfile::add(unsigned int frame, const CameraNames& cameraNames) {
 
 	impl.drawCosts.clear();
 
-	for(std::size_t s = 0; s < used; s++) impl.fold(impl.records[s], frame);
+	// The frame's start: its earliest record on any thread (each buffer's records are in tick
+	// order).
+	std::optional<osg::Timer_t> origin;
+
+	for(std::size_t s = 0; s < used; s++) {
+		if(impl.records[s].empty()) continue;
+
+		const auto first = impl.records[s].front().tick;
+
+		origin = origin ? std::min(*origin, first) : first;
+	}
+
+	if(!origin) return false;
+
+	for(std::size_t s = 0; s < used; s++) impl.fold(impl.records[s], frame, *origin);
 
 	for(auto& phase : impl.phases) {
 		phase.frame = frame;

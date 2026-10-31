@@ -528,6 +528,10 @@ int main(int argc, char** argv) {
 
 	profiler->report(std::cout);
 
+	std::cout << std::endl;
+
+	profiler->reportWaterfall(std::cout);
+
 	// Each thread's trace buffer: DRAW records of the newest frame whose GPU results have certainly
 	// been written back (two frames back covers ASYNC's one-frame lag).
 	std::cout << std::endl << "osgx::debug trace buffers:" << std::endl;

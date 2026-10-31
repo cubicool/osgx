@@ -19,8 +19,13 @@ OSGX_DISABLE_WARNINGS
 
 OSGX_ENABLE_WARNINGS
 
+#include <algorithm>
 #include <cstdint>
 #include <cstdio>
+#include <optional>
+#include <string>
+#include <utility>
+#include <vector>
 #include <thread>
 
 namespace osgx::debug {
@@ -234,6 +239,10 @@ const Location& culledLocation() {
 
 const Location& drawableLocation() {
 	return DRAWABLE;
+}
+
+const Location& swapLocation() {
+	return SWAP;
 }
 
 const Location& gpuClockLocation() {
@@ -688,6 +697,151 @@ void reportTree(std::ostream& out, const TraceNode& node, unsigned int newest, i
 	}
 }
 
+}
+
+namespace {
+
+struct WaterfallRow {
+	const TraceNode* node;
+	std::size_t depth;
+	bool gpu;
+	double startMs;
+	double endMs;
+
+	// The row's ms: endMs - startMs, except for a GPU row (the GPU ms of its draws, which may
+	// leave gaps between them).
+	double ms;
+};
+
+void waterfallRows(
+	const TraceNode& node,
+	unsigned int newest,
+	std::size_t depth,
+	std::size_t maxDepth,
+	double minMs,
+	std::vector<WaterfallRow>& rows
+) {
+	for(const auto& child : node.children) {
+		if(child.frame < newest || child.culled) continue;
+
+		const auto cpu = cpuSpan(child, newest);
+
+		if(!cpu) continue;
+
+		const auto gpu = gpuSpan(child, newest);
+
+		if(cpu->ms < minMs && !(gpu && gpu->ms >= minMs)) continue;
+
+		rows.push_back({&child, depth, false, cpu->startMs, cpu->endMs, cpu->ms});
+
+		if(gpu) rows.push_back({&child, depth, true, gpu->startMs, gpu->endMs, gpu->ms});
+
+		if(depth < maxDepth) waterfallRows(child, newest, depth + 1, maxDepth, minMs, rows);
+	}
+}
+
+}
+
+FrameExtent frameExtent(const std::array<TraceNode, 4>& profile, unsigned int frame) {
+	FrameExtent extent;
+
+	for(const auto& phase : profile) {
+		for(const auto& node : phase.children) {
+			const auto cpu = cpuSpan(node, frame);
+
+			if(!cpu) continue;
+
+			extent.totalMs = std::max(extent.totalMs, cpu->endMs);
+
+			if(node.location != &SWAP) extent.workMs = std::max(extent.workMs, cpu->endMs);
+		}
+
+		if(const auto gpu = gpuSpan(phase, frame)) {
+			extent.totalMs = std::max(extent.totalMs, gpu->endMs);
+			extent.workMs = std::max(extent.workMs, gpu->endMs);
+		}
+	}
+
+	return extent;
+}
+
+void Profiler::reportWaterfall(
+	std::ostream& out,
+	double budgetMs,
+	std::size_t width,
+	std::size_t maxDepth,
+	double minMs
+) const {
+	const auto profile = getProfile();
+	const auto newest = getProfileFrame();
+
+	if(!newest) {
+		out << "osgx::debug::Profiler: no frames yet" << std::endl;
+
+		return;
+	}
+
+	std::vector<WaterfallRow> rows;
+
+	for(const auto& phase : profile) waterfallRows(phase, *newest, 0, maxDepth, minMs, rows);
+
+	const auto extent = frameExtent(profile, *newest);
+	const double axisMs = std::max(budgetMs, extent.totalMs);
+	const auto column = [&](double ms) {
+		return static_cast<std::size_t>(std::clamp(ms / axisMs, 0.0, 1.0) * static_cast<double>(width));
+	};
+
+	const auto budgetColumn = column(budgetMs);
+
+	char line[256];
+
+	std::snprintf(
+		line,
+		sizeof(line),
+		"osgx::debug::Profiler: frame %u, %.2f ms of work%s (budget %.2f ms), "
+		"%.2f ms incl. swap, averages",
+		*newest,
+		extent.workMs,
+		extent.workMs > budgetMs ? " OVER BUDGET" : "",
+		budgetMs,
+		extent.totalMs
+	);
+
+	out << line << std::endl;
+
+	for(std::size_t i = 0; i < rows.size(); i++) {
+		const auto& row = rows[i];
+		const auto* node = row.node;
+
+		std::string bar(width, ' ');
+
+		if(budgetColumn < width) bar[budgetColumn] = '|';
+
+		const auto first = std::min(column(row.startMs), width - 1);
+		const auto last = std::max(first + 1, column(row.endMs));
+
+		char fill = row.depth == 0 ? '=' : '-';
+
+		if(row.gpu) fill = '#';
+
+		else if(node->location == &SWAP) fill = '.';
+
+		for(std::size_t c = first; c < last && c < width; c++) bar[c] = fill;
+
+		const auto label = std::string(row.depth * 2, ' ') + node->label;
+
+		std::snprintf(
+			line,
+			sizeof(line),
+			"  #%03zu  %-6s  %-36.36s%9.3f  |",
+			i,
+			row.gpu ? "GPU" : detail::toString(node->phase),
+			label.c_str(),
+			row.ms
+		);
+
+		out << line << bar << "|" << std::endl;
+	}
 }
 
 void Profiler::report(std::ostream& out) const {
