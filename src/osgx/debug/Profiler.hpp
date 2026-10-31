@@ -28,6 +28,7 @@ OSGX_ENABLE_WARNINGS
 #include <optional>
 #include <ostream>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace osgx::debug {
@@ -68,8 +69,8 @@ namespace detail {
 		void _drain(std::vector<Entry>& source, osg::GLExtensions* ext);
 	};
 
-	// Defined once in Debug.cpp - see the comment above _pushGroup et al. for why this
-	// must be `extern`, not `inline`.
+	// Defined once in Profiler.cpp - see the comment above _pushGroup et al. (Annotation.hpp) for
+	// why this must be `extern`, not `inline`.
 	extern osg::buffered_object<FrameAccumulator> _accumulators;
 }
 
@@ -85,35 +86,39 @@ namespace detail {
 enum class QueryMode { SYNC, ASYNC };
 
 namespace detail {
-	// A drawable reachable through more than one camera/parent path (e.g. the same model
-	// attached under both a ShadowCam and a G-Buffer camera) shares ONE osg::Drawable
-	// instance and therefore one ProfilerCallback - there is physically only one _name
-	// slot to overwrite no matter how many parents reference it. The fix is to fold in
-	// *which camera is actually rendering right now*, read at the point of use (draw time
-	// via RenderInfo::getCurrentCamera(), cull time via CullVisitor::getCurrentCamera()),
-	// rather than trying to store multiple paths per drawable. `camera` may be null (e.g.
-	// no current camera on the RenderInfo/CullVisitor stack), in which case `name` is
-	// returned unchanged.
-	std::string cameraQualifiedPath(const osg::Camera* camera, const std::string& name);
-
 	// The Location of ProfilerCullVisitor's INSTANT for a node rejected by its bounds.
 	const Location& culledLocation();
 
 	// The Location of ProfilerCallback's spans: the DRAW spans that are draws.
 	const Location& drawableLocation();
+
+	// Whether spans at `location` are the profiler's per-node spans (a node visited by a
+	// profiling visitor, a culled node, a drawable's draw, a camera's drawing), which are about
+	// their object rather than a named operation.
+	bool isNodeLocation(const Location* location);
+
+	// The Location of ProfilerFinalCallback's once-per-frame GPU clock sample: an INSTANT whose
+	// object is the GraphicsContext, tick the CPU time and gpuBegin (= gpuEnd) the GL_TIMESTAMP
+	// read at the same moment, which maps that draw thread's GPU timestamps onto CPU ticks.
+	const Location& gpuClockLocation();
+
+	// What to call a span: its object's name; else, for per-node spans (or no Location),
+	// objectLabel(); else the Location's name.
+	std::string spanLabel(
+		const Location* location,
+		std::string_view name,
+		const char* className,
+		const void* object
+	);
 }
 
 // Phase 1: records the drawable's draw (ENTER/LEAVE) in the drawing thread's TraceBuffer and
 // brackets it with GL_TIMESTAMP queries pushed to the context's FrameAccumulator, inside a KHR_debug
-// group named by the profiler name. Draws through `cb` if not null. Never blocks; safe in any
-// threading model.
+// group named by objectLabel() (after initialize()). Draws through `cb` if not null. Never blocks;
+// safe in any threading model.
 class ProfilerCallback: public osg::Drawable::DrawCallback {
 public:
-	explicit ProfilerCallback(const std::string& name="", osg::Drawable::DrawCallback* cb=nullptr);
-
-	// The drawable's own name is used if empty.
-	void setProfilerName(const std::string& name);
-	const std::string& getProfilerName() const;
+	explicit ProfilerCallback(osg::Drawable::DrawCallback* cb=nullptr);
 
 	void drawImplementation(osg::RenderInfo& ri, const osg::Drawable* drawable) const override;
 
@@ -121,7 +126,6 @@ protected:
 	~ProfilerCallback() override;
 
 private:
-	std::string _name;
 	osg::ref_ptr<osg::Drawable::DrawCallback> _cb;
 };
 
@@ -153,9 +157,8 @@ private:
 	QueryMode _mode;
 };
 
-// Walks the scene graph and installs a ProfilerCallback on every Drawable (or renames an existing
-// one) with its "/"-joined node path as the profiler name.
-// Install ProfilerFinalCallback on the camera separately to complete setup.
+// Walks the scene graph and installs a ProfilerCallback on every Drawable that has none, wrapping
+// its draw callback. Install ProfilerFinalCallback on the camera separately to complete setup.
 class ProfilerVisitor: public osg::NodeVisitor {
 public:
 	ProfilerVisitor();
@@ -291,9 +294,11 @@ private:
 // ProfilerUpdateVisitor and ProfilerEventVisitor; DRAW spans of every camera's drawing (PRE_DRAW
 // to FINAL_DRAW; master, slave and Camera nodes in the scene); and, once each context has drawn,
 // a DRAW span of every buffer swap. The query readback and the profile fold are DRAW spans too
-// ("readback", "profile"). Attach once, after the views' scene data is set
-// and before realize() (or with the viewer's threads stopped); refresh() re-runs the visitor after
-// the scenes change. Stereo left/right cull visitors are not replaced.
+// ("readback", "profile"). After initialize(), every DRAW span the profiler records is also a
+// KHR_debug group (camera and drawable spans named by objectLabel(), the others by their Location),
+// so apitrace/RenderDoc/Nsight show the same structure. Attach once, after the views' scene data
+// is set and before realize() (or with the viewer's threads stopped); refresh() re-runs the visitor
+// after the scenes change. Stereo left/right cull visitors are not replaced.
 //
 // After each master camera's final draw (and the query drain), the previous frame is folded into
 // the profile (TraceProfile::add(), at most once per frame); getProfile() reads it from any

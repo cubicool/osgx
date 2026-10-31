@@ -46,10 +46,10 @@ private:
 // keystrokes the viewer only processes events (frame numbers count rendered frames) and idles, so
 // apitrace captures never flood with unintended frames.
 //
-// On first render, installs AnnotationBeginCallback / AnnotationEndCallback on
-// the camera so every rendered frame appears in apitrace as:
+// On first render, installs AnnotationBeginCallback (PRE_DRAW) / AnnotationEndCallback (POST_DRAW)
+// on the camera so every rendered frame appears in apitrace as:
 //
-// Frame { [all draw calls for this frame] }
+// Camera@0x... { Frame { [all draw calls for this frame] } } readback profile
 //
 // Any other object with its own RTT camera (e.g. osgSlug::Atlas) can install
 // its own annotation callbacks and they will nest naturally inside this group.

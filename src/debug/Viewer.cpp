@@ -97,13 +97,9 @@ void FrameByFrameViewer::_installAnnotationCallbacks() {
 
 	auto* camera = getCamera();
 
-	auto frameAnnotation = osgx::make_ref<AnnotationGroup>(
-		0u,
-		"Frame",
-		Source::APPLICATION,
-		true
-	);
+	auto frameAnnotation = osgx::make_ref<AnnotationGroup>(0u, "Frame");
 
+	// PRE_DRAW to POST_DRAW: nested inside the profiler's camera span (PRE_DRAW to FINAL_DRAW).
 	appendCameraDrawCallback(
 		camera,
 		CameraDrawCallbackSlot::PRE_DRAW,
@@ -112,7 +108,7 @@ void FrameByFrameViewer::_installAnnotationCallbacks() {
 
 	appendCameraDrawCallback(
 		camera,
-		CameraDrawCallbackSlot::FINAL_DRAW,
+		CameraDrawCallbackSlot::POST_DRAW,
 		new AnnotationEndCallback(frameAnnotation)
 	);
 
@@ -157,8 +153,16 @@ int FrameByFrameViewer::run() {
 		}
 
 		// Between frames only events are processed (the 'n' key, closing the window); their
-		// trace records belong to the last rendered frame.
-		else eventTraversal();
+		// trace records belong to the last rendered frame. eventTraversal() only takes events up to
+		// the frame stamp's reference time, which advance() (in frame()) would otherwise be the only
+		// one to move; moving it here leaves the frame number alone.
+		else {
+			getFrameStamp()->setReferenceTime(
+				osg::Timer::instance()->delta_s(_startTick, osg::Timer::instance()->tick())
+			);
+
+			eventTraversal();
+		}
 
 		OpenThreads::Thread::microSleep(_POLL_INTERVAL_US);
 	}

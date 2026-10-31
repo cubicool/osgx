@@ -9,7 +9,6 @@ OSGX_DISABLE_WARNINGS
 #include <osg/GraphicsContext>
 #include <osg/GraphicsThread>
 #include <osg/Referenced>
-#include <osg/Timer>
 
 OSGX_ENABLE_WARNINGS
 
@@ -87,7 +86,7 @@ namespace detail {
 		GLboolean enabled
 	);
 
-	// Defined once in Debug.cpp. Deliberately NOT `inline` variables: an `inline` namespace-
+	// Defined once in Annotation.cpp. Deliberately NOT `inline` variables: an `inline` namespace-
 	// scope variable only merges into one definition within a single link unit. Any separately
 	// dlopen()'d module (an osgDB plugin, most of which load via RTLD_LOCAL) that included this
 	// header directly used to get its own private copy of this state, disconnected from every
@@ -101,9 +100,9 @@ namespace detail {
 	extern glDebugMessageCallbackFunc _messageCallback;
 	extern glDebugMessageControlFunc _messageControl;
 
-	// All osgx::debug log output - internal diagnostics, GL annotation mirrors, driver
-	// messages - flows through this single sink. Replace it to redirect to spdlog,
-	// Qt logging, an ImGui scrollback, etc. Default: osg::notify(NOTICE).
+	// All osgx::debug log output - internal diagnostics and driver messages - flows through this
+	// single sink. Replace it to redirect to spdlog, Qt logging, an ImGui scrollback, etc.
+	// Default: osg::notify(NOTICE).
 	extern std::function<void(std::string_view)> _sink;
 
 	inline void notify(const auto&... args) {
@@ -122,7 +121,8 @@ namespace detail {
 		const void* userParam
 	);
 
-	void pushGroup(Source source, GLuint id, const std::string& message);
+	// The bare GL calls (no trace records); no-ops until initialize() binds them.
+	void pushGroup(Source source, GLuint id, std::string_view message);
 	void popGroup();
 
 	void messageInsert(
@@ -130,7 +130,7 @@ namespace detail {
 		GLenum type,
 		GLuint id,
 		GLenum severity,
-		const std::string& message
+		std::string_view message
 	);
 
 	void setCallback(GLDEBUGPROC callback, const void* userParam=nullptr);
@@ -150,8 +150,14 @@ namespace detail {
 
 }
 
-void pushGroup(Source source, GLuint id, const std::string& message);
-void pushGroup(GLuint id, const std::string& message);
+// Debug groups and messages. Besides the GL call (a no-op until initialize()), each one is recorded
+// in the calling thread's TraceBuffer, in the frame of that thread's previous record: a group as
+// an ENTER/LEAVE span ("annotation"), a message as an INSTANT ("message"), named by the message
+// (cut to TraceRecord::NAME_SIZE). Push and pop on the same thread, nested within the spans around
+// them (inside one draw callback, or PRE_DRAW to POST_DRAW of one camera), or the profile pairs
+// them with the wrong spans.
+void pushGroup(Source source, GLuint id, std::string_view message);
+void pushGroup(GLuint id, std::string_view message);
 void popGroup();
 
 void messageInsert(
@@ -159,24 +165,28 @@ void messageInsert(
 	Type type,
 	GLuint id,
 	Severity severity,
-	const std::string& message
+	std::string_view message
 );
 
 void messageInsert(
 	Type type,
 	GLuint id,
 	Severity severity,
-	const std::string& message
+	std::string_view message
 );
 
 // TODO: More messageInsert() wrappers for Type/Severity.
 
 void setCallback(GLDEBUGPROC callback, const void* userParam=nullptr);
 void clearCallback();
+
+// The default callback writes each driver message to the sink and records it as an INSTANT
+// ("driver message") in the calling thread's TraceBuffer. With synchronous output that is the
+// thread whose GL call caused it, so the record lands in that thread's current frame.
 void installDefaultCallback(bool synchronous=true);
 
-// Replace the log sink for all osgx::debug output (internal diagnostics, GL annotation
-// mirrors, driver messages). The default writes to osg::notify(NOTICE).
+// Replace the log sink for all osgx::debug output (internal diagnostics, driver messages). The
+// default writes to osg::notify(NOTICE).
 void setSink(std::function<void(std::string_view)> sink);
 
 void enableDebugOutput(bool synchronous=true);
@@ -216,16 +226,10 @@ void deinitialize(bool disableOutput=true);
 // outside a draw callback.
 class AnnotationGroup: public osg::Referenced {
 public:
-	AnnotationGroup(
-		GLuint id,
-		std::string_view message,
-		Source source=Source::APPLICATION,
-		bool measureTime=false
-	):
+	AnnotationGroup(GLuint id, std::string_view message, Source source=Source::APPLICATION):
 	_id(id),
 	_source(source),
-	_message(message),
-	_measureTime(measureTime) {}
+	_message(message) {}
 
 	void begin();
 	void end();
@@ -236,22 +240,14 @@ private:
 	std::string _message;
 
 	bool _active = false;
-	bool _measureTime = false;
-
-	osg::Timer_t _start{};
 };
 
 // RAII wrapper: opens the group on construction, closes on destruction.
 // Safe on the stack inside a draw callback; do not use from application C++ code.
 class AnnotationScope {
 public:
-	AnnotationScope(
-		GLuint id,
-		std::string_view message,
-		Source source=Source::APPLICATION,
-		bool measureTime=false
-	):
-	_state(id, message, source, measureTime) {
+	AnnotationScope(GLuint id, std::string_view message, Source source=Source::APPLICATION):
+	_state(id, message, source) {
 		_state.begin();
 	}
 
@@ -293,10 +289,9 @@ public:
 	AnnotationBeginCallback(
 		GLuint id,
 		std::string_view message,
-		Source source=Source::APPLICATION,
-		bool measureTime=false
+		Source source=Source::APPLICATION
 	):
-	_annotation(new AnnotationGroup(id, message, source, measureTime)) {}
+	_annotation(new AnnotationGroup(id, message, source)) {}
 
 	explicit AnnotationBeginCallback(Annotation annotation):
 	_annotation(std::move(annotation)) {}
@@ -317,10 +312,9 @@ public:
 	AnnotationEndCallback(
 		GLuint id,
 		std::string_view message,
-		Source source=Source::APPLICATION,
-		bool measureTime=false
+		Source source=Source::APPLICATION
 	):
-	_annotation(new AnnotationGroup(id, message, source, measureTime)) {}
+	_annotation(new AnnotationGroup(id, message, source)) {}
 
 	explicit AnnotationEndCallback(Annotation annotation):
 	_annotation(std::move(annotation)) {}

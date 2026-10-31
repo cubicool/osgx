@@ -1,4 +1,5 @@
 #include "osgx/debug/Annotation.hpp"
+#include "osgx/debug/Trace.hpp"
 
 #include "osgx/Callbacks.hpp"
 
@@ -6,6 +7,14 @@
 #include <string_view>
 
 namespace osgx::debug {
+
+namespace {
+
+constexpr Location ANNOTATION("annotation", Phase::DRAW);
+constexpr Location MESSAGE("message", Phase::DRAW);
+constexpr Location DRIVER_MESSAGE("driver message", Phase::DRAW);
+
+}
 
 namespace detail {
 
@@ -75,6 +84,15 @@ void APIENTRY defaultCallback(
 	const auto typ = static_cast<Type>(type);
 	const auto sev = static_cast<Severity>(severity);
 
+	// The GL's echoes of the application's own groups and inserted messages (already traced by
+	// pushGroup()/messageInsert()).
+	if(
+		typ == Type::PUSH_GROUP ||
+		typ == Type::POP_GROUP ||
+		src == Source::APPLICATION ||
+		src == Source::THIRD_PARTY
+	) return;
+
 	std::string msg;
 
 	if(message) {
@@ -91,19 +109,19 @@ void APIENTRY defaultCallback(
 		<< " | " << msg;
 
 	_sink(oss.str());
+
+	threadTraceBuffer().recordText(TraceRecord::Kind::INSTANT, DRIVER_MESSAGE, msg);
 }
 
-void pushGroup(Source source, GLuint id, const std::string& message) {
+void pushGroup(Source source, GLuint id, std::string_view message) {
 	if(!_pushGroup) return;
 
 	_pushGroup(
 		static_cast<std::underlying_type_t<Source>>(source),
 		id,
-		-1,
-		message.c_str()
+		static_cast<GLsizei>(message.size()),
+		message.data()
 	);
-
-	notify("osgx::debug::pushGroup | ", message);
 }
 
 void popGroup() {
@@ -117,13 +135,11 @@ void messageInsert(
 	GLenum type,
 	GLuint id,
 	GLenum severity,
-	const std::string& message
+	std::string_view message
 ) {
 	if(!_messageInsert) return;
 
-	_messageInsert(source, type, id, severity, -1, message.c_str());
-
-	notify("osgx::debug::messageInsert | ", message);
+	_messageInsert(source, type, id, severity, static_cast<GLsizei>(message.size()), message.data());
 }
 
 void setCallback(GLDEBUGPROC callback, const void* userParam) {
@@ -184,11 +200,7 @@ template<typename T>
 void setupFunction(const std::string& name, T* func) {
 	void* f = osg::getGLExtensionFuncPtr(name.c_str());
 
-	if(f) {
-		*func = reinterpret_cast<T>(f);
-
-		notify("osgx::debug | Bound function '", name, "' to @", (void*)(*func));
-	}
+	if(f) *func = reinterpret_cast<T>(f);
 
 	else notify("osgx::debug | FAILED to bind '", name, "'");
 }
@@ -222,16 +234,20 @@ void setCameraDrawCallback(
 
 }
 
-void pushGroup(Source source, GLuint id, const std::string& message) {
+void pushGroup(Source source, GLuint id, std::string_view message) {
+	threadTraceBuffer().recordText(TraceRecord::Kind::ENTER, ANNOTATION, message);
+
 	detail::pushGroup(source, id, message);
 }
 
-void pushGroup(GLuint id, const std::string& message) {
+void pushGroup(GLuint id, std::string_view message) {
 	pushGroup(Source::APPLICATION, id, message);
 }
 
 void popGroup() {
 	detail::popGroup();
+
+	threadTraceBuffer().recordText(TraceRecord::Kind::LEAVE, ANNOTATION, {});
 }
 
 void messageInsert(
@@ -239,8 +255,10 @@ void messageInsert(
 	Type type,
 	GLuint id,
 	Severity severity,
-	const std::string& message
+	std::string_view message
 ) {
+	threadTraceBuffer().recordText(TraceRecord::Kind::INSTANT, MESSAGE, message);
+
 	detail::messageInsert(
 		static_cast<std::underlying_type_t<Source>>(source),
 		static_cast<std::underlying_type_t<Type>>(type),
@@ -254,7 +272,7 @@ void messageInsert(
 	Type type,
 	GLuint id,
 	Severity severity,
-	const std::string& message
+	std::string_view message
 ) {
 	messageInsert(Source::APPLICATION, type, id, severity, message);
 }
@@ -328,29 +346,15 @@ void deinitialize(bool disableOutput) {
 }
 
 void AnnotationGroup::begin() {
-	_active = detail::_pushGroup != nullptr;
+	if(_active) return;
 
-	if(_active) pushGroup(_source, _id, _message);
+	pushGroup(_source, _id, _message);
 
-	if(_measureTime) _start = osg::Timer::instance()->tick();
+	_active = true;
 }
 
 void AnnotationGroup::end() {
 	if(!_active) return;
-
-	if(_measureTime) {
-		auto stop = osg::Timer::instance()->tick();
-		auto dt = stop - _start;
-		// TODO: This is more correct?
-		// auto dt = osg::Timer::instance()->delta_u(_start, stop);
-
-		messageInsert(
-			Type::PERFORMANCE,
-			_id,
-			Severity::NOTIFICATION,
-			_message + " took " + std::to_string(dt) + "us"
-		);
-	}
 
 	popGroup();
 

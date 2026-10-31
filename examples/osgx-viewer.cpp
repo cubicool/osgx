@@ -83,11 +83,7 @@ int main(int argc, char** argv) {
 	// The viewer's own profiler; its report after each step shows the frame rendered before.
 	viewer.setReportStream(&std::cout);
 
-	osgx::debug::pushGroup(0, __FUNCTION__);
-
 	auto r = viewer.run();
-
-	osgx::debug::popGroup();
 
 	// osgDB::writeNodeFile(*root, "tmp.osgt");
 

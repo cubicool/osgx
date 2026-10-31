@@ -30,7 +30,6 @@ OSGX_ENABLE_WARNINGS
 #include <algorithm>
 #include <cstdint>
 #include <map>
-#include <typeinfo>
 
 namespace osgx::gltf::detail {
 
@@ -60,6 +59,13 @@ osg::Group* MeshBuilder::makeMesh(const tg3_mesh& mesh, int skinIdx) const {
 
 	group->setName(meshName);
 
+	// Each Geometry is named by its glTF path ("meshes[3].primitives[0]"), with the mesh's name in
+	// place of "meshes[3]" when it has one.
+	const std::string meshPath = meshName.empty()
+		? "meshes[" + std::to_string(&mesh - _model.meshes) + "]"
+		: meshName
+	;
+
 	for(std::uint32_t primIdx = 0; primIdx < mesh.primitives_count; primIdx++) {
 		const tg3_primitive& primitive = mesh.primitives[primIdx];
 
@@ -71,7 +77,7 @@ osg::Group* MeshBuilder::makeMesh(const tg3_mesh& mesh, int skinIdx) const {
 			<< " attrs=" << primitive.attributes_count << std::endl
 		;
 
-		auto geom = osgx::make_nref<osg::Geometry>(typeid(*this).name());
+		auto geom = osgx::make_nref<osg::Geometry>(meshPath + ".primitives[" + std::to_string(primIdx) + "]");
 
 		geom->setUseVertexBufferObjects(true);
 

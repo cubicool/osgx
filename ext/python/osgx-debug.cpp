@@ -151,7 +151,7 @@ void bind_debug(py::module_& m_debug) {
 			osgx::debug::Type,
 			GLuint,
 			osgx::debug::Severity,
-			const std::string&
+			std::string_view
 		>(&osgx::debug::messageInsert),
 			"source"_a,
 			"type"_a,
@@ -164,7 +164,7 @@ void bind_debug(py::module_& m_debug) {
 			osgx::debug::Type,
 			GLuint,
 			osgx::debug::Severity,
-			const std::string&
+			std::string_view
 		>(&osgx::debug::messageInsert),
 			"type"_a,
 			"id"_a,
@@ -174,12 +174,12 @@ void bind_debug(py::module_& m_debug) {
 		)
 		.def(
 			"pushGroup",
-			py::overload_cast<osgx::debug::Source, GLuint, const std::string&>(&osgx::debug::pushGroup),
+			py::overload_cast<osgx::debug::Source, GLuint, std::string_view>(&osgx::debug::pushGroup),
 			"Pushes a named GL_KHR_debug group with an explicit source; pair with popGroup()."
 		)
 		.def(
 			"pushGroup",
-			py::overload_cast<GLuint, const std::string&>(&osgx::debug::pushGroup),
+			py::overload_cast<GLuint, std::string_view>(&osgx::debug::pushGroup),
 			"Pushes a named GL_KHR_debug group (source defaults to APPLICATION); pair with popGroup()."
 		)
 		.def("popGroup", &osgx::debug::popGroup, "Pops the most recently pushed GL_KHR_debug group.")
@@ -193,13 +193,11 @@ void bind_debug(py::module_& m_debug) {
 		"separate draw callbacks, use AnnotationGroup instead."
 	)
 		.def(
-			py::init<GLuint, std::string_view, osgx::debug::Source, bool>(),
+			py::init<GLuint, std::string_view, osgx::debug::Source>(),
 			py::arg("id"),
 			py::arg("message"),
 			py::arg("source")=osgx::debug::Source::APPLICATION,
-			py::arg("measureTime")=false,
-			"Pushes the debug group immediately. If `measureTime` is True, a PERFORMANCE message "
-			"reporting the elapsed wall time is inserted when the group is popped."
+			"Pushes the debug group immediately (and records it as a trace span)."
 		)
 		.def("__enter__", [](osgx::debug::AnnotationScope& self) -> osgx::debug::AnnotationScope& {
 			return self;

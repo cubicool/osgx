@@ -24,6 +24,7 @@ struct Node {
 	const osg::Object* object = nullptr;
 	std::string name;
 	const char* className = nullptr;
+	std::string label;
 
 	double inclusiveMs = 0.0;
 	double selfMs = 0.0;
@@ -53,6 +54,15 @@ struct Node {
 	// lookup usually matches the child after it.
 	std::list<Node>::iterator cursor = children.end();
 };
+
+bool transparent(const TraceRecord& record) {
+	return
+		detail::isNodeLocation(record.location) &&
+		record.className &&
+		(std::strcmp(record.className, "Group") == 0 || std::strcmp(record.className, "Geode") == 0) &&
+		record.name().empty()
+	;
+}
 
 bool matches(const Node& node, const osg::Camera* camera, const osg::Object* object, std::string_view name) {
 	return node.camera == camera && node.object == object && node.name == name;
@@ -96,6 +106,8 @@ Node& child(
 	node.name = name;
 	node.className = className;
 
+	node.label = detail::spanLabel(location, name, className, object);
+
 	parent.cursor = std::prev(children.end());
 
 	return node;
@@ -132,6 +144,7 @@ void copyOut(const Node& from, TraceNode& to) {
 	to.object = from.object;
 	to.name = from.name;
 	to.className = from.className;
+	to.label = from.label;
 	to.inclusiveMs = from.inclusiveMs;
 	to.selfMs = from.selfMs;
 	to.drawMs = from.drawMs;
@@ -163,6 +176,9 @@ struct TraceProfile::Impl {
 		Node* node;
 		const TraceRecord* enter;
 		double childMs = 0.0;
+
+		// An unnamed Group/Geode span: `node` is the enclosing node, which it adds nothing to.
+		bool transparent = false;
 	};
 
 	std::array<std::vector<Open>, 4> stacks;
@@ -174,11 +190,14 @@ struct TraceProfile::Impl {
 void TraceProfile::Impl::fold(const std::vector<TraceRecord>& sourceRecords, unsigned int frame) {
 	const auto& culled = detail::culledLocation();
 	const auto& drawable = detail::drawableLocation();
+	const auto& gpuClock = detail::gpuClockLocation();
 	int drawOrder = 0;
 
 	for(auto& stack : stacks) stack.clear();
 
 	for(const auto& record : sourceRecords) {
+		if(record.location == &gpuClock) continue;
+
 		const auto phase = record.location->phase;
 		auto& stack = stacks[static_cast<std::size_t>(phase)];
 
@@ -189,6 +208,13 @@ void TraceProfile::Impl::fold(const std::vector<TraceRecord>& sourceRecords, uns
 			const double ms = osg::Timer::instance()->delta_m(open.enter->tick, record.tick);
 
 			stack.pop_back();
+
+			// Only its children's time leaves the enclosing node's self time.
+			if(open.transparent) {
+				if(!stack.empty()) stack.back().childMs += open.childMs;
+
+				continue;
+			}
 
 			if(!stack.empty()) stack.back().childMs += ms;
 
@@ -243,6 +269,12 @@ void TraceProfile::Impl::fold(const std::vector<TraceRecord>& sourceRecords, uns
 
 				if(!self->location) self->location = record.location;
 			}
+		}
+
+		if(record.kind == TraceRecord::Kind::ENTER && transparent(record)) {
+			stack.push_back({parent, &record, 0.0, true});
+
+			continue;
 		}
 
 		auto& node = self
@@ -329,6 +361,7 @@ _impl(std::make_unique<Impl>()) {
 	for(std::size_t i = 0; i < _impl->phases.size(); i++) {
 		_impl->phases[i].phase = static_cast<Phase>(i);
 		_impl->phases[i].name = detail::toString(static_cast<Phase>(i));
+		_impl->phases[i].label = _impl->phases[i].name;
 	}
 }
 

@@ -11,6 +11,7 @@ OSGX_ENABLE_WARNINGS
 #include <algorithm>
 #include <bit>
 #include <cstring>
+#include <format>
 #include <type_traits>
 
 namespace osgx::debug {
@@ -54,6 +55,18 @@ T loadRelaxed(const T& source) {
 #else
 	return std::atomic_ref<T>(const_cast<T&>(source)).load(std::memory_order_relaxed);
 #endif
+}
+
+// Copies `name` into the record, cut to NAME_SIZE - 1 bytes ending in "..." if longer.
+void storeName(TraceRecord& record, std::string_view name) {
+	auto* bytes = reinterpret_cast<char*>(record.nameStorage.data());
+
+	if(name.size() < TraceRecord::NAME_SIZE) std::memcpy(bytes, name.data(), name.size());
+
+	else {
+		std::memcpy(bytes, name.data(), TraceRecord::NAME_SIZE - 4);
+		std::memcpy(bytes + TraceRecord::NAME_SIZE - 4, "...", 3);
+	}
 }
 
 void storeRecord(TraceRecord& slot, const TraceRecord& record) {
@@ -151,6 +164,16 @@ const char* toString(TraceRecord::Kind kind) {
 
 }
 
+std::string objectLabel(std::string_view name, const char* className, const void* object) {
+	if(!name.empty()) return std::string(name);
+
+	return std::format(
+		"{}@{:#x}",
+		className ? className : "?",
+		reinterpret_cast<std::uintptr_t>(object)
+	);
+}
+
 TraceBuffer::TraceBuffer(std::size_t capacity, std::size_t index):
 _records(std::bit_ceil(std::max<std::size_t>(capacity, 2))),
 _index(index),
@@ -164,6 +187,38 @@ std::uint64_t TraceBuffer::record(
 	TraceRecord::Kind kind,
 	const Location& location,
 	const osg::Object* object,
+	unsigned int frame,
+	const osg::Camera* camera
+) {
+	auto record = _begin(kind, location, frame, camera);
+
+	record.object = object;
+
+	if(object && kind != TraceRecord::Kind::LEAVE) {
+		record.className = object->className();
+
+		storeName(record, object->getName());
+	}
+
+	return _commit(record);
+}
+
+std::uint64_t TraceBuffer::recordText(
+	TraceRecord::Kind kind,
+	const Location& location,
+	std::string_view name,
+	const osg::Camera* camera
+) {
+	auto record = _begin(kind, location, _hasFrame ? _lastFrame : 0u, camera);
+
+	if(kind != TraceRecord::Kind::LEAVE) storeName(record, name);
+
+	return _commit(record);
+}
+
+TraceRecord TraceBuffer::_begin(
+	TraceRecord::Kind kind,
+	const Location& location,
 	unsigned int frame,
 	const osg::Camera* camera
 ) {
@@ -190,22 +245,13 @@ std::uint64_t TraceBuffer::record(
 	record.sequence = sequence;
 	record.tick = osg::Timer::instance()->tick();
 	record.location = &location;
-	record.object = object;
 	record.camera = camera;
 
-	if(object && kind != TraceRecord::Kind::LEAVE) {
-		const auto& name = object->getName();
-		auto* bytes = reinterpret_cast<char*>(record.nameStorage.data());
+	return record;
+}
 
-		record.className = object->className();
-
-		if(name.size() < TraceRecord::NAME_SIZE) std::memcpy(bytes, name.data(), name.size());
-
-		else {
-			std::memcpy(bytes, name.data(), TraceRecord::NAME_SIZE - 4);
-			std::memcpy(bytes + TraceRecord::NAME_SIZE - 4, "...", 3);
-		}
-	}
+std::uint64_t TraceBuffer::_commit(const TraceRecord& record) {
+	const auto sequence = record.sequence;
 
 	// Orders the previous head store before this slot's field stores, so a reader that sees any of
 	// them also sees a head that marks the slot as being overwritten.

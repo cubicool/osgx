@@ -56,15 +56,11 @@ int main(int argc, char** argv) {
 
 	profiler->attach(viewer);
 
-	osgx::debug::pushGroup(0, __FUNCTION__);
-
 	for(unsigned int frame = 1; !viewer.done(); frame++) {
 		viewer.frame();
 
 		if(frame % 60 == 0) profiler->report(std::cout);
 	}
-
-	osgx::debug::popGroup();
 
 	return 0;
 }

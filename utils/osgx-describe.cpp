@@ -72,10 +72,8 @@ int main(int argc, char** argv) {
 		root = group;
 	}
 
-	auto nv = osgx::NameVisitor();
 	auto dsv = osgx::DescribeSceneVisitor();
 
-	root->accept(nv);
 	root->accept(dsv);
 
 	// TODO: Make this optional (--view, --no-view, etc).
@@ -85,7 +83,6 @@ int main(int argc, char** argv) {
 
 	auto r = viewer.run();
 
-	root->accept(nv);
 	root->accept(dsv);
 
 	return r;

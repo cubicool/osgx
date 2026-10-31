@@ -15,6 +15,8 @@ OSGX_DISABLE_WARNINGS
 
 OSGX_ENABLE_WARNINGS
 
+#include <cstdint>
+#include <format>
 #include <iostream>
 #include <map>
 #include <regex>
@@ -118,127 +120,45 @@ private:
 	ClassIDMap _cidmap;
 };
 
-// class DescribeSceneVisitor: public IndexedVisitor {
-class DescribeSceneVisitor: public NameVisitor {
+// Prints the scene tree to stdout, one line per node and drawable, indented by depth: the name (or
+// "ClassName@0x<address>" when unnamed), then "(library::ClassName)". Does not modify the scene.
+class DescribeSceneVisitor: public IndexedVisitor {
 public:
-	// TODO: Make the common/tedious viewer retrieval cleaner/reusable!
-	/* bool WindowSizeHandler::handle(const osgGA::GUIEventAdapter &ea, osgGA::GUIActionAdapter &aa) {
-		osgViewer::View* view = dynamic_cast<osgViewer::View*>(&aa);
-		if (!view) return false;
-
-		osgViewer::ViewerBase* viewer = view->getViewerBase();
-
-		if (viewer == NULL)
-		{
-			return false;
-		}
-
-		if (ea.getHandled()) return false;
-	} */
-
-	/* class EventHandler: public osgGA::GUIEventHandler {
-	public:
-		virtual bool handle(const osgGA::GUIEventAdapter& ea, osgGA::GUIActionAdapter& aa) override {
-			FrameByFrameViewer* viewer = dynamic_cast<FrameByFrameViewer*>(&aa);
-
-			if(viewer && ea.getEventType() == osgGA::GUIEventAdapter::KEYUP) {
-				if(ea.getKey() == 'n') {
-					viewer->_render = true;
-
-					return true;
-				}
-			}
-
-			return false;
-		}
-	}; */
-
-	DescribeSceneVisitor(const std::string& indent="   ", const std::string& separator="/"):
-	_indent(indent),
-	_separator(separator) {}
+	DescribeSceneVisitor(const std::string& indent="   "):
+	_indent(indent) {}
 
 	virtual void apply(osg::Node& n) override {
-		_setName(n);
-
-		_path.push_back(n.getName());
-
-		std::cout << _getIndent() << _getNameLibraryClass(n) << std::endl;
-
-		/* std::cout << _getIndent() << _getNameLibraryClass(n);
-
-		if(n.getNumParents() >= 1) {
-			std::cout << " [";
-
-			for(auto p = 0; p < n.getNumParents(); p++) {
-				std::cout << "parent" << p << "=" << n.getParent(p)->getName() << " ";
-			}
-
-			std::cout << "]";
-		}
-
-		std::cout << std::endl; */
-
-		// TODO: Temporary!
-		n.setUserValue("path", _path.str());
+		std::cout << _getIndent() << _describe(n) << std::endl;
 
 		itraverse(n);
-
-		_path.pop_back();
 	}
 
 	virtual void apply(osg::Drawable& d) override {
-		_setName(d);
-
-		_path.push_back(d.getName());
-
-		std::cout << _getIndent() << "+ " << _getNameLibraryClass(d) << std::endl;
-
-		// TODO: Temporary!
-		d.setUserValue("path", _path.str());
+		std::cout << _getIndent() << "+ " << _describe(d) << std::endl;
 
 		itraverse(d);
-
-		_path.pop_back();
 	}
 
 protected:
 	std::string _getIndent() const {
-		std::ostringstream oss;
+		std::string indent;
 
-		/* for(auto i = 0_z; i < _index(); i++) {
-			if(i + 1 == _index()) oss << _indent << "\u2514 ";
+		for(auto i = 0_z; i < _index(); i++) indent += _indent;
 
-			else oss << _indent << "\u251c";
-		} */
-
-		for(auto i = 0_z; i < _index(); i++) oss << _indent;
-
-		return oss.str();
+		return indent;
 	}
 
-	template<typename T>
-	std::string _getNameLibraryClass(const T& t) const {
-		std::ostringstream oss;
-
-		oss
-			<< t.getName()
-			<< " (" << t.libraryName()
-			<< "::" << t.className()
-			// << ") [@" << &t << "]"
-			<< ")"
+	static std::string _describe(const osg::Object& o) {
+		const auto label = o.getName().empty()
+			? std::format("{}@{:#x}", o.className(), reinterpret_cast<std::uintptr_t>(&o))
+			: o.getName()
 		;
 
-		// TODO: When should this be included?
-		if(false) oss << " {" << _path.str() << "}";
-
-		return oss.str();
+		return std::format("{} ({}::{})", label, o.libraryName(), o.className());
 	}
 
 private:
-	ObjectPath _path;
-
 	std::string _indent;
-	std::string _separator;
 };
 
 namespace scene {

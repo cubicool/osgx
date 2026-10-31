@@ -125,6 +125,9 @@ namespace detail {
 	const char* toString(TraceRecord::Kind kind);
 }
 
+// `name`, or "ClassName@0x<address>" if it is empty ("?" for a null className).
+std::string objectLabel(std::string_view name, const char* className, const void* object);
+
 class TraceBuffer: public osg::Referenced {
 public:
 	// The number of frame starts each buffer stores. As with records, one entry is reserved for the
@@ -155,6 +158,16 @@ public:
 		const Location& location,
 		const osg::Object* object,
 		unsigned int frame,
+		const osg::Camera* camera=nullptr
+	);
+
+	// Appends a record without an object, named `name` (cut like object names; LEAVE records keep
+	// none), in the frame of this buffer's previous record (0 before any). Used for annotations
+	// and debug messages, which carry text but no frame number.
+	std::uint64_t recordText(
+		TraceRecord::Kind kind,
+		const Location& location,
+		std::string_view name,
 		const osg::Camera* camera=nullptr
 	);
 
@@ -204,6 +217,18 @@ private:
 	};
 
 	std::size_t _slot(std::uint64_t sequence) const;
+
+	// A record at the current tick with the next sequence number; starts a frame range if `frame`
+	// differs from the previous record's.
+	TraceRecord _begin(
+		TraceRecord::Kind kind,
+		const Location& location,
+		unsigned int frame,
+		const osg::Camera* camera
+	);
+
+	// Publishes a record made by _begin().
+	std::uint64_t _commit(const TraceRecord& record);
 
 	std::vector<TraceRecord> _records;
 	std::atomic<std::uint64_t> _head{0};

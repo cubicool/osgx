@@ -490,14 +490,10 @@ struct ProfilerRow {
 };
 
 // Rows for every drawn drawable and culled node under `node`, in scene order, with "/"-joined
-// paths of names (<ClassName> for unnamed nodes).
+// paths of their labels.
 void profilerRows(const debug::TraceNode& node, const std::string& path, std::vector<ProfilerRow>& rows) {
 	for(const auto& child : node.children) {
-		std::string name = child.name.empty()
-			? std::string("<") + (child.className ? child.className : "?") + ">"
-			: child.name;
-
-		const auto childPath = path.empty() ? name : path + "/" + name;
+		const auto childPath = path.empty() ? child.label : path + "/" + child.label;
 
 		if(child.draws > 0.0 || child.culled) rows.push_back({childPath, &child});
 

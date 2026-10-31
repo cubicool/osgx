@@ -36,6 +36,7 @@ constexpr Location CAMERA_DRAW("camera", Phase::DRAW);
 constexpr Location READBACK("readback", Phase::DRAW);
 constexpr Location PROFILE_FOLD("profile", Phase::DRAW);
 constexpr Location SWAP("swap", Phase::DRAW);
+constexpr Location GPU_CLOCK("gpu clock", Phase::DRAW);
 
 unsigned int frameNumber(const osg::RenderInfo& ri) {
 	const auto* frameStamp = ri.getState()->getFrameStamp();
@@ -43,8 +44,34 @@ unsigned int frameNumber(const osg::RenderInfo& ri) {
 	return frameStamp ? frameStamp->getFrameNumber() : 0u;
 }
 
+// Pushes a KHR_debug group named objectLabel(object), if initialize() bound the functions.
+void pushObjectGroup(const osg::Object* object) {
+	if(!detail::_pushGroup) return;
+
+	const auto& name = object->getName();
+
+	if(!name.empty()) detail::pushGroup(Source::APPLICATION, 0, name);
+
+	else detail::pushGroup(Source::APPLICATION, 0, objectLabel({}, object->className(), object));
+}
+
+// A KHR_debug group around a DRAW span (no-op before initialize()).
+class DebugGroup {
+public:
+	explicit DebugGroup(std::string_view label) {
+		detail::pushGroup(Source::APPLICATION, 0, label);
+	}
+
+	~DebugGroup() {
+		detail::popGroup();
+	}
+
+	DebugGroup(const DebugGroup&) = delete;
+	DebugGroup& operator=(const DebugGroup&) = delete;
+};
+
 // ENTER (in PRE_DRAW) or LEAVE (in FINAL_DRAW) of the camera being drawn: the camera's DRAW span,
-// which the profile uses as the camera's own node.
+// which the profile uses as the camera's own node, and its KHR_debug group.
 class CameraSpanCallback: public osg::Camera::DrawCallback {
 public:
 	explicit CameraSpanCallback(TraceRecord::Kind kind):
@@ -53,7 +80,13 @@ public:
 	void operator()(osg::RenderInfo& ri) const override {
 		const auto* camera = ri.getCurrentCamera();
 
-		if(camera) threadTraceBuffer().record(_kind, CAMERA_DRAW, camera, frameNumber(ri), camera);
+		if(!camera) return;
+
+		if(_kind == TraceRecord::Kind::LEAVE) detail::popGroup();
+
+		threadTraceBuffer().record(_kind, CAMERA_DRAW, camera, frameNumber(ri), camera);
+
+		if(_kind == TraceRecord::Kind::ENTER) pushObjectGroup(camera);
 	}
 
 private:
@@ -70,6 +103,7 @@ public:
 		const auto* frameStamp = gc->getState() ? gc->getState()->getFrameStamp() : nullptr;
 
 		TraceScope scope(SWAP, gc, frameStamp ? frameStamp->getFrameNumber() : 0u);
+		DebugGroup group(SWAP.name);
 
 		if(_previous) _previous->swapBuffersImplementation(gc);
 
@@ -165,6 +199,7 @@ public:
 		if(!_profiler.lock(profiler)) return;
 
 		TraceScope scope(PROFILE_FOLD, this, frame, ri.getCurrentCamera());
+		DebugGroup group(PROFILE_FOLD.name);
 
 		profiler->assemble(frame - 1);
 	}
@@ -199,6 +234,34 @@ const Location& culledLocation() {
 
 const Location& drawableLocation() {
 	return DRAWABLE;
+}
+
+const Location& gpuClockLocation() {
+	return GPU_CLOCK;
+}
+
+std::string spanLabel(
+	const Location* location,
+	std::string_view name,
+	const char* className,
+	const void* object
+) {
+	if(!location || isNodeLocation(location) || !name.empty()) {
+		return objectLabel(name, className, object);
+	}
+
+	return location->name;
+}
+
+bool isNodeLocation(const Location* location) {
+	return
+		location == &DRAWABLE ||
+		location == &CULL_NODE ||
+		location == &CULLED ||
+		location == &UPDATE_NODE ||
+		location == &EVENT_NODE ||
+		location == &CAMERA_DRAW
+	;
 }
 
 FrameAccumulator::Entry FrameAccumulator::alloc(osg::GLExtensions* ext) {
@@ -253,44 +316,22 @@ void FrameAccumulator::_drain(std::vector<Entry>& source, osg::GLExtensions* ext
 
 osg::buffered_object<FrameAccumulator> _accumulators;
 
-std::string cameraQualifiedPath(const osg::Camera* camera, const std::string& name) {
-	if(!camera) return name;
-
-	const auto& cameraName = camera->getName();
-
-	std::string label = cameraName.empty()
-		? camera->className() + std::string("@") + std::to_string(reinterpret_cast<std::uintptr_t>(camera))
-		: cameraName;
-
-	return label + "/" + name;
 }
 
-}
-
-ProfilerCallback::ProfilerCallback(const std::string& name, osg::Drawable::DrawCallback* cb):
-_name(name),
+ProfilerCallback::ProfilerCallback(osg::Drawable::DrawCallback* cb):
 _cb(cb) {}
 
 ProfilerCallback::~ProfilerCallback() = default;
-
-void ProfilerCallback::setProfilerName(const std::string& name) {
-	_name = name;
-}
-
-const std::string& ProfilerCallback::getProfilerName() const {
-	return _name;
-}
 
 void ProfilerCallback::drawImplementation(osg::RenderInfo& ri, const osg::Drawable* drawable) const {
 	auto* ext = ri.getState()->get<osg::GLExtensions>();
 	const auto* camera = ri.getCurrentCamera();
 	const auto* frameStamp = ri.getState()->getFrameStamp();
 	const unsigned int frame = frameStamp ? frameStamp->getFrameNumber() : 0u;
-	const auto path = detail::cameraQualifiedPath(camera, _name.empty() ? drawable->getName() : _name);
 
 	auto& buffer = threadTraceBuffer();
 
-	AnnotationScope annotation(0, path);
+	pushObjectGroup(drawable);
 
 	const auto enter = buffer.record(TraceRecord::Kind::ENTER, DRAWABLE, drawable, frame, camera);
 
@@ -317,6 +358,8 @@ void ProfilerCallback::drawImplementation(osg::RenderInfo& ri, const osg::Drawab
 	}
 
 	buffer.record(TraceRecord::Kind::LEAVE, DRAWABLE, drawable, frame, camera);
+
+	detail::popGroup();
 }
 
 ProfilerFinalCallback::ProfilerFinalCallback(QueryMode mode):
@@ -340,8 +383,27 @@ void ProfilerFinalCallback::operator()(osg::RenderInfo& ri) const {
 	if(!ext || !ext->glGetQueryObjectui64v) return;
 
 	auto& acc = detail::_accumulators[ri.getState()->getContextID()];
+	const auto frame = frameNumber(ri);
 
-	TraceScope scope(READBACK, this, frameNumber(ri), ri.getCurrentCamera());
+	if(ext->glGetInteger64v) {
+		GLint64 gpuNs = 0;
+
+		ext->glGetInteger64v(GL_TIMESTAMP, &gpuNs);
+
+		auto& buffer = threadTraceBuffer();
+		const auto sequence = buffer.record(
+			TraceRecord::Kind::INSTANT,
+			GPU_CLOCK,
+			ri.getState()->getGraphicsContext(),
+			frame,
+			ri.getCurrentCamera()
+		);
+
+		buffer.setGPUTimes(sequence, static_cast<std::uint64_t>(gpuNs), static_cast<std::uint64_t>(gpuNs));
+	}
+
+	TraceScope scope(READBACK, this, frame, ri.getCurrentCamera());
+	DebugGroup group(READBACK.name);
 
 	if(_mode == QueryMode::ASYNC) acc.swap_and_drain(ext);
 
@@ -358,29 +420,8 @@ void ProfilerVisitor::apply(osg::Geode& geode) {
 }
 
 void ProfilerVisitor::apply(osg::Drawable& drawable) {
-	std::string path;
-
-	for(auto* n : getNodePath()) {
-		path += "/";
-		path += n->getName().empty() ? n->className() : n->getName();
-	}
-
-	// In pre-Node-Drawable OSG, the drawable isn't pushed onto the NodePath.
-	if(getNodePath().empty() || getNodePath().back() != &drawable) {
-		path += "/";
-		path += drawable.getName().empty() ? drawable.className() : drawable.getName();
-	}
-
-	if(auto* profiler = dynamic_cast<ProfilerCallback*>(drawable.getDrawCallback())) {
-		profiler->setProfilerName(path);
-
-		detail::notify("osgx::debug::ProfilerVisitor | Updating ProfilerCallback on ", path);
-	}
-
-	else {
-		detail::notify("osgx::debug::ProfilerVisitor | Setting ProfilerCallback on ", path);
-
-		drawable.setDrawCallback(new ProfilerCallback(path, drawable.getDrawCallback()));
+	if(!dynamic_cast<ProfilerCallback*>(drawable.getDrawCallback())) {
+		drawable.setDrawCallback(new ProfilerCallback(drawable.getDrawCallback()));
 	}
 
 	traverse(drawable);
@@ -612,11 +653,7 @@ void reportTree(std::ostream& out, const TraceNode& node, unsigned int newest, i
 	char line[160];
 
 	for(const auto& child : node.children) {
-		std::string label(static_cast<std::size_t>(depth) * 2, ' ');
-
-		if(!child.name.empty()) label += child.name;
-
-		else label += std::string("<") + (child.className ? child.className : "?") + ">";
+		const auto label = std::string(static_cast<std::size_t>(depth) * 2, ' ') + child.label;
 
 		int n = std::snprintf(
 			line,

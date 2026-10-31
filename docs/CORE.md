@@ -20,7 +20,7 @@ subsystems (each with its own C++ namespace), see [DEBUG.md](DEBUG.md), [IMGUI.m
 ## `osgx/Core.hpp`
 
 - `OSGX_DISABLE_WARNINGS` / `OSGX_ENABLE_WARNINGS` silence noisy OSG headers with compiler-specific diagnostic push/pop macros (`__clang__` branch first, then `__GNUC__`, then a no-op fallback).
-- `ObjectPath` — a `std::list<std::string>` dotted-path accumulator (`.str()` joins with `.`), used by `DescribeSceneVisitor` to track scene-graph name hierarchies.
+- `ObjectPath` — a `std::list<std::string>` dotted-path accumulator (`.str()` joins with `.`).
 - `vec_t` (`osg::Vec3::value_type`) and the `_v`/`_sz`/`_z` literals provide compact OSG scalar and `std::size_t` literals.
 - `OSGReferenced`, `OSGArray`, and `OSGDrawElements` are concepts that constrain helpers to the expected OSG base types.
 - `make_ref<T>(args...)` / `make_ref<T>(nullptr)` and `make_nref<T>(name, args...)` create `osg::ref_ptr` objects, optionally naming the object immediately.
@@ -102,7 +102,7 @@ every declaration carries the same `binding`.
 - `LambdaVisitor<Node>` — `NodeVisitor` wrapping `std::function<void(Node&)>`.
 - `IndexedVisitor` — tracks traversal depth in `_i`; use `itraverse()` instead of `traverse()`.
 - `NameVisitor` — auto-assigns `$ClassName_N` names to unnamed nodes (`CLASS`/`PATH`/`FORCE` options).
-- `DescribeSceneVisitor` — prints the scene tree to stdout with indentation and dot-path tracking.
+- `DescribeSceneVisitor` — prints the scene tree to stdout, indented by depth; unnamed objects as `ClassName@0x<address>`. Read-only: it never names nodes or sets user values (use `NameVisitor` for generated names).
 - `VisitorEventHandler<Visitor, Viewer>` — runs a visitor against the scene root when a key is pressed.
 - `LambdaKeyHandler` — wires one or multiple keys to a lambda `(ea, aa[, key]) -> bool`.
 - `FilterNotifyHandler` — an `osg::NotifyHandler` that suppresses known-noisy OSG messages by regex (draw()/cull() spam, BufferObject release messages) before writing the rest to stderr.

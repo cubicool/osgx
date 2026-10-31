@@ -34,6 +34,10 @@ namespace osgx::debug {
 // names come from the records, camera names from the CULL records of Camera nodes or from the
 // caller (cameras that are not scene nodes, such as a view's master camera).
 //
+// Unnamed plain osg::Group and osg::Geode spans (class name exactly "Group" or "Geode") are
+// transparent: they get no node, their children become children of the enclosing node, and their
+// own time counts as the enclosing node's self time. A culled one still gets a node.
+//
 // Values are moving averages over the frames a node appeared in; nodes not seen within the last
 // `window` frames are dropped.
 // ================================================================================================
@@ -48,6 +52,10 @@ struct TraceNode {
 
 	std::string name;
 	const char* className = nullptr;
+
+	// What to display: the object's name; else, for the profiler's per-node spans and camera
+	// groups, objectLabel() ("ClassName@0x<address>"); else the Location's name.
+	std::string label;
 
 	// Milliseconds per frame.
 	double inclusiveMs = 0.0;

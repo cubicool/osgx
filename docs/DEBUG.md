@@ -27,7 +27,7 @@ This is a completely separate pipe from the other two systems — no queries, no
 just the driver reporting what it observed.
 
 - `osgx::debug::initialize(gc)` — resolves all `GL_KHR_debug` extension pointers for a context.
-- `osgx::debug::installDefaultCallback()` — registers a callback that writes driver messages to `osg::notify`.
+- `osgx::debug::installDefaultCallback()` — registers a callback that writes driver messages to the log sink (`setSink()`, default `osg::notify`) and records each one as an INSTANT (`"driver message"`) in the calling thread's trace buffer, so it shows up in the profile where it happened (frame-accurate with synchronous output, the default). The GL's echoes of the application's own groups and inserted messages are skipped.
 - `osgx::debug::setCallback(fn)` / `clearCallback()` — install or remove a custom callback.
 - `osgx::debug::enableDebugOutput()` / `disableDebugOutput()` — toggle `GL_DEBUG_OUTPUT[_SYNCHRONOUS]`.
 - `osgx::debug::GraphicsOperation` — a `setRealizeOperation()` helper that calls `initialize()` once the context exists.
@@ -45,15 +45,23 @@ belong to which logical pass.
 `messageInsert` from application-side C++ code (e.g. from `main()` or a viewer loop);
 always use the camera callback objects, which fire while the context is guaranteed current.
 
-**Annotations are camera-scoped.** A `PRE_DRAW` / `FINAL_DRAW` callback pair brackets
+Every `pushGroup()`/`popGroup()` pair is also recorded as a DRAW-phase span (`"annotation"`) and every
+`messageInsert()` as an INSTANT (`"message"`) in the calling thread's trace buffer, named by the
+message (cut to 55 bytes), so they appear in the profile's DRAW tree. Conversely, once
+`initialize()` has run, the `Profiler`'s own DRAW spans (cameras, drawables, readback, profile fold,
+swap) are KHR debug groups too, so apitrace/RenderDoc show the same structure as the profile.
+Push and pop on one thread, nested inside the spans around them: within one draw callback, or
+`PRE_DRAW` to `POST_DRAW` of one camera (the profiler's camera span runs `PRE_DRAW` to `FINAL_DRAW`).
+
+**Annotations are camera-scoped.** A `PRE_DRAW` / `POST_DRAW` callback pair brackets
 everything that camera renders — not individual nodes or groups within the scene graph.
 Sub-groups of a single camera's scene cannot be individually annotated this way; for
 per-group bracketing, each group needs its own RTT camera. For per-drawable bracketing,
 use `ProfilerCallback` instead.
 
 - `osgx::debug::AnnotationScope` — **use this by default.** RAII push/pop; construct on the stack inside any `drawImplementation` or draw callback. Begin and end are in the same scope.
-- `osgx::debug::AnnotationGroup` — use only when begin and end must live in *separate* callback objects. Its sole purpose is to share push/pop state across `AnnotationBeginCallback` (`PRE_DRAW`) and `AnnotationEndCallback` (`FINAL_DRAW`) so the group remains matched across the camera's frame boundary. Not a general-purpose annotation type.
-- `osgx::debug::AnnotationBeginCallback` / `AnnotationEndCallback` — install an `AnnotationGroup` on a camera's `PRE_DRAW` or `FINAL_DRAW` slot so it fires at the correct time.
+- `osgx::debug::AnnotationGroup` — use only when begin and end must live in *separate* callback objects. Its sole purpose is to share push/pop state across `AnnotationBeginCallback` (`PRE_DRAW`) and `AnnotationEndCallback` (`POST_DRAW`) so the group remains matched across the camera's frame boundary. Not a general-purpose annotation type.
+- `osgx::debug::AnnotationBeginCallback` / `AnnotationEndCallback` — install an `AnnotationGroup` on a camera's `PRE_DRAW` or `POST_DRAW` slot so it fires at the correct time.
 - `osgx::debug::appendCameraDrawCallback()` / `prependCameraDrawCallback()` — safely add callbacks to an existing slot without clobbering others.
 
 Groups nest naturally. `FrameByFrameViewer` installs a single `Frame` group on its
@@ -62,12 +70,14 @@ can install its own `AnnotationBeginCallback` / `AnnotationEndCallback` and it w
 appear nested inside the viewer's group in the trace:
 
 ```
-Frame
-  Atlas: glyph-cache
-    [draw calls]
-  Atlas: labels
-    [draw calls]
-/Frame
+Camera@0x...
+  Frame
+    Atlas: glyph-cache
+      [draw calls]
+    Atlas: labels
+      [draw calls]
+readback
+profile
 ```
 
 ---

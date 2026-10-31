@@ -67,11 +67,7 @@ int main(int argc, char** argv) {
 		new osgx::debug::ProfilerFinalCallback()
 	);
 
-	osgx::debug::pushGroup(0, __FUNCTION__);
-
 	auto r = viewer.run();
-
-	osgx::debug::popGroup();
 
 	// osgDB::writeNodeFile(*root, "tmp.osgt");
 
