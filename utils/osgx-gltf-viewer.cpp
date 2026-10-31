@@ -362,7 +362,7 @@ int main(int argc, char** argv) {
 	);
 	args.getApplicationUsage()->addCommandLineOption(
 		"--profile",
-		"Show an ImGui panel with per-drawable GPU timings for the model (ImGui builds only)"
+		"Show an ImGui panel with per-drawable CPU/GPU draw timings for the scene (ImGui builds only)"
 	);
 	args.getApplicationUsage()->addCommandLineOption(
 		"--debug [mode]",
@@ -673,7 +673,7 @@ int main(int argc, char** argv) {
 
 		auto* gui = new osgx::imgui::Widget(viewer);
 
-		if(profile) gui->addProfilerSection(viewer, model.get(), true);
+		if(profile) gui->addProfilerSection(viewer, true);
 
 		if(animationPanel) {
 			gui->addSection("Animation", [&player](osg::RenderInfo&) {

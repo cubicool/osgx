@@ -7,9 +7,10 @@ every `osgx::debug` header. Each part also has its own header under `osgx/debug/
 | Header | Contents |
 |---|---|
 | `osgx/debug/Annotation.hpp` | `GL_KHR_debug`: `initialize()`, driver message callback, debug groups and messages, `AnnotationGroup`/`AnnotationScope`, camera draw callback slots |
-| `osgx/debug/Profiler.hpp` | the two-phase GPU timestamp profiler |
+| `osgx/debug/Profiler.hpp` | `Profiler`, its callbacks and profiling visitors |
 | `osgx/debug/Trace.hpp` | per-thread trace buffers |
-| `osgx/debug/Viewer.hpp` | `FrameByFrameViewer` |
+| `osgx/debug/TraceProfile.hpp` | the rolling per-phase profile built from them |
+| `osgx/debug/Viewer.hpp` | `ProfilingViewer`, `FrameByFrameViewer` |
 | `osgx/debug/ShaderClock.hpp` | `ShaderClockDrawable` |
 
 For a Dear ImGui front-end, see [`osgx::imgui`](IMGUI.md) — it is a sibling of `osgx::debug`, not
@@ -71,29 +72,44 @@ Frame
 
 ---
 
-## System 3 — GPU Timestamp Profiler
+## System 3 — Profiler
 
-`glQueryCounter` wraps each drawable in a pair of GPU timestamp queries so you can
-measure actual GPU cost per draw call, averaged over a ring buffer of recent frames.
-This is a two-phase design to avoid stalling the GPU pipeline mid-submission.
+`osgx::debug::Profiler` measures every OSG phase of a frame: the event and update traversals
+(per node visited), the cull traversal (per node, plus which nodes were culled), and drawing (per
+drawable CPU time and GPU time from `GL_TIMESTAMP` queries, per camera, the query readback, buffer
+swaps). Everything is recorded into per-thread trace buffers (`osgx/debug/Trace.hpp`) and folded,
+one frame behind, into a rolling profile: one tree per phase in traversal order, with moving
+averages of inclusive and self time per node (`osgx/debug/TraceProfile.hpp`).
 
-**Phase 1 — submit** (`ProfilerCallback`, per drawable):
-```
-glQueryCounter(begin) → draw → glQueryCounter(end) → push to FrameAccumulator
-```
-Never blocks. Install with `ProfilerVisitor` or attach `ProfilerCallback` directly.
+```cpp
+auto profiler = osgx::make_ref<osgx::debug::Profiler>();   // QueryMode::SYNC by default
 
-**Phase 2 — drain** (`ProfilerFinalCallback`, per camera):
-```
-after all draws: read GL_QUERY_RESULT → update ring buffers → print/report
-```
-Blocks only on the last outstanding query. Install on the camera's `FINAL_DRAW` slot.
+viewer.setSceneData(root);
+profiler->attach(viewer);   // before realize()
 
-- `osgx::debug::ProfilerCallback<N>` — drawable wrapper; issues timestamp queries and measures CPU time.
-- `osgx::debug::ProfilerVisitor<N>` — walks the scene graph and installs `ProfilerCallback` on every drawable.
-- `osgx::debug::ProfilerFinalCallback<N>` — camera callback that drains `FrameAccumulator` results.
-- `QueryMode::SYNC` (default) — blocks per-query; suitable for step-by-step viewers.
-- `QueryMode::ASYNC` — drains the previous frame's results with zero meaningful stall; use for continuous renderers.
+// ... frames ...
+
+profiler->report(std::cout);          // the four trees as text
+auto trees = profiler->getProfile();  // the same as data (TraceNode)
+```
+
+`attach()` installs a `ProfilerCallback` on every drawable (`ProfilerVisitor`), a
+`ProfilerFinalCallback` on each view's master camera, profiling cull/update/event visitors, and
+camera and swap spans. `refresh()` re-scans the scene for new drawables and cameras.
+`osgx::debug::ProfilingViewer` is an `osgViewer::Viewer` that attaches its own profiler and adds
+spans for its event and update traversals (handlers, manipulator, pager merges).
+
+GPU timing is two-phase so the GPU pipeline is never stalled mid-submission:
+
+- `ProfilerCallback` (per drawable) issues `glQueryCounter(begin)`, draws, `glQueryCounter(end)`;
+  never blocks.
+- `ProfilerFinalCallback` (per camera, `FINAL_DRAW`) reads the results back into the trace.
+  `QueryMode::SYNC` reads this frame's results (blocks until the GPU finishes the frame; suitable
+  for step-by-step viewers); `QueryMode::ASYNC` reads the previous frame's (no stall unless the
+  GPU is the bottleneck; use for continuous rendering). The readback is a span of its own, so its
+  cost is visible in the profile.
+
+`osgx::imgui`'s profiler section (`addProfilerSection(view)`) shows the profile as a table.
 
 ---
 
@@ -114,7 +130,7 @@ duration in milliseconds, and it will stall the GPU for approximately that durat
 - `isSupported(contextID)` reports whether the first draw under that context found
   `GL_ARB_shader_clock`. Unsupported contexts log once and subsequently perform no work.
 
-Wrap the drawable with `ProfilerCallback` when measuring the resulting GPU cost. Shader-clock
+Profile the scene (System 3) to measure the resulting GPU cost. Shader-clock
 ticks are implementation-defined, so dynamic calibration is the appropriate default outside a
 controlled test rig.
 
@@ -127,7 +143,7 @@ GL driver ──glDebugMessageCallback──► your callback (errors, warnings)
 
 you ──AnnotationBegin/EndCallback──► GL driver ──► apitrace / RenderDoc
 
-ProfilerCallback ──► FrameAccumulator ──► ProfilerFinalCallback ──► osg::notify (or osgx::imgui::Widget)
+visitors + ProfilerCallback ──► TraceBuffer ──► Profiler (rolling profile) ──► report() / osgx::imgui
 
 ShaderClockDrawable ──► private 1x1 FBO ──► calibrated GPU delay
 
@@ -142,12 +158,12 @@ depend on the profiler.
 
 ## `FrameByFrameViewer`
 
-A single, consolidated `osgViewer::Viewer` subclass for apitrace-friendly debugging.
-Press **`n`** to advance one frame; the viewer idles between keystrokes so a capture
-session does not flood with unintended frames. On first render it automatically installs
-`Frame` / `Render` annotation groups on the camera (System 2). Combine with
-`ProfilerVisitor` + `ProfilerFinalCallback` (System 3) and `installDefaultCallback()`
-(System 1) for a fully instrumented scene.
+A `ProfilingViewer` for apitrace-friendly debugging. Press **`n`** to render one frame; between
+keystrokes it only processes events and idles, so a capture session does not flood with
+unintended frames. On first render it installs a `Frame` annotation group on the camera
+(System 2); its profiler (System 3) is attached automatically, and `setReportStream()` writes the
+profile after each rendered frame (showing the frame before, since frames are folded one behind).
+Combine with `installDefaultCallback()` (System 1) for a fully instrumented scene.
 
 ---
 

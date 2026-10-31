@@ -211,28 +211,24 @@ private:
 	);
 };
 
-// Callable that installs its own profiler backend on construction and draws
-// the GPU timing table + SYNC/ASYNC toggle when invoked.
+// Callable that attaches its own debug::Profiler to the view's viewer on construction (see
+// Profiler::attach() for when that is safe) and, when invoked, draws the profile as a table: one
+// row per drawn drawable and per culled node, in scene order under each camera, with draw CPU and
+// GPU time, draw order and share of GPU time, plus a SYNC/ASYNC toggle. Culled and stale rows
+// (absent from the newest frame) are dimmed.
 // Pass to Widget::addSection() or use Widget::addProfilerSection() shortcut.
 class ProfilerSection {
 public:
-	// Only ever touches view.getCamera(), transiently, right here - nothing to
-	// hold onto afterward, so this never stored a Viewer/View reference at all.
-	// printEvery forwards to ProfilerFinalCallback (0 = never print to the log;
-	// SYNC/ASYNC is still toggleable live via the section's own radio buttons,
-	// so it isn't a constructor parameter here).
-	ProfilerSection(osgViewer::View& view, osg::Node* sceneRoot, size_t printEvery=0);
+	explicit ProfilerSection(osgViewer::View& view);
 
-	// Re-scan a dynamic scene graph. Existing profiler callbacks are updated in
-	// place, while newly paged/attached drawables receive callbacks for the first
-	// time. Useful for terrain engines and streaming scene loaders.
+	// Re-scan a dynamic scene graph (Profiler::refresh()): newly paged/attached drawables receive
+	// profiler callbacks. Useful for terrain engines and streaming scene loaders.
 	void refresh();
 
 	void operator()(osg::RenderInfo& ri);
 
 private:
-	osg::observer_ptr<osg::Node> _sceneRoot;
-	debug::ProfilerFinalCallback<>* _finalCb = nullptr;
+	osg::ref_ptr<debug::Profiler> _profiler;
 };
 
 // Reusable osgx::imgui content for an application-owned Dear ImGui frame. Panel
@@ -269,8 +265,8 @@ public:
 		_forcedOpen.erase(label);
 	}
 
-	void addProfilerSection(osgViewer::View& view, osg::Node* sceneRoot, bool defaultOpen=false, size_t printEvery=0) {
-		addSection("Profiler", ProfilerSection(view, sceneRoot, printEvery), {
+	void addProfilerSection(osgViewer::View& view, bool defaultOpen=false) {
+		addSection("Profiler", ProfilerSection(view), {
 			.expand = true, .defaultOpen = defaultOpen
 		});
 	}
@@ -338,7 +334,7 @@ public:
 	void clearSections() { _panel.clearSections(); }
 	void setSectionOpen(const std::string& label, bool open) { _panel.setSectionOpen(label, open); }
 	void clearSectionOpen(const std::string& label) { _panel.clearSectionOpen(label); }
-	void addProfilerSection(osgViewer::View& view, osg::Node* root, bool defaultOpen=false, size_t printEvery=0) { _panel.addProfilerSection(view, root, defaultOpen, printEvery); }
+	void addProfilerSection(osgViewer::View& view, bool defaultOpen=false) { _panel.addProfilerSection(view, defaultOpen); }
 	void addStatsSection(osgViewer::Viewer& viewer, bool defaultOpen=false) { _panel.addStatsSection(viewer, defaultOpen); }
 	void addTextureSection(osgViewer::View& view, osg::Node* root, bool defaultOpen=false) { _panel.addTextureSection(view, root, defaultOpen); }
 	void addTextureSection(osgViewer::View& view, bool defaultOpen=false) { _panel.addTextureSection(view, defaultOpen); }

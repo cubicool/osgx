@@ -59,6 +59,14 @@ int main(int argc, char** argv) {
 
 	viewer.setSceneData(root);
 
+	// Reads the ProfilerCallback's GPU queries back after each frame (Profiler::attach() installs
+	// both, plus the rest of the profiler, on a whole viewer).
+	osgx::debug::appendCameraDrawCallback(
+		viewer.getCamera(),
+		osgx::debug::CameraDrawCallbackSlot::FINAL_DRAW,
+		new osgx::debug::ProfilerFinalCallback()
+	);
+
 	osgx::debug::pushGroup(0, __FUNCTION__);
 
 	auto r = viewer.run();

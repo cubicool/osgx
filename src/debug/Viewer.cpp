@@ -8,6 +8,61 @@ OSGX_ENABLE_WARNINGS
 
 namespace osgx::debug {
 
+namespace {
+
+constexpr Location EVENT_TRAVERSAL("event traversal", Phase::EVENT);
+constexpr Location UPDATE_TRAVERSAL("update traversal", Phase::UPDATE);
+
+}
+
+ProfilingViewer::ProfilingViewer(QueryMode mode):
+_profiler(new Profiler(mode)) {}
+
+ProfilingViewer::ProfilingViewer(osg::ArgumentParser& arguments, QueryMode mode):
+osgViewer::Viewer(arguments),
+_profiler(new Profiler(mode)) {}
+
+ProfilingViewer::~ProfilingViewer() = default;
+
+Profiler* ProfilingViewer::getProfiler() {
+	return _profiler.get();
+}
+
+const Profiler* ProfilingViewer::getProfiler() const {
+	return _profiler.get();
+}
+
+void ProfilingViewer::realize() {
+	if(!_attached) {
+		_profiler->attach(*this);
+		_attached = true;
+	}
+
+	osgViewer::Viewer::realize();
+}
+
+void ProfilingViewer::setSceneData(osg::Node* node) {
+	osgViewer::Viewer::setSceneData(node);
+
+	if(_attached) _profiler->refresh();
+}
+
+unsigned int ProfilingViewer::_frame() const {
+	return getFrameStamp() ? getFrameStamp()->getFrameNumber() : 0u;
+}
+
+void ProfilingViewer::eventTraversal() {
+	TraceScope scope(EVENT_TRAVERSAL, this, _frame());
+
+	osgViewer::Viewer::eventTraversal();
+}
+
+void ProfilingViewer::updateTraversal() {
+	TraceScope scope(UPDATE_TRAVERSAL, this, _frame());
+
+	osgViewer::Viewer::updateTraversal();
+}
+
 bool FrameByFrameViewer::EventHandler::handle(const osgGA::GUIEventAdapter& ea, osgGA::GUIActionAdapter& aa) {
 	auto* viewer = dynamic_cast<FrameByFrameViewer*>(&aa);
 
@@ -22,14 +77,19 @@ bool FrameByFrameViewer::EventHandler::handle(const osgGA::GUIEventAdapter& ea, 
 	return false;
 }
 
-void FrameByFrameViewer::_ensureInitialized() {
-	if(_firstFrame) {
-		viewerInit();
+FrameByFrameViewer::FrameByFrameViewer():
+_renderKeyHandler(new EventHandler()) {
+	addEventHandler(_renderKeyHandler);
+}
 
-		if(!isRealized()) realize();
+FrameByFrameViewer::~FrameByFrameViewer() = default;
 
-		_firstFrame = false;
-	}
+void FrameByFrameViewer::requestRender() {
+	_render.store(true, std::memory_order_release);
+}
+
+void FrameByFrameViewer::setReportStream(std::ostream* out) {
+	_report = out;
 }
 
 void FrameByFrameViewer::_installAnnotationCallbacks() {
@@ -61,33 +121,11 @@ void FrameByFrameViewer::_installAnnotationCallbacks() {
 
 int FrameByFrameViewer::run() {
 	while(!done()) {
-		_ensureInitialized();
 		_installAnnotationCallbacks();
 
-		advance();
-		eventTraversal();
-
-		if(_render.load(std::memory_order_acquire)) {
-			_count++;
-
-			getFrameStamp()->setFrameNumber(_count);
-
-			double wallTime = osg::Timer::instance()->delta_s(
-				_startTick,
-				osg::Timer::instance()->tick()
-			);
-
-			detail::notify(
-				"osgx::debug::FrameByFrameViewer | render #", _count,
-				" @", wallTime, "s"
-			);
-
-			auto [_ut, ut] = osgx::call([this]() { updateTraversal(); });
-
-			detail::notify("osgx::debug::FrameByFrameViewer | Update took ", ut, "us");
-
-			// Below are exactly what the typical `osgViewer::Viewer::renderingTraversals()`
-			// method does.
+		if(_render.exchange(false, std::memory_order_acq_rel)) {
+			// frame() realizes the viewer on its first call, then runs advance(), eventTraversal(),
+			// updateTraversal() and renderingTraversals(). renderingTraversals() does:
 			//
 			// - Calculate frame time/number.
 			// - Collect stats (if enabled).
@@ -113,10 +151,14 @@ int FrameByFrameViewer::run() {
 			//   - Call scene.DatabasePager.signalEndFrame().
 			//   - Call scene.ImagePager.signalEndFrame().
 			// - Update stats (if enabled).
-			renderingTraversals();
+			frame();
 
-			_render.store(false, std::memory_order_release);
+			if(_report) getProfiler()->report(*_report);
 		}
+
+		// Between frames only events are processed (the 'n' key, closing the window); their
+		// trace records belong to the last rendered frame.
+		else eventTraversal();
 
 		OpenThreads::Thread::microSleep(_POLL_INTERVAL_US);
 	}

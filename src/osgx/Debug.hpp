@@ -10,4 +10,5 @@
 #include "osgx/debug/Profiler.hpp"
 #include "osgx/debug/ShaderClock.hpp"
 #include "osgx/debug/Trace.hpp"
+#include "osgx/debug/TraceProfile.hpp"
 #include "osgx/debug/Viewer.hpp"

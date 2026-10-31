@@ -238,6 +238,7 @@ add_library(osgx SHARED
 	src/debug/Profiler.cpp
 	src/debug/ShaderClock.cpp
 	src/debug/Trace.cpp
+	src/debug/TraceProfile.cpp
 	src/debug/Viewer.cpp
 	src/Environment.cpp
 	src/GBuffer.cpp
@@ -308,6 +309,7 @@ target_sources(osgx PUBLIC
 	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/debug/Profiler.hpp>"
 	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/debug/ShaderClock.hpp>"
 	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/debug/Trace.hpp>"
+	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/debug/TraceProfile.hpp>"
 	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/debug/Viewer.hpp>"
 	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/ImGui.hpp>"
 )

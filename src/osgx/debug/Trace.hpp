@@ -18,6 +18,7 @@ OSGX_ENABLE_WARNINGS
 #include <optional>
 #include <source_location>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <vector>
 
@@ -77,6 +78,10 @@ struct Location {
 };
 
 struct TraceRecord {
+	// The bytes of `object`'s name copied into the record, including the terminating NUL; longer
+	// names are cut and end in "...".
+	static constexpr std::size_t NAME_SIZE = 56;
+
 	enum class Kind: std::uint8_t {
 		ENTER,
 		LEAVE,
@@ -88,7 +93,20 @@ struct TraceRecord {
 	std::uint64_t sequence = 0;
 	osg::Timer_t tick = 0;
 	const Location* location = nullptr;
+
+	// Identity only: readers compare it, never dereference it (the object may be gone by the time
+	// a record is read). What readers need from the object is copied below when the ENTER or
+	// INSTANT record is written; in a LEAVE record both are unspecified (not written).
+	//
+	// TODO: Continue to investigate workarounds for identifying objects across frames by pointer;
+	// a deleted object's address can be reused by a new one, which then looks like the same object.
 	const osg::Object* object = nullptr;
+
+	// object->className(), a string literal.
+	const char* className = nullptr;
+
+	// object->getName(), NUL-terminated; see name().
+	std::array<std::uint64_t, NAME_SIZE / sizeof(std::uint64_t)> nameStorage{};
 
 	// The camera being culled or drawn (null in the event and update phases). One drawable drawn
 	// by several cameras is told apart by it.
@@ -98,6 +116,8 @@ struct TraceRecord {
 	// zero until then.
 	std::uint64_t gpuBegin = 0;
 	std::uint64_t gpuEnd = 0;
+
+	std::string_view name() const;
 };
 
 namespace detail {
@@ -208,7 +228,7 @@ TraceBuffer& threadTraceBuffer();
 // Every buffer created so far, in creation order.
 std::vector<osg::ref_ptr<TraceBuffer>> traceBuffers();
 
-// The capacity (in records) of buffers created after this call. Default 65536.
+// The capacity (in records) of buffers created after this call. Default 32768 (4 MB per buffer).
 void setTraceBufferCapacity(std::size_t capacity);
 std::size_t getTraceBufferCapacity();
 

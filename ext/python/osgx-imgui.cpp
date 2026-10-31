@@ -128,11 +128,10 @@ void bind_imgui(py::module_& m_imgui) {
 			"addProfilerSection",
 			&osgx::imgui::Panel::addProfilerSection,
 			"view"_a,
-			"sceneRoot"_a,
 			"default_open"_a=false,
-			"print_every"_a=0,
-			"Adds a built-in \"Profiler\" section showing osgx.debug per-drawable GPU/CPU timing "
-			"for `sceneRoot`, with progress-bar percentages and a SYNC/ASYNC toggle."
+			"Adds a built-in \"Profiler\" section: attaches an osgx.debug profiler to the view's "
+			"viewer and shows per-drawable draw CPU/GPU time in scene order, with draw order, "
+			"GPU-share bars and a SYNC/ASYNC toggle."
 		)
 		.def(
 			"addTextureSection",
@@ -214,11 +213,10 @@ void bind_imgui(py::module_& m_imgui) {
 			"addProfilerSection",
 			&osgx::imgui::Widget::addProfilerSection,
 			"view"_a,
-			"sceneRoot"_a,
 			"default_open"_a=false,
-			"print_every"_a=0,
-			"Adds a built-in \"Profiler\" section showing osgx.debug per-drawable GPU/CPU timing "
-			"for `sceneRoot`, with progress-bar percentages and a SYNC/ASYNC toggle."
+			"Adds a built-in \"Profiler\" section: attaches an osgx.debug profiler to the view's "
+			"viewer and shows per-drawable draw CPU/GPU time in scene order, with draw order, "
+			"GPU-share bars and a SYNC/ASYNC toggle."
 		)
 		.def(
 			"addTextureSection",

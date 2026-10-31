@@ -13,6 +13,8 @@ OSGX_DISABLE_WARNINGS
 
 OSGX_ENABLE_WARNINGS
 
+#include <iostream>
+
 auto createSceneA() {
 	auto root = osgx::make_nref<osg::Group>("SceneA");
 	auto g0 = osgx::make_nref<osg::Group>("group0");
@@ -74,17 +76,21 @@ int main(int argc, char** argv) {
 	}
 
 	auto dsv = osgx::DescribeSceneVisitor();
-	auto dv = osgx::debug::ProfilerVisitor();
 
 	root->accept(dsv);
-	root->accept(dv);
 
 	// TODO: Make this optional (--view, --no-view, etc).
 	osgViewer::Viewer viewer;
 
 	viewer.setSceneData(root);
 
+	auto profiler = osgx::make_ref<osgx::debug::Profiler>();
+
+	profiler->attach(viewer);
+
 	auto r = viewer.run();
+
+	profiler->report(std::cout);
 
 	// root->accept(dsv);
 

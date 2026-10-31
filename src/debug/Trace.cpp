@@ -1,23 +1,59 @@
 #include "osgx/debug/Trace.hpp"
 
+#include "osgx/Warnings.hpp"
+
+OSGX_DISABLE_WARNINGS
+
+#include <osg/Object>
+
+OSGX_ENABLE_WARNINGS
+
 #include <algorithm>
 #include <bit>
+#include <cstring>
+#include <type_traits>
 
 namespace osgx::debug {
 
+static_assert(sizeof(TraceRecord) == 128, "TraceRecord is two 64-byte cache lines");
+
 namespace {
 
-constexpr std::size_t DEFAULT_CAPACITY = 65536;
+constexpr std::size_t DEFAULT_CAPACITY = 32768;
 
+// Relaxed atomic stores and loads of record fields. On GCC/Clang the __atomic builtins (which
+// std::atomic_ref is built on) compile to plain inline moves even without optimization, where
+// std::atomic_ref costs several out-of-line calls per access; elsewhere std::atomic_ref is used.
+// Enumerations go through their underlying type, which the builtins require.
 template<typename T>
 void storeRelaxed(T& target, T value) {
+#if defined(__GNUC__)
+	if constexpr(std::is_enum_v<T>) {
+		using U = std::underlying_type_t<T>;
+
+		__atomic_store_n(reinterpret_cast<U*>(&target), static_cast<U>(value), __ATOMIC_RELAXED);
+	}
+
+	else __atomic_store_n(&target, value, __ATOMIC_RELAXED);
+#else
 	std::atomic_ref<T>(target).store(value, std::memory_order_relaxed);
+#endif
 }
 
 // std::atomic_ref<const T> does not exist before C++26; the records themselves are never const.
 template<typename T>
 T loadRelaxed(const T& source) {
+#if defined(__GNUC__)
+	if constexpr(std::is_enum_v<T>) {
+		using U = std::underlying_type_t<T>;
+
+		return static_cast<T>(__atomic_load_n(reinterpret_cast<const U*>(&source), __ATOMIC_RELAXED));
+	}
+
+	else return __atomic_load_n(&source, __ATOMIC_RELAXED);
+#else
 	return std::atomic_ref<T>(const_cast<T&>(source)).load(std::memory_order_relaxed);
+#endif
 }
 
 void storeRecord(TraceRecord& slot, const TraceRecord& record) {
@@ -27,6 +63,15 @@ void storeRecord(TraceRecord& slot, const TraceRecord& record) {
 	storeRelaxed(slot.tick, record.tick);
 	storeRelaxed(slot.location, record.location);
 	storeRelaxed(slot.object, record.object);
+
+	if(record.kind != TraceRecord::Kind::LEAVE) {
+		storeRelaxed(slot.className, record.className);
+
+		for(std::size_t i = 0; i < record.nameStorage.size(); i++) {
+			storeRelaxed(slot.nameStorage[i], record.nameStorage[i]);
+		}
+	}
+
 	storeRelaxed(slot.camera, record.camera);
 	storeRelaxed(slot.gpuBegin, record.gpuBegin);
 	storeRelaxed(slot.gpuEnd, record.gpuEnd);
@@ -39,6 +84,21 @@ void loadRecord(const TraceRecord& slot, TraceRecord& record) {
 	record.tick = loadRelaxed(slot.tick);
 	record.location = loadRelaxed(slot.location);
 	record.object = loadRelaxed(slot.object);
+
+	// Unspecified in a LEAVE record (see storeRecord()).
+	if(record.kind != TraceRecord::Kind::LEAVE) {
+		record.className = loadRelaxed(slot.className);
+
+		for(std::size_t i = 0; i < record.nameStorage.size(); i++) {
+			record.nameStorage[i] = loadRelaxed(slot.nameStorage[i]);
+		}
+	}
+
+	else {
+		record.className = nullptr;
+		record.nameStorage = {};
+	}
+
 	record.camera = loadRelaxed(slot.camera);
 	record.gpuBegin = loadRelaxed(slot.gpuBegin);
 	record.gpuEnd = loadRelaxed(slot.gpuEnd);
@@ -58,6 +118,12 @@ Registry& registry() {
 
 thread_local TraceBuffer* threadBuffer = nullptr;
 
+}
+
+std::string_view TraceRecord::name() const {
+	const auto* bytes = reinterpret_cast<const char*>(nameStorage.data());
+
+	return std::string_view(bytes, strnlen(bytes, NAME_SIZE));
 }
 
 namespace detail {
@@ -126,6 +192,20 @@ std::uint64_t TraceBuffer::record(
 	record.location = &location;
 	record.object = object;
 	record.camera = camera;
+
+	if(object && kind != TraceRecord::Kind::LEAVE) {
+		const auto& name = object->getName();
+		auto* bytes = reinterpret_cast<char*>(record.nameStorage.data());
+
+		record.className = object->className();
+
+		if(name.size() < TraceRecord::NAME_SIZE) std::memcpy(bytes, name.data(), name.size());
+
+		else {
+			std::memcpy(bytes, name.data(), TraceRecord::NAME_SIZE - 4);
+			std::memcpy(bytes + TraceRecord::NAME_SIZE - 4, "...", 3);
+		}
+	}
 
 	// Orders the previous head store before this slot's field stores, so a reader that sees any of
 	// them also sees a head that marks the slot as being overwritten.

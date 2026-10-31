@@ -473,40 +473,48 @@ void StatsSection::_latestRow(
 	ImGui::TableSetColumnIndex(2); _valueText(hasLatest, latest, 1.0, fmt);
 }
 
-ProfilerSection::ProfilerSection(osgViewer::View& view, osg::Node* sceneRoot, size_t printEvery):
-_sceneRoot(sceneRoot) {
-	refresh();
-
-	_finalCb = new debug::ProfilerFinalCallback<>(printEvery);
-
-	debug::appendCameraDrawCallback(
-		view.getCamera(),
-		debug::CameraDrawCallbackSlot::FINAL_DRAW,
-		_finalCb
-	);
+ProfilerSection::ProfilerSection(osgViewer::View& view):
+_profiler(new debug::Profiler()) {
+	if(auto* viewer = view.getViewerBase()) _profiler->attach(*viewer);
 }
 
 void ProfilerSection::refresh() {
-	if(!_sceneRoot.valid()) return;
+	_profiler->refresh();
+}
 
-	debug::ProfilerVisitor<> visitor;
-	_sceneRoot->accept(visitor);
+namespace {
+
+struct ProfilerRow {
+	std::string path;
+	const debug::TraceNode* node;
+};
+
+// Rows for every drawn drawable and culled node under `node`, in scene order, with "/"-joined
+// paths of names (<ClassName> for unnamed nodes).
+void profilerRows(const debug::TraceNode& node, const std::string& path, std::vector<ProfilerRow>& rows) {
+	for(const auto& child : node.children) {
+		std::string name = child.name.empty()
+			? std::string("<") + (child.className ? child.className : "?") + ">"
+			: child.name;
+
+		const auto childPath = path.empty() ? name : path + "/" + name;
+
+		if(child.draws > 0.0 || child.culled) rows.push_back({childPath, &child});
+
+		profilerRows(child, childPath, rows);
+	}
+}
+
 }
 
 void ProfilerSection::operator()(osg::RenderInfo& ri) {
-	const auto& stats = debug::profilerStats(ri.getState()->getContextID());
-	const auto frameNum = ri.getState()->getFrameStamp()
-		? ri.getState()->getFrameStamp()->getFrameNumber()
-		: 0u
-	;
+	int modeIdx = _profiler->getMode() == debug::QueryMode::SYNC ? 0 : 1;
 
-	int modeIdx = _finalCb->getMode() == debug::QueryMode::SYNC ? 0 : 1;
-
-	if(ImGui::RadioButton("SYNC", &modeIdx, 0)) _finalCb->setMode(debug::QueryMode::SYNC);
+	if(ImGui::RadioButton("SYNC", &modeIdx, 0)) _profiler->setMode(debug::QueryMode::SYNC);
 
 	ImGui::SameLine();
 
-	if(ImGui::RadioButton("ASYNC", &modeIdx, 1)) _finalCb->setMode(debug::QueryMode::ASYNC);
+	if(ImGui::RadioButton("ASYNC", &modeIdx, 1)) _profiler->setMode(debug::QueryMode::ASYNC);
 
 	ImGui::SameLine();
 	ImGui::TextDisabled("|");
@@ -514,13 +522,21 @@ void ProfilerSection::operator()(osg::RenderInfo& ri) {
 
 	if(ImGui::Button("Refresh")) refresh();
 
-	GLuint64 totalNs = 0;
+	const auto newest = _profiler->getProfileFrame();
+	const auto profile = _profiler->getProfile();
 
-	for(const auto& [path, ps] : stats) {
-		const bool unknown = ps.cullState == debug::CullState::UNKNOWN;
-		const bool visibleThisFrame = !debug::isCullStale(ps.cullFrame, frameNum) && ps.cullState == debug::CullState::VISIBLE;
+	std::vector<ProfilerRow> rows;
 
-		if(unknown || visibleThisFrame) totalNs += ps.gpuBuffer.average();
+	profilerRows(profile[static_cast<std::size_t>(debug::Phase::CULL)], "", rows);
+
+	auto current = [&newest](const debug::TraceNode& node) {
+		return newest && node.frame == *newest && !node.culled;
+	};
+
+	double totalGpuMs = 0.0;
+
+	for(const auto& row : rows) {
+		if(current(*row.node)) totalGpuMs += row.node->gpuMs;
 	}
 
 	constexpr ImGuiTableFlags tableFlags =
@@ -530,21 +546,20 @@ void ProfilerSection::operator()(osg::RenderInfo& ri) {
 		ImGuiTableFlags_Resizable |
 		ImGuiTableFlags_SizingStretchProp;
 
-	if(ImGui::BeginTable("gpu_stats", 3, tableFlags)) {
+	if(ImGui::BeginTable("gpu_stats", 5, tableFlags)) {
 		ImGui::TableSetupScrollFreeze(0, 1);
 		ImGui::TableSetupColumn("Drawable Path", ImGuiTableColumnFlags_WidthStretch);
-		ImGui::TableSetupColumn("GPU avg (us)", ImGuiTableColumnFlags_WidthFixed, 72.0f);
-		ImGui::TableSetupColumn("% of profiled", ImGuiTableColumnFlags_WidthFixed, 80.0f);
+		ImGui::TableSetupColumn("#", ImGuiTableColumnFlags_WidthFixed, 28.0f);
+		ImGui::TableSetupColumn("CPU (us)", ImGuiTableColumnFlags_WidthFixed, 64.0f);
+		ImGui::TableSetupColumn("GPU (us)", ImGuiTableColumnFlags_WidthFixed, 64.0f);
+		ImGui::TableSetupColumn("% of GPU", ImGuiTableColumnFlags_WidthFixed, 80.0f);
 		ImGui::TableHeadersRow();
 
-		for(const auto& [path, ps] : stats) {
-			const GLuint64 avgNs = ps.gpuBuffer.average();
-			const double avgUs = static_cast<double>(avgNs) / 1000.0;
-			const bool culled = ps.cullState != debug::CullState::UNKNOWN
-				&& (debug::isCullStale(ps.cullFrame, frameNum) || ps.cullState == debug::CullState::CULLED)
-			;
-			const float fraction = totalNs > 0
-				? static_cast<float>(avgNs) / static_cast<float>(totalNs)
+		for(const auto& row : rows) {
+			const auto& node = *row.node;
+			const bool live = current(node);
+			const float fraction = totalGpuMs > 0.0 && live
+				? static_cast<float>(node.gpuMs / totalGpuMs)
 				: 0.0f
 			;
 
@@ -557,24 +572,40 @@ void ProfilerSection::operator()(osg::RenderInfo& ri) {
 			ImGui::TableNextRow();
 			ImGui::TableSetColumnIndex(0);
 			ImGui::AlignTextToFramePadding();
-			ImGui::TextUnformatted(path.c_str());
 
-			if(ImGui::IsItemHovered()) ImGui::SetTooltip("%s", path.c_str());
+			if(live) ImGui::TextUnformatted(row.path.c_str());
+			else ImGui::TextDisabled("%s", row.path.c_str());
 
+			if(ImGui::IsItemHovered()) ImGui::SetTooltip("%s", row.path.c_str());
+
+			// Dimmed (not zeroed/blanked) when culled or stale: these are the last
+			// measured values, not live ones, but not zero-cost either.
 			ImGui::TableSetColumnIndex(1);
 			ImGui::AlignTextToFramePadding();
 
-			// Dimmed (not zeroed/blanked) when culled: this is the last measured
-			// value, not a live one, but it's not zero-cost either.
-			if(culled) ImGui::TextDisabled("%.2f", avgUs);
-			else ImGui::Text("%.2f", avgUs);
+			if(node.drawOrder < 0) ImGui::TextDisabled("-");
+			else if(live) ImGui::Text("%d", node.drawOrder);
+			else ImGui::TextDisabled("%d", node.drawOrder);
 
 			ImGui::TableSetColumnIndex(2);
+			ImGui::AlignTextToFramePadding();
 
-			if(culled) {
+			if(live) ImGui::Text("%.2f", node.drawMs * 1000.0);
+			else ImGui::TextDisabled("%.2f", node.drawMs * 1000.0);
+
+			ImGui::TableSetColumnIndex(3);
+			ImGui::AlignTextToFramePadding();
+
+			if(live) ImGui::Text("%.2f", node.gpuMs * 1000.0);
+			else ImGui::TextDisabled("%.2f", node.gpuMs * 1000.0);
+
+			ImGui::TableSetColumnIndex(4);
+
+			if(!live) {
 				ImGui::AlignTextToFramePadding();
-				ImGui::TextDisabled("CULLED");
+				ImGui::TextDisabled(node.culled ? "CULLED" : "STALE");
 			}
+
 			else ImGui::ProgressBar(fraction, ImVec2(-1.0f, 0.0f), pctLabel);
 		}
 

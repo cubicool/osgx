@@ -21,6 +21,8 @@
 //   --scale F         Multiply every configured cost by F (default 1).
 //   --sleep           Sleep instead of spinning for the CPU costs.
 //   --async           Use QueryMode::ASYNC for the profiler's GPU queries.
+//   --viewer          Use osgx::debug::ProfilingViewer instead of attaching a Profiler to a
+//                     plain osgViewer::Viewer.
 //   --headless [egl|native]
 //                     Render into an offscreen pbuffer (no window).
 //   --SingleThreaded, --DrawThreadPerContext, --CullDrawThreadPerContext,
@@ -31,7 +33,6 @@
 #include "osgx/Debug.hpp"
 #include "osgx/Headless.hpp"
 #include "osgx/Library.hpp"
-#include "osgx/Visitors.hpp"
 
 OSGX_DISABLE_WARNINGS
 
@@ -53,7 +54,6 @@ OSGX_ENABLE_WARNINGS
 #include <chrono>
 #include <cstdio>
 #include <iostream>
-#include <map>
 #include <optional>
 #include <string>
 #include <thread>
@@ -208,10 +208,6 @@ const char* threadingName(osgViewer::ViewerBase::ThreadingModel model) {
 	}
 }
 
-double ticksToMs(double ticks) {
-	return ticks * osg::Timer::instance()->getSecondsPerTick() * 1000.0;
-}
-
 // Prints and returns (in milliseconds) an osg::Stats attribute averaged over [first, last].
 std::optional<double> printStat(
 	const osg::Stats* stats,
@@ -238,98 +234,15 @@ std::optional<double> printStat(
 	return ms;
 }
 
-// Per-frame averages of the trace's ENTER/LEAVE spans, keyed by "<phase> <object name>": inclusive
-// time, self time (inclusive minus nested spans) and count, plus per-frame counts of CULL INSTANTs
-// ("culled") keyed the same way. Built from every trace buffer's closed frames in [first, last].
-struct TraceSpans {
-	struct Span {
-		double inclusiveMs = 0.0;
-		double selfMs = 0.0;
-		double count = 0.0;
-	};
+// The first node named `name` in `node`'s subtree, depth first (`node` itself excluded).
+const osgx::debug::TraceNode* findNode(const osgx::debug::TraceNode& node, const std::string& name) {
+	for(const auto& child : node.children) {
+		if(child.name == name) return &child;
 
-	std::map<std::string, Span> spans;
-	std::map<std::string, double> instants;
-	unsigned int frames = 0;
-
-	const Span* find(const std::string& key) const {
-		auto it = spans.find(key);
-
-		return it == spans.end() ? nullptr : &it->second;
-	}
-};
-
-std::string spanKey(const osgx::debug::TraceRecord& record) {
-	return std::string(osgx::debug::detail::toString(record.location->phase)) + " "
-		+ (record.object ? record.object->getName() : std::string("-"));
-}
-
-TraceSpans collectSpans(unsigned int first, unsigned int last) {
-	TraceSpans result;
-
-	struct Open {
-		osgx::debug::TraceRecord record;
-		double childMs = 0.0;
-	};
-
-	for(unsigned int frame = first; frame <= last; frame++) {
-		bool any = false;
-
-		for(const auto& buffer : osgx::debug::traceBuffers()) {
-			const auto range = buffer->frameRange(frame);
-
-			if(!range || !range->closed || range->first < buffer->tail()) continue;
-
-			std::vector<Open> stack;
-
-			for(auto sequence = range->first; sequence < range->end; sequence++) {
-				osgx::debug::TraceRecord record;
-
-				if(!buffer->read(sequence, record)) continue;
-
-				any = true;
-
-				if(record.kind == osgx::debug::TraceRecord::Kind::INSTANT) {
-					result.instants[spanKey(record)] += 1.0;
-				}
-
-				else if(record.kind == osgx::debug::TraceRecord::Kind::ENTER) {
-					stack.push_back({record});
-				}
-
-				else if(!stack.empty()) {
-					const auto open = stack.back();
-					const double inclusiveMs = osg::Timer::instance()->delta_m(open.record.tick, record.tick);
-
-					stack.pop_back();
-
-					if(!stack.empty()) stack.back().childMs += inclusiveMs;
-
-					auto& span = result.spans[spanKey(open.record)];
-
-					span.inclusiveMs += inclusiveMs;
-					span.selfMs += inclusiveMs - open.childMs;
-					span.count += 1.0;
-				}
-			}
-		}
-
-		if(any) result.frames++;
+		if(const auto* found = findNode(child, name)) return found;
 	}
 
-	if(result.frames) {
-		const double frames = static_cast<double>(result.frames);
-
-		for(auto& [key, span] : result.spans) {
-			span.inclusiveMs /= frames;
-			span.selfMs /= frames;
-			span.count /= frames;
-		}
-
-		for(auto& [key, count] : result.instants) count /= frames;
-	}
-
-	return result;
+	return nullptr;
 }
 
 }
@@ -348,6 +261,8 @@ int main(int argc, char** argv) {
 	sleepWait = arguments.read("--sleep");
 
 	const bool async = arguments.read("--async");
+	const bool profilingViewer = arguments.read("--viewer");
+	const auto queryMode = async ? osgx::debug::QueryMode::ASYNC : osgx::debug::QueryMode::SYNC;
 	const bool threadingRequested =
 		arguments.find("--SingleThreaded") >= 0 ||
 		arguments.find("--DrawThreadPerContext") >= 0 ||
@@ -419,11 +334,16 @@ int main(int argc, char** argv) {
 	root->addChild(sharedBox);
 	root->addChild(rtt);
 
-	osgViewer::Viewer viewer(arguments);
+	// --viewer: a ProfilingViewer (its own Profiler, plus event/update traversal spans) instead of a
+	// plain Viewer with a Profiler attached.
+	osg::ref_ptr<osgViewer::Viewer> viewer = profilingViewer
+		? new osgx::debug::ProfilingViewer(arguments, queryMode)
+		: new osgViewer::Viewer(arguments)
+	;
 
-	if(!threadingRequested) viewer.setThreadingModel(osgViewer::ViewerBase::SingleThreaded);
+	if(!threadingRequested) viewer->setThreadingModel(osgViewer::ViewerBase::SingleThreaded);
 
-	auto* camera = viewer.getCamera();
+	auto* camera = viewer->getCamera();
 
 	camera->setName("main");
 	camera->setClearColor(osg::Vec4(0.1f, 0.1f, 0.15f, 1.0f));
@@ -459,53 +379,54 @@ int main(int argc, char** argv) {
 		);
 	}
 
-	else if(!camera->getGraphicsContext()) viewer.setUpViewInWindow(80, 80, 1024, 768);
+	else if(!camera->getGraphicsContext()) viewer->setUpViewInWindow(80, 80, 1024, 768);
 
-	viewer.setSceneData(root);
+	viewer->setSceneData(root);
 
-	// Per-drawable GPU/CPU timing and cull state, drained once per frame by the main camera's
-	// FINAL_DRAW callback.
-	auto profiler = osgx::make_ref<osgx::debug::Profiler>(
-		async ? osgx::debug::QueryMode::ASYNC : osgx::debug::QueryMode::SYNC
-	);
+	osg::ref_ptr<osgx::debug::Profiler> profiler;
 
-	profiler->attach(viewer);
+	if(auto* pv = dynamic_cast<osgx::debug::ProfilingViewer*>(viewer.get())) profiler = pv->getProfiler();
+
+	else {
+		profiler = new osgx::debug::Profiler(queryMode);
+		profiler->attach(*viewer);
+	}
 
 	// Room for a full averaging window; osg::Stats keeps 25 frames by default.
 	constexpr unsigned int STATS_FRAMES = 120;
 
-	viewer.setViewerStats(new osg::Stats("Viewer", STATS_FRAMES));
-	viewer.getViewerStats()->collectStats("frame_rate", true);
-	viewer.getViewerStats()->collectStats("event", true);
-	viewer.getViewerStats()->collectStats("update", true);
+	viewer->setViewerStats(new osg::Stats("Viewer", STATS_FRAMES));
+	viewer->getViewerStats()->collectStats("frame_rate", true);
+	viewer->getViewerStats()->collectStats("event", true);
+	viewer->getViewerStats()->collectStats("update", true);
 	camera->setStats(new osg::Stats("Camera", STATS_FRAMES));
 	camera->getStats()->collectStats("rendering", true);
 	camera->getStats()->collectStats("gpu", true);
 
-	viewer.realize();
+	viewer->realize();
 
 	// The GPU clock rate rises under sustained load (boost), so the ShaderClockDrawables'
 	// first-draw calibration runs short afterwards. Calibrating again once the rate has settled
 	// keeps calibration work out of later frames, which the reports average.
 	constexpr unsigned int CALIBRATION_FRAME = 60;
 
-	for(unsigned int frame = 0; !viewer.done() && (!frames || frame < frames); frame++) {
+	for(unsigned int frame = 0; !viewer->done() && (!frames || frame < frames); frame++) {
 		if(frame == CALIBRATION_FRAME) {
 			for(auto& clock : clocks) clock->recalibrate();
 		}
 
-		viewer.frame();
+		viewer->frame();
 	}
 
 	// Stop threads so the stats and profiler results are no longer being written.
-	viewer.stopThreading();
+	viewer->stopThreading();
 
-	std::cout << std::endl << "osgx-profiling: threading model " << threadingName(viewer.getThreadingModel())
+	std::cout << std::endl << "osgx-profiling: threading model " << threadingName(viewer->getThreadingModel())
 		<< ", " << (sleepWait ? "sleep" : "spin") << " waits, "
 		<< (async ? "ASYNC" : "SYNC") << " queries, scale " << scale << std::endl;
 
 	// GPU stats arrive a few frames late; leave the newest frames out of the window.
-	const auto* viewerStats = viewer.getViewerStats();
+	const auto* viewerStats = viewer->getViewerStats();
 	const auto* cameraStats = camera->getStats();
 	const unsigned int last = viewerStats->getLatestFrameNumber() > 3
 		? viewerStats->getLatestFrameNumber() - 3
@@ -528,108 +449,7 @@ int main(int argc, char** argv) {
 
 	const auto gpuDrawMs = printStat(cameraStats, first, last, "GPU draw (main)", "GPU draw time taken");
 
-	// osgx::debug profiler: GPU time, CPU time (between the drawable's trace records) and cull state
-	// per camera-qualified drawable path.
 	const auto contextID = camera->getGraphicsContext()->getState()->getContextID();
-	const auto stats = osgx::debug::profilerStats(contextID);
-	const std::map<std::string, osgx::debug::detail::FrameAccumulator::PathStats> sorted(
-		stats.begin(),
-		stats.end()
-	);
-
-	std::cout << std::endl << "osgx::debug profiler, GPU and CPU (rolling averages) and cull state:"
-		<< std::endl;
-
-	for(const auto& [path, ps] : sorted) {
-		const char* cullState =
-			ps.cullState == osgx::debug::CullState::VISIBLE ? "visible" :
-			ps.cullState == osgx::debug::CullState::CULLED ? "culled" :
-			"unknown"
-		;
-
-		std::printf(
-			"  %-48s%9.3f ms GPU%9.3f ms CPU  %-8s(%zu samples)",
-			path.c_str(),
-			static_cast<double>(ps.gpuBuffer.average()) / 1000000.0,
-			static_cast<double>(ps.cpuBuffer.average()) / 1000000.0,
-			cullState,
-			ps.gpuBuffer.size()
-		);
-
-		std::cout << std::endl;
-	}
-
-	// ProfilerCallback's own CPU time around each drawable's draw; one callback per drawable, so a
-	// drawable drawn by both cameras (shared_box) mixes both into one average.
-	std::cout << std::endl << "osgx::debug ProfilerCallback, CPU draw (rolling average):" << std::endl;
-
-	std::map<std::string, double> cpuDrawMs;
-
-	osgx::LambdaVisitor<osg::Node> cpuVisitor([&cpuDrawMs](osg::Node& node) {
-		auto* drawable = node.asDrawable();
-
-		if(!drawable) return;
-
-		auto* callback = dynamic_cast<osgx::debug::ProfilerCallback<>*>(drawable->getDrawCallback());
-
-		if(!callback) return;
-
-		const double ms = ticksToMs(static_cast<double>(callback->cpuBuffer().average()));
-
-		cpuDrawMs[drawable->getName()] = ms;
-
-		std::printf("  %-48s%9.3f ms", callback->getProfilerName().c_str(), ms);
-
-		std::cout << std::endl;
-	});
-
-	root->accept(cpuVisitor);
-
-	// The profiler's stats for the drawable named `name` as drawn by the camera named `cameraName`.
-	auto findStats = [&sorted](
-		const std::string& cameraName,
-		const std::string& name
-	) -> const osgx::debug::detail::FrameAccumulator::PathStats* {
-		const auto suffix = "/" + name;
-
-		for(const auto& [path, ps] : sorted) {
-			if(path.starts_with(cameraName + "/") && path.ends_with(suffix) && ps.gpuBuffer.size()) return &ps;
-		}
-
-		return nullptr;
-	};
-
-	auto gpuMs = [&findStats](const std::string& cameraName, const std::string& name) -> std::optional<double> {
-		const auto* ps = findStats(cameraName, name);
-
-		if(!ps) return std::nullopt;
-
-		return static_cast<double>(ps->gpuBuffer.average()) / 1000000.0;
-	};
-
-	auto traceCPUMs = [&findStats](const std::string& cameraName, const std::string& name) -> std::optional<double> {
-		const auto* ps = findStats(cameraName, name);
-
-		if(!ps) return std::nullopt;
-
-		return static_cast<double>(ps->cpuBuffer.average()) / 1000000.0;
-	};
-
-	auto cpuMs = [&cpuDrawMs](const std::string& name) -> std::optional<double> {
-		auto it = cpuDrawMs.find(name);
-
-		if(it == cpuDrawMs.end()) return std::nullopt;
-
-		return it->second;
-	};
-
-	const auto gpuSmallMs = gpuMs("main", "gpu_small");
-	const auto gpuLargeMs = gpuMs("main", "gpu_large");
-	const auto gpuRTTMs = gpuMs("rtt", "gpu_rtt");
-
-	std::optional<double> gpuSumMs;
-
-	if(gpuSmallMs && gpuLargeMs && gpuRTTMs) gpuSumMs = *gpuSmallMs + *gpuLargeMs + *gpuRTTMs;
 
 	struct Row {
 		const char* label;
@@ -638,39 +458,52 @@ int main(int argc, char** argv) {
 		const char* source;
 	};
 
-	// Trace spans over the same frames as the osgViewer stats (all closed by now).
-	const auto spans = collectSpans(first, last);
+	// The profiler's rolling per-phase trees (moving averages over each node's appearances).
+	using osgx::debug::Phase;
+	using osgx::debug::TraceNode;
 
-	auto selfMs = [&spans](const std::string& key) -> std::optional<double> {
-		const auto* span = spans.find(key);
+	const auto profile = profiler->getProfile();
 
-		if(!span) return std::nullopt;
-
-		return span->selfMs;
+	auto phaseNode = [&profile](Phase phase, const std::string& name) {
+		return findNode(profile[static_cast<std::size_t>(phase)], name);
 	};
 
-	auto inclusiveMs = [&spans](const std::string& key) -> std::optional<double> {
-		const auto* span = spans.find(key);
+	// `name` drawn by the camera named `cameraName` (DRAW tree: camera groups, then drawables).
+	auto drawNode = [&profile](const std::string& cameraName, const std::string& name) -> const TraceNode* {
+		for(const auto& group : profile[static_cast<std::size_t>(Phase::DRAW)].children) {
+			if(group.name == cameraName) return findNode(group, name);
+		}
 
-		if(!span) return std::nullopt;
-
-		return span->inclusiveMs;
+		return nullptr;
 	};
+
+	auto value = [](const TraceNode* node, double TraceNode::* field) -> std::optional<double> {
+		if(!node) return std::nullopt;
+
+		return node->*field;
+	};
+
+	const auto gpuSmallMs = value(drawNode("main", "gpu_small"), &TraceNode::gpuMs);
+	const auto gpuLargeMs = value(drawNode("main", "gpu_large"), &TraceNode::gpuMs);
+	const auto gpuRTTMs = value(drawNode("rtt", "gpu_rtt"), &TraceNode::gpuMs);
+
+	std::optional<double> gpuSumMs;
+
+	if(gpuSmallMs && gpuLargeMs && gpuRTTMs) gpuSumMs = *gpuSmallMs + *gpuLargeMs + *gpuRTTMs;
 
 	// Totals include overhead beyond the configured costs, so they read slightly high.
 	const std::vector<Row> rows = {
-		{"UPDATE update (self)", costs.updateParent, selfMs("UPDATE update"), "trace self (update visitor)"},
-		{"UPDATE update_child", costs.updateChild, selfMs("UPDATE update_child"), "trace self (update visitor)"},
+		{"UPDATE update (self)", costs.updateParent, value(phaseNode(Phase::UPDATE, "update"), &TraceNode::selfMs), "profile self"},
+		{"UPDATE update_child", costs.updateChild, value(phaseNode(Phase::UPDATE, "update_child"), &TraceNode::selfMs), "profile self"},
 		{"UPDATE total", costs.updateParent + costs.updateChild, updateMs, "osgViewer update"},
-		{"CULL   cull (node)", costs.cullNode, selfMs("CULL cull"), "trace self (cull visitor)"},
-		{"CULL   cull_box (drawable)", costs.cullDrawable, inclusiveMs("CULL cull_box"), "trace inclusive (cull visitor)"},
+		{"CULL   cull (node)", costs.cullNode, value(phaseNode(Phase::CULL, "cull"), &TraceNode::selfMs), "profile self"},
+		{"CULL   cull_box (drawable)", costs.cullDrawable, value(phaseNode(Phase::CULL, "cull_box"), &TraceNode::inclusiveMs), "profile inclusive"},
 		{"CULL   total", costs.cullNode + costs.cullDrawable, cullMs, "osgViewer cull (main)"},
-		{"DRAW   draw_box (CPU)", costs.drawCPU, traceCPUMs("main", "draw_box"), "profiler trace CPU (main)"},
-		{"DRAW   draw_box (CPU)", costs.drawCPU, cpuMs("draw_box"), "ProfilerCallback CPU"},
-		{"GPU    gpu_small", costs.gpuSmall, gpuSmallMs, "profiler GPU (main)"},
-		{"GPU    gpu_large", costs.gpuLarge, gpuLargeMs, "profiler GPU (main)"},
-		{"GPU    gpu_rtt", costs.gpuRTT, gpuRTTMs, "profiler GPU (rtt)"},
-		{"GPU    clocks (sum)", costs.gpuSmall + costs.gpuLarge + costs.gpuRTT, gpuSumMs, "profiler GPU"},
+		{"DRAW   draw_box (CPU)", costs.drawCPU, value(drawNode("main", "draw_box"), &TraceNode::drawMs), "profile draw (main)"},
+		{"GPU    gpu_small", costs.gpuSmall, gpuSmallMs, "profile GPU (main)"},
+		{"GPU    gpu_large", costs.gpuLarge, gpuLargeMs, "profile GPU (main)"},
+		{"GPU    gpu_rtt", costs.gpuRTT, gpuRTTMs, "profile GPU (rtt)"},
+		{"GPU    clocks (sum)", costs.gpuSmall + costs.gpuLarge + costs.gpuRTT, gpuSumMs, "profile GPU"},
 		{"GPU    total", costs.gpuSmall + costs.gpuLarge + costs.gpuRTT, gpuDrawMs, "osgViewer GPU (main)"}
 	};
 
@@ -691,21 +524,12 @@ int main(int argc, char** argv) {
 		std::cout << std::endl;
 	}
 
+	std::cout << std::endl;
+
+	profiler->report(std::cout);
+
 	// Each thread's trace buffer: DRAW records of the newest frame whose GPU results have certainly
 	// been written back (two frames back covers ASYNC's one-frame lag).
-	std::cout << std::endl << "osgx::debug trace spans (per-frame averages over " << spans.frames
-		<< " frames; inclusive / self ms, count):" << std::endl;
-
-	for(const auto& [key, span] : spans.spans) {
-		std::printf("  %-36s%9.3f%9.3f%6.1f", key.c_str(), span.inclusiveMs, span.selfMs, span.count);
-		std::cout << std::endl;
-	}
-
-	for(const auto& [key, count] : spans.instants) {
-		std::printf("  %-36s culled %.1f per frame", key.c_str(), count);
-		std::cout << std::endl;
-	}
-
 	std::cout << std::endl << "osgx::debug trace buffers:" << std::endl;
 
 	for(const auto& buffer : osgx::debug::traceBuffers()) {

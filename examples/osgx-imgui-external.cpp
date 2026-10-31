@@ -139,7 +139,7 @@ int main() {
 
 	osgx::imgui::Panel panel;
 	panel.addStatsSection(viewer);
-	panel.addProfilerSection(viewer, root);
+	panel.addProfilerSection(viewer);
 	panel.addSection("Application Section", [](osg::RenderInfo&) {
 		ImGui::Text("This section is supplied by the application.");
 	}, {.defaultOpen = true});

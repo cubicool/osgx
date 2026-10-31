@@ -121,7 +121,7 @@ int main(int argc, char** argv) {
 	auto* gui = new osgx::imgui::Widget(viewer);
 
 	gui->addStatsSection(viewer);
-	gui->addProfilerSection(viewer, root);
+	gui->addProfilerSection(viewer);
 	gui->addTextureSection(viewer, root);
 
 	// Optional: append app-specific sections below the built-in ones.

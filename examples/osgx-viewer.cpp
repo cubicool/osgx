@@ -73,20 +73,15 @@ int main(int argc, char** argv) {
 	}
 
 	auto dsv = osgx::DescribeSceneVisitor();
-	auto dv = osgx::debug::ProfilerVisitor();
 
 	root->accept(dsv);
-	root->accept(dv);
 
 	viewer.setSceneData(root);
 	viewer.setCameraManipulator(new osgGA::TrackballManipulator());
 	// viewer.addEventHandler(new osgViewer::StatsHandler());
 
-	osgx::debug::appendCameraDrawCallback(
-		viewer.getCamera(),
-		osgx::debug::CameraDrawCallbackSlot::FINAL_DRAW,
-		new osgx::debug::ProfilerFinalCallback()
-	);
+	// The viewer's own profiler; its report after each step shows the frame rendered before.
+	viewer.setReportStream(&std::cout);
 
 	osgx::debug::pushGroup(0, __FUNCTION__);
 

@@ -25,8 +25,7 @@ namespace osgx {
 
 namespace {
 
-// Rolling-average sample depth for the wait/upload CPU timing buffers - matches
-// osgx::debug::DEFAULT_BUFFER_SIZE's value without depending on Debug.hpp for it.
+// Rolling-average sample depth for the wait/upload CPU timing buffers.
 constexpr std::size_t PROFILE_SAMPLES = 60;
 
 // GL_UNSIGNED_BYTE-only - the small set of formats a caller's FrameSource might reasonably hand

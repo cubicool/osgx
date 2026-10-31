@@ -10,9 +10,12 @@ OSGX_DISABLE_WARNINGS
 #include <osg/Group>
 #include <osg/Shape>
 #include <osg/ShapeDrawable>
+#include <osgGA/TrackballManipulator>
 #include <osgViewer/Viewer>
 
 OSGX_ENABLE_WARNINGS
+
+#include <iostream>
 
 int main(int argc, char** argv) {
 	auto lib = osgx::initialize();
@@ -40,28 +43,28 @@ int main(int argc, char** argv) {
 	stall->setDuration(5.0);
 	stall->setRecalibrationFrameInterval(20);
 
-	// Wraps THIS drawable's own drawImplementation() in GL_TIMESTAMP queries, same as any other
-	// drawable - ProfilerFinalCallback below prints the measured GPU time every 60 samples, which
-	// should converge on ~5ms once ShaderClockDrawable's own DYNAMIC calibration (logged
-	// separately, see its own console output) has run.
-	stall->setDrawCallback(new osgx::debug::ProfilerCallback(stall->getName()));
-
 	root->addChild(sphere);
 	root->addChild(stall);
 
 	viewer.setSceneData(root);
+	viewer.setCameraManipulator(new osgGA::TrackballManipulator());
 
-	osgx::debug::appendCameraDrawCallback(
-		viewer.getCamera(),
-		osgx::debug::CameraDrawCallbackSlot::FINAL_DRAW,
-		new osgx::debug::ProfilerFinalCallback<>(60)
-	);
+	// Times every drawable, the stall included; the report printed every 60 frames shows its GPU
+	// time converging on ~5ms once ShaderClockDrawable's own DYNAMIC calibration (logged
+	// separately, see its own console output) has run.
+	auto profiler = osgx::make_ref<osgx::debug::Profiler>();
+
+	profiler->attach(viewer);
 
 	osgx::debug::pushGroup(0, __FUNCTION__);
 
-	auto r = viewer.run();
+	for(unsigned int frame = 1; !viewer.done(); frame++) {
+		viewer.frame();
+
+		if(frame % 60 == 0) profiler->report(std::cout);
+	}
 
 	osgx::debug::popGroup();
 
-	return r;
+	return 0;
 }
