@@ -1,7 +1,16 @@
 # `osgx::debug` - GL_KHR_debug, profiler, and GPU load simulation
 
 `osgx/Debug.hpp` provides four independent systems that can be used together or separately. It is
-not included by `osgx.hpp`; opt in explicitly with `#include "osgx/Debug.hpp"`.
+not included by `osgx.hpp`; opt in explicitly with `#include "osgx/Debug.hpp"`, which includes
+every `osgx::debug` header. Each part also has its own header under `osgx/debug/`:
+
+| Header | Contents |
+|---|---|
+| `osgx/debug/Annotation.hpp` | `GL_KHR_debug`: `initialize()`, driver message callback, debug groups and messages, `AnnotationGroup`/`AnnotationScope`, camera draw callback slots |
+| `osgx/debug/Profiler.hpp` | the two-phase GPU timestamp profiler |
+| `osgx/debug/Trace.hpp` | per-thread trace buffers |
+| `osgx/debug/Viewer.hpp` | `FrameByFrameViewer` |
+| `osgx/debug/ShaderClock.hpp` | `ShaderClockDrawable` |
 
 For a Dear ImGui front-end, see [`osgx::imgui`](IMGUI.md) — it is a sibling of `osgx::debug`, not
 nested under it, since most of it (sliders, `Panel`, texture/stats browsers) has nothing to do with
@@ -41,7 +50,7 @@ Sub-groups of a single camera's scene cannot be individually annotated this way;
 per-group bracketing, each group needs its own RTT camera. For per-drawable bracketing,
 use `ProfilerCallback` instead.
 
-- `osgx::debug::Scoped` — **use this by default.** RAII push/pop; construct on the stack inside any `drawImplementation` or draw callback. Begin and end are in the same scope.
+- `osgx::debug::AnnotationScope` — **use this by default.** RAII push/pop; construct on the stack inside any `drawImplementation` or draw callback. Begin and end are in the same scope.
 - `osgx::debug::AnnotationGroup` — use only when begin and end must live in *separate* callback objects. Its sole purpose is to share push/pop state across `AnnotationBeginCallback` (`PRE_DRAW`) and `AnnotationEndCallback` (`FINAL_DRAW`) so the group remains matched across the camera's frame boundary. Not a general-purpose annotation type.
 - `osgx::debug::AnnotationBeginCallback` / `AnnotationEndCallback` — install an `AnnotationGroup` on a camera's `PRE_DRAW` or `FINAL_DRAW` slot so it fires at the correct time.
 - `osgx::debug::appendCameraDrawCallback()` / `prependCameraDrawCallback()` — safely add callbacks to an existing slot without clobbering others.

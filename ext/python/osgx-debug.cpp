@@ -185,9 +185,9 @@ void bind_debug(py::module_& m_debug) {
 		.def("popGroup", &osgx::debug::popGroup, "Pops the most recently pushed GL_KHR_debug group.")
 	;
 
-	py::class_<osgx::debug::Scoped>(
+	py::class_<osgx::debug::AnnotationScope>(
 		m_debug,
-		"Scoped",
+		"AnnotationScope",
 		"RAII/context-manager debug group: pushes on entry, pops on exit. Use as a `with` block "
 		"around code whose begin and end live in the same scope; for begin/end split across "
 		"separate draw callbacks, use AnnotationGroup instead."
@@ -201,11 +201,11 @@ void bind_debug(py::module_& m_debug) {
 			"Pushes the debug group immediately. If `measureTime` is True, a PERFORMANCE message "
 			"reporting the elapsed wall time is inserted when the group is popped."
 		)
-		.def("__enter__", [](osgx::debug::Scoped& self) -> osgx::debug::Scoped& {
+		.def("__enter__", [](osgx::debug::AnnotationScope& self) -> osgx::debug::AnnotationScope& {
 			return self;
 		}, "Returns self; the group is already pushed by __init__.")
 		.def("__exit__", [](
-			osgx::debug::Scoped& self,
+			osgx::debug::AnnotationScope& self,
 			py::object exc_type,
 			py::object exc_value,
 			py::object traceback

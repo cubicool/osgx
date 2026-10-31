@@ -234,7 +234,11 @@ add_library(osgx SHARED
 	src/CaptureCubeMap.cpp
 	src/CompressedTexture.cpp
 	src/Cursor.cpp
-	src/Debug.cpp
+	src/debug/Annotation.cpp
+	src/debug/Profiler.cpp
+	src/debug/ShaderClock.cpp
+	src/debug/Trace.cpp
+	src/debug/Viewer.cpp
 	src/Environment.cpp
 	src/GBuffer.cpp
 	src/GGXPrefilter.cpp
@@ -300,6 +304,11 @@ target_sources(osgx PUBLIC
 	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/Skinning.hpp>"
 	# "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/TemporalEdge.hpp>"
 	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/Debug.hpp>"
+	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/debug/Annotation.hpp>"
+	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/debug/Profiler.hpp>"
+	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/debug/ShaderClock.hpp>"
+	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/debug/Trace.hpp>"
+	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/debug/Viewer.hpp>"
 	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/ImGui.hpp>"
 )
 set_target_properties(osgx PROPERTIES
