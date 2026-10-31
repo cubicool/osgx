@@ -14,6 +14,9 @@ OSGX_DISABLE_WARNINGS
 #include <osg/buffered_value>
 #include <osg/observer_ptr>
 #include <osgViewer/View>
+#include <osgGA/EventVisitor>
+#include <osgUtil/CullVisitor>
+#include <osgUtil/UpdateVisitor>
 #include <osgViewer/ViewerBase>
 
 OSGX_ENABLE_WARNINGS
@@ -385,10 +388,131 @@ public:
 	}
 };
 
+// An osgUtil::CullVisitor that records every node and drawable it visits as a CULL TraceScope
+// (object = the node, camera = the camera being culled). A node rejected by its bounding sphere is
+// recorded as one INSTANT at the "culled" Location instead, for the node types whose cull starts
+// with that test (Node, Geode, Billboard, Group, Transform, LOD, OcclusionQueryNode); a drawable
+// rejected by its bounding box gets the same INSTANT after its scope. Rejections made inside
+// other apply() overloads or by cull callbacks are not recorded as such.
+class ProfilerCullVisitor: public osgUtil::CullVisitor {
+public:
+	ProfilerCullVisitor();
+
+	// Copies `cv`'s cull settings, as CullVisitor::clone() does.
+	explicit ProfilerCullVisitor(const osgUtil::CullVisitor& cv);
+
+	META_NodeVisitor(osgx::debug, ProfilerCullVisitor)
+
+	osgUtil::CullVisitor* clone() const override;
+
+	using osgUtil::CullVisitor::apply;
+
+	void apply(osg::Node& node) override;
+	void apply(osg::Geode& node) override;
+	void apply(osg::Drawable& drawable) override;
+	void apply(osg::Billboard& node) override;
+	void apply(osg::LightSource& node) override;
+	void apply(osg::ClipNode& node) override;
+	void apply(osg::TexGenNode& node) override;
+	void apply(osg::Group& node) override;
+	void apply(osg::Transform& node) override;
+	void apply(osg::Projection& node) override;
+	void apply(osg::Switch& node) override;
+	void apply(osg::LOD& node) override;
+	void apply(osg::ClearNode& node) override;
+	void apply(osg::Camera& node) override;
+	void apply(osg::OccluderNode& node) override;
+	void apply(osg::OcclusionQueryNode& node) override;
+
+protected:
+	~ProfilerCullVisitor() override;
+
+private:
+	unsigned int _frame() const;
+
+	template<typename T>
+	void _traced(T& node);
+
+	// _traced(), unless isCulled(node) - the first test the base apply() makes for T.
+	template<typename T>
+	void _boundsTested(T& node);
+};
+
+// An osgUtil::UpdateVisitor that records every node and drawable it visits as an UPDATE
+// TraceScope (object = the node). The update traversal only enters subtrees that need it (nodes
+// with update callbacks, or above one), so this records the nodes whose update callbacks run.
+class ProfilerUpdateVisitor: public osgUtil::UpdateVisitor {
+public:
+	ProfilerUpdateVisitor();
+
+	// Copies `uv`'s traversal mode and masks.
+	explicit ProfilerUpdateVisitor(const osgUtil::UpdateVisitor& uv);
+
+	META_NodeVisitor(osgx::debug, ProfilerUpdateVisitor)
+
+	using osgUtil::UpdateVisitor::apply;
+
+	void apply(osg::Node& node) override;
+	void apply(osg::Drawable& drawable) override;
+	void apply(osg::Geode& node) override;
+	void apply(osg::Billboard& node) override;
+	void apply(osg::LightSource& node) override;
+	void apply(osg::Group& node) override;
+	void apply(osg::Transform& node) override;
+	void apply(osg::Projection& node) override;
+	void apply(osg::Switch& node) override;
+	void apply(osg::LOD& node) override;
+	void apply(osg::OccluderNode& node) override;
+
+protected:
+	~ProfilerUpdateVisitor() override;
+
+private:
+	template<typename T>
+	void _traced(T& node);
+};
+
+// The osgGA::EventVisitor counterpart of ProfilerUpdateVisitor: EVENT TraceScopes for the nodes
+// the event traversal visits (one traversal per event). Event handlers attached to the view are
+// called by the viewer directly, not through this visitor, and are not recorded.
+class ProfilerEventVisitor: public osgGA::EventVisitor {
+public:
+	ProfilerEventVisitor();
+
+	// Copies `ev`'s action adapter, traversal mode and masks.
+	explicit ProfilerEventVisitor(const osgGA::EventVisitor& ev);
+
+	META_NodeVisitor(osgx::debug, ProfilerEventVisitor)
+
+	using osgGA::EventVisitor::apply;
+
+	void apply(osg::Node& node) override;
+	void apply(osg::Drawable& drawable) override;
+	void apply(osg::Geode& node) override;
+	void apply(osg::Billboard& node) override;
+	void apply(osg::LightSource& node) override;
+	void apply(osg::Group& node) override;
+	void apply(osg::Transform& node) override;
+	void apply(osg::Projection& node) override;
+	void apply(osg::Switch& node) override;
+	void apply(osg::LOD& node) override;
+	void apply(osg::OccluderNode& node) override;
+
+protected:
+	~ProfilerEventVisitor() override;
+
+private:
+	template<typename T>
+	void _traced(T& node);
+};
+
 // Installs the profiler on a viewer: a ProfilerCallback (and ProfilerCullCallback) on every
-// drawable of each view's scene data, via ProfilerVisitor, and one shared ProfilerFinalCallback on
-// each view's master camera. Attach once, after the views' scene data is set; refresh() re-runs
-// the visitor after the scenes change.
+// drawable of each view's scene data, via ProfilerVisitor; one shared ProfilerFinalCallback on
+// each view's master camera; a ProfilerCullVisitor in both SceneViews of each view camera's
+// (master and slaves) Renderer; and the viewer's update and event visitors replaced by a
+// ProfilerUpdateVisitor and ProfilerEventVisitor. Attach once, after the views' scene data is set and before
+// realize() (or with the viewer's threads stopped); refresh() re-runs the visitor after the scenes
+// change. Stereo left/right cull visitors are not replaced.
 class Profiler: public osg::Referenced {
 public:
 	explicit Profiler(QueryMode mode=QueryMode::SYNC);

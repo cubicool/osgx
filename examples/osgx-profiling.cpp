@@ -238,6 +238,100 @@ std::optional<double> printStat(
 	return ms;
 }
 
+// Per-frame averages of the trace's ENTER/LEAVE spans, keyed by "<phase> <object name>": inclusive
+// time, self time (inclusive minus nested spans) and count, plus per-frame counts of CULL INSTANTs
+// ("culled") keyed the same way. Built from every trace buffer's closed frames in [first, last].
+struct TraceSpans {
+	struct Span {
+		double inclusiveMs = 0.0;
+		double selfMs = 0.0;
+		double count = 0.0;
+	};
+
+	std::map<std::string, Span> spans;
+	std::map<std::string, double> instants;
+	unsigned int frames = 0;
+
+	const Span* find(const std::string& key) const {
+		auto it = spans.find(key);
+
+		return it == spans.end() ? nullptr : &it->second;
+	}
+};
+
+std::string spanKey(const osgx::debug::TraceRecord& record) {
+	return std::string(osgx::debug::detail::toString(record.location->phase)) + " "
+		+ (record.object ? record.object->getName() : std::string("-"));
+}
+
+TraceSpans collectSpans(unsigned int first, unsigned int last) {
+	TraceSpans result;
+
+	struct Open {
+		osgx::debug::TraceRecord record;
+		double childMs = 0.0;
+	};
+
+	for(unsigned int frame = first; frame <= last; frame++) {
+		bool any = false;
+
+		for(const auto& buffer : osgx::debug::traceBuffers()) {
+			const auto range = buffer->frameRange(frame);
+
+			if(!range || !range->closed || range->first < buffer->tail()) continue;
+
+			std::vector<Open> stack;
+
+			for(auto sequence = range->first; sequence < range->end; sequence++) {
+				osgx::debug::TraceRecord record;
+
+				if(!buffer->read(sequence, record)) continue;
+
+				any = true;
+
+				if(record.kind == osgx::debug::TraceRecord::Kind::INSTANT) {
+					result.instants[spanKey(record)] += 1.0;
+				}
+
+				else if(record.kind == osgx::debug::TraceRecord::Kind::ENTER) {
+					stack.push_back({record});
+				}
+
+				else if(!stack.empty()) {
+					const auto open = stack.back();
+					const double inclusiveMs = osg::Timer::instance()->delta_m(open.record.tick, record.tick);
+
+					stack.pop_back();
+
+					if(!stack.empty()) stack.back().childMs += inclusiveMs;
+
+					auto& span = result.spans[spanKey(open.record)];
+
+					span.inclusiveMs += inclusiveMs;
+					span.selfMs += inclusiveMs - open.childMs;
+					span.count += 1.0;
+				}
+			}
+		}
+
+		if(any) result.frames++;
+	}
+
+	if(result.frames) {
+		const double frames = static_cast<double>(result.frames);
+
+		for(auto& [key, span] : result.spans) {
+			span.inclusiveMs /= frames;
+			span.selfMs /= frames;
+			span.count /= frames;
+		}
+
+		for(auto& [key, count] : result.instants) count /= frames;
+	}
+
+	return result;
+}
+
 }
 
 int main(int argc, char** argv) {
@@ -544,13 +638,32 @@ int main(int argc, char** argv) {
 		const char* source;
 	};
 
+	// Trace spans over the same frames as the osgViewer stats (all closed by now).
+	const auto spans = collectSpans(first, last);
+
+	auto selfMs = [&spans](const std::string& key) -> std::optional<double> {
+		const auto* span = spans.find(key);
+
+		if(!span) return std::nullopt;
+
+		return span->selfMs;
+	};
+
+	auto inclusiveMs = [&spans](const std::string& key) -> std::optional<double> {
+		const auto* span = spans.find(key);
+
+		if(!span) return std::nullopt;
+
+		return span->inclusiveMs;
+	};
+
 	// Totals include overhead beyond the configured costs, so they read slightly high.
 	const std::vector<Row> rows = {
-		{"UPDATE update (self)", costs.updateParent, std::nullopt, "not measured"},
-		{"UPDATE update_child", costs.updateChild, std::nullopt, "not measured"},
+		{"UPDATE update (self)", costs.updateParent, selfMs("UPDATE update"), "trace self (update visitor)"},
+		{"UPDATE update_child", costs.updateChild, selfMs("UPDATE update_child"), "trace self (update visitor)"},
 		{"UPDATE total", costs.updateParent + costs.updateChild, updateMs, "osgViewer update"},
-		{"CULL   cull (node)", costs.cullNode, std::nullopt, "not measured"},
-		{"CULL   cull_box (drawable)", costs.cullDrawable, std::nullopt, "not measured"},
+		{"CULL   cull (node)", costs.cullNode, selfMs("CULL cull"), "trace self (cull visitor)"},
+		{"CULL   cull_box (drawable)", costs.cullDrawable, inclusiveMs("CULL cull_box"), "trace inclusive (cull visitor)"},
 		{"CULL   total", costs.cullNode + costs.cullDrawable, cullMs, "osgViewer cull (main)"},
 		{"DRAW   draw_box (CPU)", costs.drawCPU, traceCPUMs("main", "draw_box"), "profiler trace CPU (main)"},
 		{"DRAW   draw_box (CPU)", costs.drawCPU, cpuMs("draw_box"), "ProfilerCallback CPU"},
@@ -580,6 +693,19 @@ int main(int argc, char** argv) {
 
 	// Each thread's trace buffer: DRAW records of the newest frame whose GPU results have certainly
 	// been written back (two frames back covers ASYNC's one-frame lag).
+	std::cout << std::endl << "osgx::debug trace spans (per-frame averages over " << spans.frames
+		<< " frames; inclusive / self ms, count):" << std::endl;
+
+	for(const auto& [key, span] : spans.spans) {
+		std::printf("  %-36s%9.3f%9.3f%6.1f", key.c_str(), span.inclusiveMs, span.selfMs, span.count);
+		std::cout << std::endl;
+	}
+
+	for(const auto& [key, count] : spans.instants) {
+		std::printf("  %-36s culled %.1f per frame", key.c_str(), count);
+		std::cout << std::endl;
+	}
+
 	std::cout << std::endl << "osgx::debug trace buffers:" << std::endl;
 
 	for(const auto& buffer : osgx::debug::traceBuffers()) {

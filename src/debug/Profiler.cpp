@@ -2,7 +2,18 @@
 
 OSGX_DISABLE_WARNINGS
 
+#include <osg/Billboard>
+#include <osg/ClearNode>
+#include <osg/ClipNode>
+#include <osg/LOD>
+#include <osg/LightSource>
+#include <osg/OccluderNode>
+#include <osg/OcclusionQueryNode>
+#include <osg/Projection>
+#include <osg/Switch>
+#include <osg/TexGenNode>
 #include <osgUtil/CullVisitor>
+#include <osgViewer/Renderer>
 
 OSGX_ENABLE_WARNINGS
 
@@ -14,6 +25,36 @@ namespace osgx::debug {
 namespace {
 
 constexpr Location DRAWABLE("drawable", Phase::DRAW);
+constexpr Location CULL_NODE("cull", Phase::CULL);
+constexpr Location CULLED("culled", Phase::CULL);
+constexpr Location UPDATE_NODE("update", Phase::UPDATE);
+constexpr Location EVENT_NODE("event", Phase::EVENT);
+
+unsigned int frameNumber(const osg::NodeVisitor& nv) {
+	return nv.getFrameStamp() ? nv.getFrameStamp()->getFrameNumber() : 0u;
+}
+
+void copyTraversalSettings(osg::NodeVisitor& to, const osg::NodeVisitor& from) {
+	to.setTraversalMode(from.getTraversalMode());
+	to.setTraversalMask(from.getTraversalMask());
+	to.setNodeMaskOverride(from.getNodeMaskOverride());
+}
+
+// Replaces the cull visitor of both of `camera`'s SceneViews with a ProfilerCullVisitor copy.
+void installCullVisitor(osg::Camera* camera) {
+	auto* renderer = camera ? dynamic_cast<osgViewer::Renderer*>(camera->getRenderer()) : nullptr;
+
+	if(!renderer) return;
+
+	for(unsigned int i = 0; i < 2; i++) {
+		auto* sceneView = renderer->getSceneView(i);
+		auto* cullVisitor = sceneView ? sceneView->getCullVisitor() : nullptr;
+
+		if(!cullVisitor || dynamic_cast<ProfilerCullVisitor*>(cullVisitor)) continue;
+
+		sceneView->setCullVisitor(new ProfilerCullVisitor(*cullVisitor));
+	}
+}
 
 // The profiler name of the drawable a DRAWABLE record points at. The drawable was drawn this frame
 // (SYNC) or the previous one (ASYNC); one deleted in between would dangle here.
@@ -254,10 +295,137 @@ bool ProfilerCullCallback::cull(osg::NodeVisitor* nv, osg::Drawable* drawable, o
 	return callbackCulled;
 }
 
+ProfilerCullVisitor::ProfilerCullVisitor() = default;
+
+ProfilerCullVisitor::ProfilerCullVisitor(const osgUtil::CullVisitor& cv):
+osg::Object(cv),
+osgUtil::CullVisitor(cv) {}
+
+ProfilerCullVisitor::~ProfilerCullVisitor() = default;
+
+osgUtil::CullVisitor* ProfilerCullVisitor::clone() const {
+	return new ProfilerCullVisitor(*this);
+}
+
+unsigned int ProfilerCullVisitor::_frame() const {
+	return getFrameStamp() ? getFrameStamp()->getFrameNumber() : 0u;
+}
+
+template<typename T>
+void ProfilerCullVisitor::_traced(T& node) {
+	TraceScope scope(CULL_NODE, &node, _frame(), getCurrentCamera());
+
+	osgUtil::CullVisitor::apply(node);
+}
+
+template<typename T>
+void ProfilerCullVisitor::_boundsTested(T& node) {
+	if(isCulled(node)) {
+		threadTraceBuffer().record(TraceRecord::Kind::INSTANT, CULLED, &node, _frame(), getCurrentCamera());
+
+		return;
+	}
+
+	_traced(node);
+}
+
+void ProfilerCullVisitor::apply(osg::Node& node) { _boundsTested(node); }
+void ProfilerCullVisitor::apply(osg::Geode& node) { _boundsTested(node); }
+void ProfilerCullVisitor::apply(osg::Billboard& node) { _boundsTested(node); }
+void ProfilerCullVisitor::apply(osg::LightSource& node) { _traced(node); }
+void ProfilerCullVisitor::apply(osg::ClipNode& node) { _traced(node); }
+void ProfilerCullVisitor::apply(osg::TexGenNode& node) { _traced(node); }
+void ProfilerCullVisitor::apply(osg::Group& node) { _boundsTested(node); }
+void ProfilerCullVisitor::apply(osg::Transform& node) { _boundsTested(node); }
+void ProfilerCullVisitor::apply(osg::Projection& node) { _traced(node); }
+void ProfilerCullVisitor::apply(osg::Switch& node) { _traced(node); }
+void ProfilerCullVisitor::apply(osg::LOD& node) { _boundsTested(node); }
+void ProfilerCullVisitor::apply(osg::ClearNode& node) { _traced(node); }
+void ProfilerCullVisitor::apply(osg::Camera& node) { _traced(node); }
+void ProfilerCullVisitor::apply(osg::OccluderNode& node) { _traced(node); }
+void ProfilerCullVisitor::apply(osg::OcclusionQueryNode& node) { _boundsTested(node); }
+
+// The base apply() runs the drawable's cull callback before its bounding-box test, so the test is
+// repeated afterwards instead of first.
+void ProfilerCullVisitor::apply(osg::Drawable& drawable) {
+	_traced(drawable);
+
+	if(drawable.isCullingActive() && isCulled(drawable.getBoundingBox())) {
+		threadTraceBuffer().record(TraceRecord::Kind::INSTANT, CULLED, &drawable, _frame(), getCurrentCamera());
+	}
+}
+
+ProfilerUpdateVisitor::ProfilerUpdateVisitor() = default;
+
+ProfilerUpdateVisitor::ProfilerUpdateVisitor(const osgUtil::UpdateVisitor& uv) {
+	copyTraversalSettings(*this, uv);
+}
+
+ProfilerUpdateVisitor::~ProfilerUpdateVisitor() = default;
+
+template<typename T>
+void ProfilerUpdateVisitor::_traced(T& node) {
+	TraceScope scope(UPDATE_NODE, &node, frameNumber(*this));
+
+	osgUtil::UpdateVisitor::apply(node);
+}
+
+void ProfilerUpdateVisitor::apply(osg::Node& node) { _traced(node); }
+void ProfilerUpdateVisitor::apply(osg::Drawable& drawable) { _traced(drawable); }
+void ProfilerUpdateVisitor::apply(osg::Geode& node) { _traced(node); }
+void ProfilerUpdateVisitor::apply(osg::Billboard& node) { _traced(node); }
+void ProfilerUpdateVisitor::apply(osg::LightSource& node) { _traced(node); }
+void ProfilerUpdateVisitor::apply(osg::Group& node) { _traced(node); }
+void ProfilerUpdateVisitor::apply(osg::Transform& node) { _traced(node); }
+void ProfilerUpdateVisitor::apply(osg::Projection& node) { _traced(node); }
+void ProfilerUpdateVisitor::apply(osg::Switch& node) { _traced(node); }
+void ProfilerUpdateVisitor::apply(osg::LOD& node) { _traced(node); }
+void ProfilerUpdateVisitor::apply(osg::OccluderNode& node) { _traced(node); }
+
+ProfilerEventVisitor::ProfilerEventVisitor() = default;
+
+ProfilerEventVisitor::ProfilerEventVisitor(const osgGA::EventVisitor& ev) {
+	copyTraversalSettings(*this, ev);
+	setActionAdapter(const_cast<osgGA::GUIActionAdapter*>(ev.getActionAdapter()));
+}
+
+ProfilerEventVisitor::~ProfilerEventVisitor() = default;
+
+template<typename T>
+void ProfilerEventVisitor::_traced(T& node) {
+	TraceScope scope(EVENT_NODE, &node, frameNumber(*this));
+
+	osgGA::EventVisitor::apply(node);
+}
+
+void ProfilerEventVisitor::apply(osg::Node& node) { _traced(node); }
+void ProfilerEventVisitor::apply(osg::Drawable& drawable) { _traced(drawable); }
+void ProfilerEventVisitor::apply(osg::Geode& node) { _traced(node); }
+void ProfilerEventVisitor::apply(osg::Billboard& node) { _traced(node); }
+void ProfilerEventVisitor::apply(osg::LightSource& node) { _traced(node); }
+void ProfilerEventVisitor::apply(osg::Group& node) { _traced(node); }
+void ProfilerEventVisitor::apply(osg::Transform& node) { _traced(node); }
+void ProfilerEventVisitor::apply(osg::Projection& node) { _traced(node); }
+void ProfilerEventVisitor::apply(osg::Switch& node) { _traced(node); }
+void ProfilerEventVisitor::apply(osg::LOD& node) { _traced(node); }
+void ProfilerEventVisitor::apply(osg::OccluderNode& node) { _traced(node); }
+
 Profiler::Profiler(QueryMode mode):
 _finalCallback(new ProfilerFinalCallback<>(0, mode)) {}
 
 void Profiler::attach(osgViewer::ViewerBase& viewer) {
+	auto* updateVisitor = viewer.getUpdateVisitor();
+
+	if(updateVisitor && !dynamic_cast<ProfilerUpdateVisitor*>(updateVisitor)) {
+		viewer.setUpdateVisitor(new ProfilerUpdateVisitor(*updateVisitor));
+	}
+
+	auto* eventVisitor = viewer.getEventVisitor();
+
+	if(eventVisitor && !dynamic_cast<ProfilerEventVisitor*>(eventVisitor)) {
+		viewer.setEventVisitor(new ProfilerEventVisitor(*eventVisitor));
+	}
+
 	osgViewer::ViewerBase::Views views;
 
 	viewer.getViews(views, false);
@@ -266,6 +434,9 @@ void Profiler::attach(osgViewer::ViewerBase& viewer) {
 		_views.emplace_back(view);
 
 		appendCameraDrawCallback(view->getCamera(), CameraDrawCallbackSlot::FINAL_DRAW, _finalCallback.get());
+		installCullVisitor(view->getCamera());
+
+		for(unsigned int i = 0; i < view->getNumSlaves(); i++) installCullVisitor(view->getSlave(i)._camera.get());
 	}
 
 	refresh();
