@@ -1,4 +1,5 @@
 #include "osgx/debug/Trace.hpp"
+#include "osgx/debug/Annotation.hpp"
 
 #include "osgx/Warnings.hpp"
 
@@ -71,6 +72,7 @@ void storeName(TraceRecord& record, std::string_view name) {
 
 void storeRecord(TraceRecord& slot, const TraceRecord& record) {
 	storeRelaxed(slot.kind, record.kind);
+	storeRelaxed(slot.phase, record.phase);
 	storeRelaxed(slot.frame, record.frame);
 	storeRelaxed(slot.sequence, record.sequence);
 	storeRelaxed(slot.tick, record.tick);
@@ -92,6 +94,7 @@ void storeRecord(TraceRecord& slot, const TraceRecord& record) {
 
 void loadRecord(const TraceRecord& slot, TraceRecord& record) {
 	record.kind = loadRelaxed(slot.kind);
+	record.phase = loadRelaxed(slot.phase);
 	record.frame = loadRelaxed(slot.frame);
 	record.sequence = loadRelaxed(slot.sequence);
 	record.tick = loadRelaxed(slot.tick);
@@ -183,7 +186,7 @@ std::size_t TraceBuffer::_slot(std::uint64_t sequence) const {
 	return static_cast<std::size_t>(sequence & (_records.size() - 1));
 }
 
-std::uint64_t TraceBuffer::record(
+std::optional<std::uint64_t> TraceBuffer::record(
 	TraceRecord::Kind kind,
 	const Location& location,
 	const osg::Object* object,
@@ -192,18 +195,20 @@ std::uint64_t TraceBuffer::record(
 ) {
 	auto record = _begin(kind, location, frame, camera);
 
-	record.object = object;
+	if(!record) return std::nullopt;
+
+	record->object = object;
 
 	if(object && kind != TraceRecord::Kind::LEAVE) {
-		record.className = object->className();
+		record->className = object->className();
 
-		storeName(record, object->getName());
+		storeName(*record, object->getName());
 	}
 
-	return _commit(record);
+	return _commit(*record);
 }
 
-std::uint64_t TraceBuffer::recordText(
+std::optional<std::uint64_t> TraceBuffer::recordText(
 	TraceRecord::Kind kind,
 	const Location& location,
 	std::string_view name,
@@ -211,17 +216,44 @@ std::uint64_t TraceBuffer::recordText(
 ) {
 	auto record = _begin(kind, location, _hasFrame ? _lastFrame : 0u, camera);
 
-	if(kind != TraceRecord::Kind::LEAVE) storeName(record, name);
+	if(!record) return std::nullopt;
 
-	return _commit(record);
+	if(kind != TraceRecord::Kind::LEAVE) storeName(*record, name);
+
+	return _commit(*record);
 }
 
-TraceRecord TraceBuffer::_begin(
+TraceState TraceBuffer::state() const {
+	TraceState result;
+
+	if(_hasFrame) result.frame = _lastFrame;
+
+	result.phase = _depth > 0 ? _openPhases[std::min(_depth, MAX_DEPTH) - 1] : _lastPhase;
+	result.depth = _depth;
+
+	return result;
+}
+
+std::optional<TraceRecord> TraceBuffer::_begin(
 	TraceRecord::Kind kind,
 	const Location& location,
 	unsigned int frame,
 	const osg::Camera* camera
 ) {
+	const auto phase = location.phase ? location.phase : state().phase;
+
+	if(!phase) return std::nullopt;
+
+	if(kind == TraceRecord::Kind::ENTER) {
+		if(_depth < MAX_DEPTH) _openPhases[_depth] = *phase;
+
+		_depth++;
+	}
+
+	else if(kind == TraceRecord::Kind::LEAVE && _depth > 0) _depth--;
+
+	_lastPhase = phase;
+
 	const auto sequence = _head.load(std::memory_order_relaxed);
 
 	if(!_hasFrame || frame != _lastFrame) {
@@ -241,6 +273,7 @@ TraceRecord TraceBuffer::_begin(
 	TraceRecord record;
 
 	record.kind = kind;
+	record.phase = *phase;
 	record.frame = frame;
 	record.sequence = sequence;
 	record.tick = osg::Timer::instance()->tick();
@@ -427,11 +460,22 @@ _buffer(threadTraceBuffer()),
 _location(location),
 _object(object),
 _frame(frame),
-_camera(camera),
-_sequence(_buffer.record(TraceRecord::Kind::ENTER, location, object, frame, camera)) {}
+_camera(camera) {
+	const auto state = _buffer.state();
+
+	_sequence = _buffer.record(TraceRecord::Kind::ENTER, location, object, frame, camera);
+	_group = _sequence && !location.phase && state.depth > 0 && state.phase == Phase::DRAW;
+
+	if(_group) detail::pushGroup(Source::APPLICATION, 0, location.name);
+}
+
+TraceScope::TraceScope(const Location& location, const osg::Object* object):
+TraceScope(location, object, threadTraceBuffer().state().frame.value_or(0)) {}
 
 TraceScope::~TraceScope() {
-	_buffer.record(TraceRecord::Kind::LEAVE, _location, _object, _frame, _camera);
+	if(_group) detail::popGroup();
+
+	if(_sequence) _buffer.record(TraceRecord::Kind::LEAVE, _location, _object, _frame, _camera);
 }
 
 }

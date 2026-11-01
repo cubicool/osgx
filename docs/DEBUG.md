@@ -8,7 +8,7 @@ every `osgx::debug` header. Each part also has its own header under `osgx/debug/
 |---|---|
 | `osgx/debug/Annotation.hpp` | `GL_KHR_debug`: `initialize()`, driver message callback, debug groups and messages, `AnnotationGroup`/`AnnotationScope`, camera draw callback slots |
 | `osgx/debug/Profiler.hpp` | `Profiler`, its callbacks and profiling visitors |
-| `osgx/debug/Trace.hpp` | per-thread trace buffers |
+| `osgx/debug/Trace.hpp` | per-thread trace buffers, `TraceScope`/`OSGX_TRACE_SCOPE()`, `TraceState` |
 | `osgx/debug/TraceProfile.hpp` | the rolling per-phase profile built from them |
 | `osgx/debug/Viewer.hpp` | `ProfilingViewer`, `FrameByFrameViewer` |
 | `osgx/debug/ShaderClock.hpp` | `ShaderClockDrawable` |
@@ -59,8 +59,9 @@ Sub-groups of a single camera's scene cannot be individually annotated this way;
 per-group bracketing, each group needs its own RTT camera. For per-drawable bracketing,
 use `ProfilerCallback` instead.
 
-- `osgx::debug::AnnotationScope` — **use this by default.** RAII push/pop; construct on the stack inside any `drawImplementation` or draw callback. Begin and end are in the same scope.
-- `osgx::debug::AnnotationGroup` — use only when begin and end must live in *separate* callback objects. Its sole purpose is to share push/pop state across `AnnotationBeginCallback` (`PRE_DRAW`) and `AnnotationEndCallback` (`POST_DRAW`) so the group remains matched across the camera's frame boundary. Not a general-purpose annotation type.
+- `osgx::debug::AnnotationScope` — **use this by default.** RAII push/pop; construct on the stack inside any `drawImplementation` or draw callback. Begin and end are in the same scope. Python: `with osgx.debug.AnnotationScope(id, message):` pushes on entering the block and pops on leaving it (exception or not).
+- `osgx::debug::AnnotationGroup` — use only when begin and end must live in *separate* callback objects. Its sole purpose is to share push/pop state across `AnnotationBeginCallback` (`PRE_DRAW`) and `AnnotationEndCallback` (`POST_DRAW`) so the group remains matched across the camera's frame boundary. Not a general-purpose annotation type. Python: `osgx.debug.AnnotationGroup(id, message)` with `begin()`/`end()` (both safe to call twice).
+- A trace scope (`OSGX_TRACE_SCOPE()`, System 3) that opens inside drawing is a debug group too, named by the scope.
 - `osgx::debug::AnnotationBeginCallback` / `AnnotationEndCallback` — install an `AnnotationGroup` on a camera's `PRE_DRAW` or `POST_DRAW` slot so it fires at the correct time.
 - `osgx::debug::appendCameraDrawCallback()` / `prependCameraDrawCallback()` — safely add callbacks to an existing slot without clobbering others.
 
@@ -119,7 +120,108 @@ GPU timing is two-phase so the GPU pipeline is never stalled mid-submission:
   GPU is the bottleneck; use for continuous rendering). The readback is a span of its own, so its
   cost is visible in the profile.
 
-`osgx::imgui`'s profiler section (`addProfilerSection(view)`) shows the profile as a table.
+### Instrumenting your own code
+
+The profile shows OSG's own structure (traversals, nodes, drawables, cameras). To time code of
+your own (a callback, a loader step, a function the profile points at), put a trace scope around
+it:
+
+```cpp
+void Terrain::sortTiles() {
+	OSGX_TRACE_SCOPE("sort tiles");
+
+	...
+}
+```
+
+The scope becomes a node named "sort tiles" under whatever span is open on its thread (an update
+callback's node, a camera's drawing, an annotation), in `report()`, the waterfall and the ImGui
+view. Recording is lock-free and only writes to the calling thread's buffer, so scopes can be
+scattered freely while investigating.
+
+- Frame and phase are taken from the thread (`TraceBuffer::state()`, a `TraceState`): the frame of
+  its latest record, and the phase of its innermost open span, else of its latest record. A
+  scope on a thread that has recorded nothing yet (no phase) is not recorded.
+- Inside an open DRAW span the thread is drawing with its context current, so such a scope is
+  also a KHR debug group (System 2) and shows up in apitrace/RenderDoc/Nsight nested as in the
+  profile. Elsewhere it is CPU-only: no GL call is made where no context may be current.
+- For a fixed phase, an object or an explicit frame, declare the `Location` and the
+  `TraceScope` yourself:
+
+  ```cpp
+  static constexpr osgx::debug::Location SORT("sort tiles", osgx::debug::Phase::UPDATE);
+
+  osgx::debug::TraceScope scope(SORT, tile, frameNumber);
+  ```
+
+  Scopes with an explicit phase are CPU-only.
+- Scopes measure CPU time only; threads outside the viewer's traversals (worker pools) have no
+  frame of their own.
+
+### Reading the profile: the frame waterfall
+
+`reportWaterfall()` (text) and the `osgx::imgui` profiler section (`addProfilerSection(view)`)
+show the newest frame as a waterfall: one row per node, in traversal/submission order, down to a
+depth, each with its CPU and GPU ms and a bar where it ran within the frame, on an axis of the
+frame budget (60 Hz unless given) or the frame, if longer. Waits (the buffer swap, the SYNC
+query readback) are grey/`.`; rows under a threshold are hidden.
+
+```
+osgx::debug::Profiler: frame 199: CPU 6.32 ms, GPU 7.18 ms (budget 16.67 ms); ...
+  #010  DRAW    main                    1.262    3.104  |                    ############
+  #011  DRAW      draw_box              1.017    0.001  |                    ----
+  #012  DRAW        draw_box: wait ...  1.012           |                    ----
+  #013  DRAW          wait              1.002           |                    ----
+  #014  DRAW      gpu_small             0.054    1.035  |                        ####
+```
+
+**Budget:** the header compares the frame's *busy* times with the budget (`frameLoad()`): the CPU
+time of the busiest thread (self times, waits excluded) and the GPU time of the draws. Where the
+spans end is not a measure of load: with vsync a frame always ends near the refresh period, the
+waiting hidden in the swap, a SYNC readback, or the GPU waiting for a free back buffer.
+
+**GPU time** overlays each row (`WaterfallGpu`; the ImGui "GPU:" choice):
+
+- `COST` (default): drawn from the row's CPU start, its length the GPU time - how much GPU work
+  the row adds, next to its CPU time. Over-budget parts are marked.
+- `TIMELINE`: from the row's first draw's GPU start to its last draw's GPU end - when the GPU ran
+  it. The GPU trails the CPU (by a frame with ASYNC queries), so this shows latency, and is never
+  marked over budget. Positions are mapped from the GPU clock by a sample, so approximate.
+- `OFF`: CPU bars only (GPU ms still listed).
+
+The ImGui view adds collapsible rows, tooltips (class, self time, draws, when the GPU ran the row)
+and controls for the query mode, budget (30-144 Hz) and threshold. The data behind both is
+`getProfile()` (`TraceNode` trees), `frameLoad()` and `cpuSpan()`/`gpuSpan()`.
+
+### Python
+
+`osgx.debug` binds the same API: `Profiler(mode)` with `attach(viewer)`, `refresh()`, `mode`,
+`profile` (four `TraceNode` trees), `profileFrame`, `report()` and `reportWaterfall(budgetMs,
+width, maxDepth, minMs, gpu)` returning strings; `frameLoad()`, `cpuSpan()`, `gpuSpan()`;
+`TraceScope(name, phase=None)` as a context manager and `threadTraceState()`. Keep a reference to
+the `Profiler`: the viewer's callbacks only observe it.
+
+```python
+profiler = osgx.debug.Profiler()
+profiler.attach(viewer)
+
+class Update(osg.NodeCallback):
+	def __call__(self, node, nv):
+		with osgx.debug.TraceScope("python update"):
+			...
+
+		super().__call__(node, nv)
+
+# ... frames ...
+
+print(profiler.reportWaterfall())
+```
+
+Python scopes share one trace `Location` per name and phase (kept for the process's lifetime).
+
+**Headless contexts:** an `osgx::headless` context is realized when created, so `viewer.frame()`
+never realizes the viewer and a realize operation (`osgx::debug::GraphicsOperation`, which binds
+the KHR functions) never runs. Call `viewer.realize()` explicitly.
 
 ---
 
@@ -153,7 +255,7 @@ GL driver ──glDebugMessageCallback──► your callback (errors, warnings)
 
 you ──AnnotationBegin/EndCallback──► GL driver ──► apitrace / RenderDoc
 
-visitors + ProfilerCallback ──► TraceBuffer ──► Profiler (rolling profile) ──► report() / osgx::imgui
+visitors + ProfilerCallback + TraceScope ──► TraceBuffer ──► Profiler (rolling profile) ──► report() / reportWaterfall() / osgx::imgui
 
 ShaderClockDrawable ──► private 1x1 FBO ──► calibrated GPU delay
 

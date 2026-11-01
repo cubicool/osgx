@@ -71,8 +71,22 @@ bool transparent(const TraceRecord& record) {
 	;
 }
 
-bool matches(const Node& node, const osg::Camera* camera, const osg::Object* object, std::string_view name) {
-	return node.camera == camera && node.object == object && node.name == name;
+// Records about an object match its node whatever their Location (a node's cull span and its
+// "culled" marker, a camera's group and its drawing); records without one also need the same
+// Location (two trace scopes in a row, no object or name, are two nodes).
+bool matches(
+	const Node& node,
+	const Location* location,
+	const osg::Camera* camera,
+	const osg::Object* object,
+	std::string_view name
+) {
+	return
+		node.camera == camera &&
+		node.object == object &&
+		node.name == name &&
+		(object || node.location == location)
+	;
 }
 
 Node& child(
@@ -94,7 +108,7 @@ Node& child(
 		auto it = start;
 
 		do {
-			if(matches(*it, camera, object, name)) {
+			if(matches(*it, location, camera, object, name)) {
 				parent.cursor = it;
 
 				return *it;
@@ -260,7 +274,7 @@ void TraceProfile::Impl::fold(
 	for(const auto& record : sourceRecords) {
 		if(record.location == &gpuClock) continue;
 
-		const auto phase = record.location->phase;
+		const auto phase = record.phase;
 		const double recordMs = timer->delta_m(origin, record.tick);
 		auto& stack = stacks[static_cast<std::size_t>(phase)];
 
@@ -559,7 +573,7 @@ bool TraceProfile::add(unsigned int frame, const CameraNames& cameraNames) {
 		for(const auto& record : impl.records[s]) {
 			if(
 				record.kind == TraceRecord::Kind::ENTER &&
-				record.location->phase == Phase::CULL &&
+				record.phase == Phase::CULL &&
 				record.className &&
 				std::strcmp(record.className, "Camera") == 0 &&
 				!record.name().empty()

@@ -60,6 +60,9 @@ enum class Phase: std::uint8_t {
 // One instrumentation site. Declare as a static constexpr so TraceRecords can point at it:
 //
 //   static constexpr osgx::debug::Location LOCATION("cull", osgx::debug::Phase::CULL);
+//
+// Without a phase, each record at the site takes the phase of the span open around it on its
+// thread (see TraceState), so one site serves any traversal; OSGX_TRACE_SCOPE() declares these.
 struct Location {
 	constexpr Location(
 		const char* n,
@@ -71,8 +74,16 @@ struct Location {
 	file(source.file_name()),
 	line(source.line()) {}
 
+	constexpr explicit Location(
+		const char* n,
+		std::source_location source=std::source_location::current()
+	):
+	name(n),
+	file(source.file_name()),
+	line(source.line()) {}
+
 	const char* name;
-	Phase phase;
+	std::optional<Phase> phase;
 	const char* file;
 	std::uint_least32_t line;
 };
@@ -89,6 +100,11 @@ struct TraceRecord {
 	};
 
 	Kind kind = Kind::INSTANT;
+
+	// The location's phase, or for a location without one the phase the record took (see
+	// TraceState).
+	Phase phase = Phase::EVENT;
+
 	unsigned int frame = 0;
 	std::uint64_t sequence = 0;
 	osg::Timer_t tick = 0;
@@ -128,6 +144,16 @@ namespace detail {
 // `name`, or "ClassName@0x<address>" if it is empty ("?" for a null className).
 std::string objectLabel(std::string_view name, const char* className, const void* object);
 
+// What a thread's trace buffer knows about where the thread is (TraceBuffer::state()): the frame of
+// its latest record, the phase of its innermost open span (an ENTER without its LEAVE yet), else
+// of its latest record, and how many spans are open. Records at a Location without a phase take
+// `phase`; frame-less TraceScopes take `frame`.
+struct TraceState {
+	std::optional<unsigned int> frame;
+	std::optional<Phase> phase;
+	std::size_t depth = 0;
+};
+
 class TraceBuffer: public osg::Referenced {
 public:
 	// The number of frame starts each buffer stores. As with records, one entry is reserved for the
@@ -151,9 +177,16 @@ public:
 
 	// Writer side: only the owning thread calls these.
 
+	// The open spans whose phases are kept (see TraceState); deeper spans take the phase of the
+	// deepest kept one.
+	static constexpr std::size_t MAX_DEPTH = 64;
+
 	// Appends a record at the current tick and returns its sequence number. A frame number
-	// different from the previous record's starts a new frame range.
-	std::uint64_t record(
+	// different from the previous record's starts a new frame range. A record at a Location
+	// without a phase takes TraceState::phase; with none (nothing recorded on this thread yet) it
+	// is not written and nothing is returned. A LEAVE whose ENTER was not written must not be
+	// recorded either (it would close the open span around it).
+	std::optional<std::uint64_t> record(
 		TraceRecord::Kind kind,
 		const Location& location,
 		const osg::Object* object,
@@ -163,8 +196,8 @@ public:
 
 	// Appends a record without an object, named `name` (cut like object names; LEAVE records keep
 	// none), in the frame of this buffer's previous record (0 before any). Used for annotations
-	// and debug messages, which carry text but no frame number.
-	std::uint64_t recordText(
+	// and debug messages, which carry text but no frame number. Phases as record().
+	std::optional<std::uint64_t> recordText(
 		TraceRecord::Kind kind,
 		const Location& location,
 		std::string_view name,
@@ -173,6 +206,9 @@ public:
 
 	// Writes GPU timestamps into the record `sequence`. Returns false if it has been overwritten.
 	bool setGPUTimes(std::uint64_t sequence, std::uint64_t begin, std::uint64_t end);
+
+	// This thread's TraceState.
+	TraceState state() const;
 
 	// Reader side: any thread.
 
@@ -219,8 +255,9 @@ private:
 	std::size_t _slot(std::uint64_t sequence) const;
 
 	// A record at the current tick with the next sequence number; starts a frame range if `frame`
-	// differs from the previous record's.
-	TraceRecord _begin(
+	// differs from the previous record's and updates the open spans. Empty if the record has no
+	// phase (see record()).
+	std::optional<TraceRecord> _begin(
 		TraceRecord::Kind kind,
 		const Location& location,
 		unsigned int frame,
@@ -240,6 +277,10 @@ private:
 	unsigned int _lastFrame = 0;
 	bool _hasFrame = false;
 
+	std::array<Phase, MAX_DEPTH> _openPhases{};
+	std::size_t _depth = 0;
+	std::optional<Phase> _lastPhase;
+
 	std::size_t _index;
 	std::thread::id _threadID;
 
@@ -257,7 +298,15 @@ std::vector<osg::ref_ptr<TraceBuffer>> traceBuffers();
 void setTraceBufferCapacity(std::size_t capacity);
 std::size_t getTraceBufferCapacity();
 
-// Records ENTER on construction and LEAVE on destruction in the calling thread's buffer.
+// Records ENTER on construction and LEAVE on destruction in the calling thread's buffer. Without a
+// frame, the scope belongs to the thread's latest frame (TraceState::frame; 0 before any record).
+// If the ENTER is not written (see TraceBuffer::record()), neither is the LEAVE.
+//
+// A scope at a Location without a phase that opens inside an open DRAW span (a camera's drawing, a
+// drawable's draw, an annotation) is also a KHR_debug group named by the Location, so GL tools
+// (apitrace, RenderDoc, Nsight) show it where the profiler does. The open DRAW span means the
+// thread is drawing with its context current; elsewhere (other phases, between frames, other
+// threads) no context may be current, so no group is pushed.
 class TraceScope {
 public:
 	TraceScope(
@@ -266,13 +315,16 @@ public:
 		unsigned int frame,
 		const osg::Camera* camera=nullptr
 	);
+
+	explicit TraceScope(const Location& location, const osg::Object* object=nullptr);
+
 	~TraceScope();
 
 	TraceScope(const TraceScope&) = delete;
 	TraceScope& operator=(const TraceScope&) = delete;
 
-	// The sequence number of the ENTER record.
-	std::uint64_t sequence() const { return _sequence; }
+	// The sequence number of the ENTER record, if it was written.
+	std::optional<std::uint64_t> sequence() const { return _sequence; }
 
 private:
 	TraceBuffer& _buffer;
@@ -280,7 +332,21 @@ private:
 	const osg::Object* _object;
 	unsigned int _frame;
 	const osg::Camera* _camera;
-	std::uint64_t _sequence;
+	std::optional<std::uint64_t> _sequence;
+	bool _group = false;
 };
+
+// A TraceScope named `name` (a string literal) until the end of the enclosing block, at a Location
+// without a phase declared on the spot (inside drawing, also a KHR_debug group; see TraceScope):
+//
+//   void Terrain::sortTiles() {
+//       OSGX_TRACE_SCOPE("sort tiles");
+//       ...
+//   }
+#define OSGX_TRACE_SCOPE(name) OSGX_TRACE_SCOPE_AT(name, __LINE__)
+#define OSGX_TRACE_SCOPE_AT(name, line) OSGX_TRACE_SCOPE_IMPL(name, line)
+#define OSGX_TRACE_SCOPE_IMPL(name, line) \
+	static constexpr ::osgx::debug::Location osgxTraceLocation##line(name); \
+	::osgx::debug::TraceScope osgxTraceScope##line(osgxTraceLocation##line)
 
 }

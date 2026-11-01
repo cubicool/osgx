@@ -299,20 +299,35 @@ private:
 	void _traced(T& node);
 };
 
+// How a waterfall shows a node's GPU time (the GPU time of its draws, its subtree's):
+//   OFF       not at all (the GPU ms are still listed).
+//   COST      drawn from the node's CPU start, its length the GPU time: how much GPU work the
+//             node adds, next to its CPU time.
+//   TIMELINE  from the first draw's GPU start to the last draw's GPU end: when the GPU ran it.
+//             The GPU runs a draw some time after the CPU issues it (one frame later,
+//             overlapping the next frame's CPU work, when queries are read ASYNC), so GPU work
+//             trails behind its CPU work and can run past the budget without being over it.
+//             GPU times are mapped onto CPU time by the drawing thread's "gpu clock" sample, so
+//             the positions are approximate.
+enum class WaterfallGpu { OFF, COST, TIMELINE };
+
 // The load of a frame in ms: the CPU busy time of its busiest thread (the self time of every node
 // that thread recorded, waits excluded: detail::isWaitLocation()), the GPU busy time (its draws'
-// GPU time), where its waterfall bars end (CPU spans, waits included, and each node's GPU time
-// drawn from its CPU start), and where its GPU work starts (ms from the frame's start; -1 without
-// GPU times). Busy times are what a budget is compared with: where spans end includes waiting
-// (with vsync, a frame always ends near the refresh period). The GPU runs a draw some time after
-// the CPU issues it (one frame later, overlapping the next frame's CPU work, when queries are read
-// ASYNC), so a waterfall shows a node's GPU time as its cost, drawn from its CPU start, not at the
-// time the GPU ran it.
+// GPU time), where its waterfall bars end with each WaterfallGpu (the CPU spans, waits included;
+// with COST also each node's GPU time drawn from its CPU start; with TIMELINE also each node's GPU
+// span), and where its GPU work starts (ms from the frame's start; -1 without GPU times). Busy
+// times are what a budget is compared with: where spans end includes waiting (with vsync, a frame
+// always ends near the refresh period).
 struct FrameLoad {
 	double cpuMs = 0.0;
 	double gpuMs = 0.0;
-	double endMs = 0.0;
+	double cpuEndMs = 0.0;
+	double costEndMs = 0.0;
+	double timelineEndMs = 0.0;
 	double gpuStartMs = -1.0;
+
+	// cpuEndMs, costEndMs or timelineEndMs.
+	double endMs(WaterfallGpu gpu) const;
 };
 
 FrameLoad frameLoad(const std::array<TraceNode, 4>& profile, unsigned int frame);
@@ -360,10 +375,10 @@ public:
 	// Writes the newest frame as a waterfall: a row per node down to `maxDepth` levels below each
 	// phase (traversal/submission order) with its CPU and GPU ms and a bar from its start to its
 	// end within the frame (averages, like the profile); the GPU time of the node's draws (its
-	// subtree's) overlays the bar as "#" from the same start, running past it when the GPU takes
-	// longer than the CPU (see FrameLoad). The axis spans `budgetMs` or the frame, if longer, in
-	// `width` columns; "|" marks the budget. Bars are "=" for top-level nodes, "-" below and "."
-	// for waits (detail::isWaitLocation()). The header compares the frame's CPU and GPU busy times
+	// subtree's) overlays the bar as "#" as `gpu` says (WaterfallGpu), only over the columns it
+	// covers. The axis spans `budgetMs` or the bars, if longer (FrameLoad::endMs()), in `width`
+	// columns; "|" marks the budget. Bars are "=" for top-level nodes, "-" below and "." for
+	// waits (detail::isWaitLocation()). The header compares the frame's CPU and GPU busy times
 	// (frameLoad()) with the budget. A node without spans of its own (a CULL camera group) spans
 	// its children. Nodes shorter than `minMs` (CPU and GPU) are left out with everything below
 	// them, culled nodes too.
@@ -372,7 +387,8 @@ public:
 		double budgetMs=1000.0 / 60.0,
 		std::size_t width=64,
 		std::size_t maxDepth=3,
-		double minMs=0.05
+		double minMs=0.05,
+		WaterfallGpu gpu=WaterfallGpu::COST
 	) const;
 
 	// Folds `frame` into the profile unless it was already, or is not complete yet. Called by the

@@ -547,6 +547,8 @@ int main(int argc, char** argv) {
 	auto gbufferProjection = osgx::make_ref<osgx::DepthProjectionCallback>("projectionMatrix");
 
 	gbuffer.gbuffer.camera->setPostDrawCallback(gbufferProjection.get());
+	gbuffer.gbuffer.camera->setCullingMode(osg::CullSettings::NO_CULLING);
+	gbuffer.gbuffer.camera->setComputeNearFarMode(osg::CullSettings::DO_NOT_COMPUTE_NEAR_FAR);
 
 	// Radius scaled off the model's own bound rather than a fixed constant - same "derive from
 	// the model's own bounds" precedent osgx-gbuffer-comic.cpp's hatchFrequency uses; a fixed

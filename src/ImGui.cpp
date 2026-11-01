@@ -10,6 +10,7 @@
 #include <optional>
 #include <string>
 #include <unordered_map>
+#include <utility>
 
 namespace osgx::imgui {
 
@@ -500,6 +501,12 @@ constexpr const char* BUDGET_LABELS[]{
 	"144 Hz (6.9 ms)"
 };
 
+constexpr std::pair<const char*, debug::WaterfallGpu> WATERFALL_GPU[]{
+	{"Off", debug::WaterfallGpu::OFF},
+	{"Cost", debug::WaterfallGpu::COST},
+	{"Timeline", debug::WaterfallGpu::TIMELINE}
+};
+
 constexpr ImU32 GPU_COLOR = IM_COL32(230, 90, 140, 255);
 constexpr ImU32 WAIT_COLOR = IM_COL32(130, 130, 130, 150);
 constexpr ImU32 OVER_BUDGET_TINT = IM_COL32(235, 55, 55, 110);
@@ -528,6 +535,7 @@ struct Waterfall {
 	double axisMs;
 	double budgetMs;
 	double minMs;
+	debug::WaterfallGpu gpu;
 
 	// Per row (see waterfallKey()): whether it was shown, for the threshold's hysteresis.
 	std::unordered_map<std::string, bool>* shown;
@@ -605,7 +613,8 @@ void waterfallBar(
 void waterfallTooltip(
 	const debug::TraceNode& node,
 	const debug::TraceSpan& cpu,
-	const std::optional<debug::TraceSpan>& gpu
+	const std::optional<debug::TraceSpan>& gpu,
+	debug::WaterfallGpu mode
 ) {
 	ImGui::BeginTooltip();
 	ImGui::TextUnformatted(node.label.c_str());
@@ -631,7 +640,22 @@ void waterfallTooltip(
 	if(node.count > 0.0) ImGui::Text("self %.3f ms, %.1f spans per frame", node.selfMs, node.count);
 
 	if(gpu) {
-		ImGui::Text("GPU: %.3f ms (red: drawn from the row's start, as cost)", gpu->ms);
+		if(mode == debug::WaterfallGpu::COST) {
+			ImGui::Text("GPU: %.3f ms (red: drawn from the row's start, as cost)", gpu->ms);
+		}
+
+		else if(mode == debug::WaterfallGpu::TIMELINE) {
+			ImGui::Text(
+				"GPU: %.3f ms, at %.3f - %.3f ms (red: when the GPU ran it)",
+				gpu->ms,
+				gpu->startMs,
+				gpu->endMs
+			);
+			ImGui::TextDisabled("approximate: GPU times mapped onto CPU time by a clock sample");
+		}
+
+		else ImGui::Text("GPU: %.3f ms", gpu->ms);
+
 		ImGui::TextDisabled(
 			"the GPU ran it %.3f ms after the CPU started it",
 			gpu->startMs - cpu.startMs
@@ -675,7 +699,7 @@ void waterfallRow(const debug::TraceNode& node, const Waterfall& waterfall, bool
 
 	const bool open = ImGui::TreeNodeEx(node.label.c_str(), flags);
 
-	if(ImGui::IsItemHovered() && cpu) waterfallTooltip(node, *cpu, gpu);
+	if(ImGui::IsItemHovered() && cpu) waterfallTooltip(node, *cpu, gpu, waterfall.gpu);
 
 	ImGui::TableSetColumnIndex(1);
 
@@ -707,9 +731,12 @@ void waterfallRow(const debug::TraceNode& node, const Waterfall& waterfall, bool
 		);
 	}
 
-	// The GPU time of the row's draws overlays the CPU bar from its start (below a band that keeps
-	// the CPU bar's length visible), running past it when the GPU takes longer.
-	if(cpu && gpu) {
+	// The GPU time of the row's draws overlays the CPU bar (below a band that keeps the CPU bar's
+	// length visible): COST from the CPU start, running past it when the GPU takes longer;
+	// TIMELINE where the GPU ran it, never marked over budget (GPU work trailing its CPU work
+	// past the budget is latency, not load).
+	if(cpu && gpu && waterfall.gpu != debug::WaterfallGpu::OFF) {
+		const bool timeline = waterfall.gpu == debug::WaterfallGpu::TIMELINE;
 		const debug::TraceSpan cost{cpu->startMs, cpu->startMs + gpu->ms, gpu->ms};
 
 		waterfallBar(
@@ -718,9 +745,9 @@ void waterfallRow(const debug::TraceNode& node, const Waterfall& waterfall, bool
 			width,
 			origin.y + height * 0.35f,
 			origin.y + height,
-			cost,
+			timeline ? *gpu : cost,
 			GPU_COLOR,
-			false,
+			timeline,
 			waterfall
 		);
 	}
@@ -769,6 +796,20 @@ void ProfilerSection::operator()(osg::RenderInfo& ri) {
 	ImGui::SameLine();
 	ImGui::TextDisabled("|");
 	ImGui::SameLine();
+
+	int gpuIdx = static_cast<int>(_gpu);
+
+	ImGui::TextUnformatted("GPU:");
+
+	for(const auto& [label, gpu] : WATERFALL_GPU) {
+		ImGui::SameLine();
+
+		if(ImGui::RadioButton(label, &gpuIdx, static_cast<int>(gpu))) _gpu = gpu;
+	}
+
+	ImGui::SameLine();
+	ImGui::TextDisabled("|");
+	ImGui::SameLine();
 	const float comboWidth = ImGui::CalcTextSize(BUDGET_LABELS[0]).x + ImGui::GetFrameHeight() * 2.0f;
 
 	ImGui::SetNextItemWidth(comboWidth);
@@ -795,9 +836,10 @@ void ProfilerSection::operator()(osg::RenderInfo& ri) {
 
 	const Waterfall waterfall{
 		*newest,
-		std::max(budgetMs, load.endMs),
+		std::max(budgetMs, load.endMs(_gpu)),
 		budgetMs,
 		static_cast<double>(_minMs),
+		_gpu,
 		&_shown
 	};
 
@@ -809,8 +851,15 @@ void ProfilerSection::operator()(osg::RenderInfo& ri) {
 	budgetText("GPU", load.gpuMs, budgetMs);
 	ImGui::SameLine();
 	ImGui::Text("of the %.2f ms budget", budgetMs);
-	ImGui::SameLine();
-	ImGui::TextDisabled("(red = a row's GPU time, drawn from its start)");
+	if(_gpu == debug::WaterfallGpu::COST) {
+		ImGui::SameLine();
+		ImGui::TextDisabled("(red = a row's GPU time, drawn from its start)");
+	}
+
+	else if(_gpu == debug::WaterfallGpu::TIMELINE) {
+		ImGui::SameLine();
+		ImGui::TextDisabled("(red = when the GPU ran a row's draws, approximate)");
+	}
 
 	constexpr ImGuiTableFlags tableFlags =
 		ImGuiTableFlags_BordersInnerV |

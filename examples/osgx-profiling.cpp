@@ -6,7 +6,9 @@
 // - UPDATE: node update callbacks that wait a fixed time, nested (parent over child).
 // - CULL: a node cull callback and a drawable cull callback that wait a fixed time, plus one
 //   object behind the camera that is always frustum culled.
-// - DRAW (CPU): a drawable draw callback that waits a fixed time.
+// - DRAW (CPU): a drawable draw callback that waits a fixed time, inside an application KHR_debug
+//   annotation (osgx::debug::AnnotationScope, also visible in apitrace/RenderDoc/Nsight) around
+//   the wait and the draw, and a trace scope (OSGX_TRACE_SCOPE) around the wait alone.
 // - DRAW (GPU): ShaderClockDrawables that keep the GPU busy a fixed time (GL_ARB_shader_clock).
 // - A pre-render RTT camera with its own GPU cost, sharing one drawable with the main camera.
 //
@@ -138,7 +140,14 @@ public:
 	_ms(milliseconds) {}
 
 	void drawImplementation(osg::RenderInfo& ri, const osg::Drawable* drawable) const override {
-		waitFor(_ms);
+		osgx::debug::AnnotationScope annotation(0, "draw_box: wait + draw");
+
+		{
+			OSGX_TRACE_SCOPE("wait");
+
+			waitFor(_ms);
+		}
+
 		drawable->drawImplementation(ri);
 	}
 
@@ -235,9 +244,11 @@ std::optional<double> printStat(
 }
 
 // The first node named `name` in `node`'s subtree, depth first (`node` itself excluded).
+// The first node below `node` labeled `name` (an object's name, an annotation's text, a trace
+// scope's Location name).
 const osgx::debug::TraceNode* findNode(const osgx::debug::TraceNode& node, const std::string& name) {
 	for(const auto& child : node.children) {
-		if(child.name == name) return &child;
+		if(child.label == name) return &child;
 
 		if(const auto* found = findNode(child, name)) return found;
 	}
@@ -284,7 +295,7 @@ int main(int argc, char** argv) {
 	//       update_box
 	//   cull (cull: cullNode)
 	//     cull_box (drawable cull: cullDrawable)
-	//   draw_box (draw: drawCPU)
+	//   draw_box (draw: drawCPU; annotation "draw_box: wait + draw" > trace scope "wait")
 	//   gpu_small, gpu_large (ShaderClockDrawables)
 	//   culled (behind the camera)
 	//     culled_box
@@ -382,6 +393,10 @@ int main(int argc, char** argv) {
 	else if(!camera->getGraphicsContext()) viewer->setUpViewInWindow(80, 80, 1024, 768);
 
 	viewer->setSceneData(root);
+
+	// Binds the KHR_debug functions, so the profiler's and the application's annotations reach the
+	// GL (and apitrace/RenderDoc/Nsight).
+	viewer->setRealizeOperation(new osgx::debug::GraphicsOperation());
 
 	osg::ref_ptr<osgx::debug::Profiler> profiler;
 
@@ -500,6 +515,7 @@ int main(int argc, char** argv) {
 		{"CULL   cull_box (drawable)", costs.cullDrawable, value(phaseNode(Phase::CULL, "cull_box"), &TraceNode::inclusiveMs), "profile inclusive"},
 		{"CULL   total", costs.cullNode + costs.cullDrawable, cullMs, "osgViewer cull (main)"},
 		{"DRAW   draw_box (CPU)", costs.drawCPU, value(drawNode("main", "draw_box"), &TraceNode::drawMs), "profile draw (main)"},
+		{"DRAW   wait (trace scope)", costs.drawCPU, value(drawNode("main", "wait"), &TraceNode::inclusiveMs), "profile inclusive (main)"},
 		{"GPU    gpu_small", costs.gpuSmall, gpuSmallMs, "profile GPU (main)"},
 		{"GPU    gpu_large", costs.gpuLarge, gpuLargeMs, "profile GPU (main)"},
 		{"GPU    gpu_rtt", costs.gpuRTT, gpuRTTMs, "profile GPU (rtt)"},
