@@ -38,6 +38,8 @@ std::vector<osg::ref_ptr<SkinData>> prepareSkins(
 );
 
 // Builds an osgx::Skin per SkinData from the node transforms and attaches it to each skinned node.
+// SceneBuilder skips this when its osgDB::Options has "gltfSkipSkinning", leaving the bind-pose
+// geometry alone and installing no per-frame palette callbacks.
 void attachSkins(
 	const std::vector<osg::observer_ptr<osg::MatrixTransform>>& nodeTransforms,
 	const std::vector<osg::ref_ptr<SkinData>>& skins

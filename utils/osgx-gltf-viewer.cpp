@@ -27,6 +27,7 @@ OSGX_DISABLE_WARNINGS
 
 #include <osg/ArgumentParser>
 #include <osg/Camera>
+#include <osgDB/Options>
 #include <osgDB/ReadFile>
 #include <osgDB/Registry>
 #include <osgDB/WriteFile>
@@ -358,7 +359,8 @@ int main(int argc, char** argv) {
 		"--animation",
 		"Show an ImGui panel selecting/pausing/restarting the model's animations (ImGui builds "
 		"only), and deform skinned meshes when the model has any (linear blend skinning for the "
-		"whole model, so unskinned meshes in a partly skinned model deform wrongly)"
+		"whole model, so unskinned meshes in a partly skinned model deform wrongly). Without it, "
+		"load the static bind pose without animation or skin-palette update callbacks"
 	);
 	args.getApplicationUsage()->addCommandLineOption(
 		"--profile",
@@ -414,8 +416,17 @@ int main(int argc, char** argv) {
 
 	const auto modelPath = findModelFile(args[1]);
 	osg::ref_ptr<osg::Node> model;
+	osg::ref_ptr<osgDB::Options> modelReadOptions;
 
-	if(!modelPath.empty()) model = osgDB::readRefNodeFile(modelPath.string());
+	if(!animation) {
+		modelReadOptions = new osgDB::Options();
+		modelReadOptions->setOptionString("gltfSkipAnimation gltfSkipSkinning");
+	}
+
+	if(!modelPath.empty()) model = osgDB::readRefNodeFile(
+		modelPath.string(),
+		modelReadOptions.get()
+	);
 
 	if(!model) {
 		std::cerr << "Failed to load: " << args[1] << std::endl;

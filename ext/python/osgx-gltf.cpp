@@ -930,7 +930,7 @@ void bind_gltf(py::module_& m_gltf) {
 			"Progress is written into `progress` (an AsyncProgress) purely through atomics, "
 			"polled rather than pushed - this function never touches Python once it starts. "
 			"`options` is a plain osgDB.Options (its optionString reaches the same "
-			"gltfSkipNormals/gltfZUp/gltfSkipSpecGlossBake/gltfSkipAnimation/"
+			"gltfSkipNormals/gltfZUp/gltfSkipSpecGlossBake/gltfSkipAnimation/gltfSkipSkinning/"
 			"gltfStripPNGColorMetadata flags osgDB.readNodeFile()'s options honor)."
 		)
 	;

@@ -77,7 +77,9 @@ public:
 		}
 
 		_installAnimationCallback(root);
-		attachSkins(_nodeTransforms, _skins);
+
+		if(_shouldAttachSkins()) attachSkins(_nodeTransforms, _skins);
+		else GLTF_NOTIFY(1) << "skinning disabled by gltfSkipSkinning option" << std::endl;
 
 		root->getOrCreateStateSet()->setAttributeAndModes(
 			new osg::CullFace(osg::CullFace::BACK),
@@ -197,6 +199,13 @@ private:
 			_nodeTransforms,
 			root,
 			skipAnimation
+		);
+	}
+
+	bool _shouldAttachSkins() const {
+		return !(
+			_readOptions &&
+			_readOptions->getOptionString().find("gltfSkipSkinning") != std::string::npos
 		);
 	}
 };
