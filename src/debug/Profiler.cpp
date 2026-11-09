@@ -25,6 +25,7 @@ OSGX_ENABLE_WARNINGS
 #include <map>
 #include <optional>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 #include <thread>
@@ -49,6 +50,10 @@ unsigned int frameNumber(const osg::RenderInfo& ri) {
 	const auto* frameStamp = ri.getState()->getFrameStamp();
 
 	return frameStamp ? frameStamp->getFrameNumber() : 0u;
+}
+
+bool enabled(const detail::ProfilerState* state) {
+	return !state || state->enabled.load(std::memory_order_relaxed);
 }
 
 // Pushes a KHR_debug group named objectLabel(object), if initialize() bound the functions.
@@ -81,32 +86,55 @@ public:
 // which the profile uses as the camera's own node, and its KHR_debug group.
 class CameraSpanCallback: public osg::Camera::DrawCallback {
 public:
-	explicit CameraSpanCallback(TraceRecord::Kind kind):
-	_kind(kind) {}
+	CameraSpanCallback(TraceRecord::Kind kind, detail::ProfilerState* state):
+	_kind(kind),
+	_state(state) {}
 
 	void operator()(osg::RenderInfo& ri) const override {
 		const auto* camera = ri.getCurrentCamera();
 
 		if(!camera) return;
 
-		if(_kind == TraceRecord::Kind::LEAVE) detail::popGroup();
+		static thread_local std::unordered_map<const detail::ProfilerState*, std::size_t> open;
+		auto& depth = open[_state.get()];
 
-		threadTraceBuffer().record(_kind, CAMERA_DRAW, camera, frameNumber(ri), camera);
+		if(_kind == TraceRecord::Kind::ENTER) {
+			if(!enabled(_state)) return;
 
-		if(_kind == TraceRecord::Kind::ENTER) pushObjectGroup(camera);
+			threadTraceBuffer().record(_kind, CAMERA_DRAW, camera, frameNumber(ri), camera);
+			pushObjectGroup(camera);
+			depth++;
+		}
+
+		else {
+			if(!depth) return;
+
+			detail::popGroup();
+			threadTraceBuffer().record(_kind, CAMERA_DRAW, camera, frameNumber(ri), camera);
+			depth--;
+		}
 	}
 
 private:
 	TraceRecord::Kind _kind;
+	osg::ref_ptr<detail::ProfilerState> _state;
 };
 
 // Records each buffer swap of a GraphicsContext as a DRAW span, through the swap callback it had.
 class SwapSpanCallback: public osg::GraphicsContext::SwapCallback {
 public:
-	explicit SwapSpanCallback(osg::GraphicsContext::SwapCallback* previous):
-	_previous(previous) {}
+	SwapSpanCallback(osg::GraphicsContext::SwapCallback* previous, detail::ProfilerState* state):
+	_previous(previous),
+	_state(state) {}
 
 	void swapBuffersImplementation(osg::GraphicsContext* gc) override {
+		if(!enabled(_state)) {
+			if(_previous) _previous->swapBuffersImplementation(gc);
+			else gc->swapBuffersImplementation();
+
+			return;
+		}
+
 		const auto* frameStamp = gc->getState() ? gc->getState()->getFrameStamp() : nullptr;
 
 		TraceScope scope(SWAP, gc, frameStamp ? frameStamp->getFrameNumber() : 0u);
@@ -119,6 +147,7 @@ public:
 
 private:
 	osg::ref_ptr<osg::GraphicsContext::SwapCallback> _previous;
+	osg::ref_ptr<detail::ProfilerState> _state;
 };
 
 bool hasCameraDrawCallback(osg::Camera* camera, CameraDrawCallbackSlot slot, osg::Camera::DrawCallback* cb) {
@@ -185,16 +214,19 @@ void copyTraversalSettings(osg::NodeVisitor& to, const osg::NodeVisitor& from) {
 // first time it runs there (viewers usually create their contexts in realize()).
 class AssembleCallback: public osg::Camera::DrawCallback {
 public:
-	explicit AssembleCallback(Profiler* profiler):
-	_profiler(profiler) {
+	AssembleCallback(Profiler* profiler, detail::ProfilerState* state):
+	_profiler(profiler),
+	_state(state) {
 		setName("profile");
 	}
 
 	void operator()(osg::RenderInfo& ri) const override {
+		if(!enabled(_state)) return;
+
 		auto* gc = ri.getState()->getGraphicsContext();
 
 		if(gc && !dynamic_cast<SwapSpanCallback*>(gc->getSwapCallback())) {
-			gc->setSwapCallback(new SwapSpanCallback(gc->getSwapCallback()));
+			gc->setSwapCallback(new SwapSpanCallback(gc->getSwapCallback(), _state));
 		}
 
 		const auto frame = frameNumber(ri);
@@ -213,10 +245,11 @@ public:
 
 private:
 	osg::observer_ptr<Profiler> _profiler;
+	osg::ref_ptr<detail::ProfilerState> _state;
 };
 
 // Replaces the cull visitor of both of `camera`'s SceneViews with a ProfilerCullVisitor copy.
-void installCullVisitor(osg::Camera* camera) {
+void installCullVisitor(osg::Camera* camera, detail::ProfilerState* state) {
 	auto* renderer = camera ? dynamic_cast<osgViewer::Renderer*>(camera->getRenderer()) : nullptr;
 
 	if(!renderer) return;
@@ -227,7 +260,7 @@ void installCullVisitor(osg::Camera* camera) {
 
 		if(!cullVisitor || dynamic_cast<ProfilerCullVisitor*>(cullVisitor)) continue;
 
-		sceneView->setCullVisitor(new ProfilerCullVisitor(*cullVisitor));
+		sceneView->setCullVisitor(new ProfilerCullVisitor(*cullVisitor, state));
 	}
 }
 
@@ -337,12 +370,23 @@ osg::buffered_object<FrameAccumulator> _accumulators;
 
 }
 
-ProfilerCallback::ProfilerCallback(osg::Drawable::DrawCallback* cb):
-_cb(cb) {}
+ProfilerCallback::ProfilerCallback(
+	osg::Drawable::DrawCallback* cb,
+	detail::ProfilerState* state
+):
+_cb(cb),
+_state(state) {}
 
 ProfilerCallback::~ProfilerCallback() = default;
 
 void ProfilerCallback::drawImplementation(osg::RenderInfo& ri, const osg::Drawable* drawable) const {
+	if(!enabled(_state)) {
+		if(!_cb) drawable->drawImplementation(ri);
+		else _cb->drawImplementation(ri, drawable);
+
+		return;
+	}
+
 	auto* ext = ri.getState()->get<osg::GLExtensions>();
 	const auto* camera = ri.getCurrentCamera();
 	const auto* frameStamp = ri.getState()->getFrameStamp();
@@ -382,8 +426,9 @@ void ProfilerCallback::drawImplementation(osg::RenderInfo& ri, const osg::Drawab
 	detail::popGroup();
 }
 
-ProfilerFinalCallback::ProfilerFinalCallback(QueryMode mode):
-_mode(mode) {
+ProfilerFinalCallback::ProfilerFinalCallback(QueryMode mode, detail::ProfilerState* state):
+_mode(mode),
+_state(state) {
 	setName("readback");
 }
 
@@ -398,6 +443,8 @@ QueryMode ProfilerFinalCallback::getMode() const {
 }
 
 void ProfilerFinalCallback::operator()(osg::RenderInfo& ri) const {
+	if(!enabled(_state)) return;
+
 	auto* ext = ri.getState()->get<osg::GLExtensions>();
 
 	if(!ext || !ext->glGetQueryObjectui64v) return;
@@ -430,8 +477,9 @@ void ProfilerFinalCallback::operator()(osg::RenderInfo& ri) const {
 	else acc.drain(ext);
 }
 
-ProfilerVisitor::ProfilerVisitor():
-osg::NodeVisitor(osg::NodeVisitor::TRAVERSE_ALL_CHILDREN) {}
+ProfilerVisitor::ProfilerVisitor(detail::ProfilerState* state):
+osg::NodeVisitor(osg::NodeVisitor::TRAVERSE_ALL_CHILDREN),
+_state(state) {}
 
 ProfilerVisitor::~ProfilerVisitor() = default;
 
@@ -441,7 +489,7 @@ void ProfilerVisitor::apply(osg::Geode& geode) {
 
 void ProfilerVisitor::apply(osg::Drawable& drawable) {
 	if(!dynamic_cast<ProfilerCallback*>(drawable.getDrawCallback())) {
-		drawable.setDrawCallback(new ProfilerCallback(drawable.getDrawCallback()));
+		drawable.setDrawCallback(new ProfilerCallback(drawable.getDrawCallback(), _state));
 	}
 
 	traverse(drawable);
@@ -449,14 +497,18 @@ void ProfilerVisitor::apply(osg::Drawable& drawable) {
 
 ProfilerCullVisitor::ProfilerCullVisitor() = default;
 
-ProfilerCullVisitor::ProfilerCullVisitor(const osgUtil::CullVisitor& cv):
+ProfilerCullVisitor::ProfilerCullVisitor(
+	const osgUtil::CullVisitor& cv,
+	detail::ProfilerState* state
+):
 osg::Object(cv),
-osgUtil::CullVisitor(cv) {}
+osgUtil::CullVisitor(cv),
+_state(state) {}
 
 ProfilerCullVisitor::~ProfilerCullVisitor() = default;
 
 osgUtil::CullVisitor* ProfilerCullVisitor::clone() const {
-	return new ProfilerCullVisitor(*this);
+	return new ProfilerCullVisitor(*this, _state);
 }
 
 unsigned int ProfilerCullVisitor::_frame() const {
@@ -465,6 +517,12 @@ unsigned int ProfilerCullVisitor::_frame() const {
 
 template<typename T>
 void ProfilerCullVisitor::_traced(T& node) {
+	if(!enabled(_state)) {
+		osgUtil::CullVisitor::apply(node);
+
+		return;
+	}
+
 	TraceScope scope(CULL_NODE, &node, _frame(), getCurrentCamera());
 
 	osgUtil::CullVisitor::apply(node);
@@ -472,6 +530,12 @@ void ProfilerCullVisitor::_traced(T& node) {
 
 template<typename T>
 void ProfilerCullVisitor::_boundsTested(T& node) {
+	if(!enabled(_state)) {
+		osgUtil::CullVisitor::apply(node);
+
+		return;
+	}
+
 	if(isCulled(node)) {
 		threadTraceBuffer().record(TraceRecord::Kind::INSTANT, CULLED, &node, _frame(), getCurrentCamera());
 
@@ -500,6 +564,12 @@ void ProfilerCullVisitor::apply(osg::OcclusionQueryNode& node) { _boundsTested(n
 // The base apply() runs the drawable's cull callback before its bounding-box test, so the test is
 // repeated afterwards instead of first.
 void ProfilerCullVisitor::apply(osg::Drawable& drawable) {
+	if(!enabled(_state)) {
+		osgUtil::CullVisitor::apply(drawable);
+
+		return;
+	}
+
 	_traced(drawable);
 
 	if(drawable.isCullingActive() && isCulled(drawable.getBoundingBox())) {
@@ -509,7 +579,11 @@ void ProfilerCullVisitor::apply(osg::Drawable& drawable) {
 
 ProfilerUpdateVisitor::ProfilerUpdateVisitor() = default;
 
-ProfilerUpdateVisitor::ProfilerUpdateVisitor(const osgUtil::UpdateVisitor& uv) {
+ProfilerUpdateVisitor::ProfilerUpdateVisitor(
+	const osgUtil::UpdateVisitor& uv,
+	detail::ProfilerState* state
+):
+_state(state) {
 	copyTraversalSettings(*this, uv);
 }
 
@@ -517,6 +591,12 @@ ProfilerUpdateVisitor::~ProfilerUpdateVisitor() = default;
 
 template<typename T>
 void ProfilerUpdateVisitor::_traced(T& node) {
+	if(!enabled(_state)) {
+		osgUtil::UpdateVisitor::apply(node);
+
+		return;
+	}
+
 	TraceScope scope(UPDATE_NODE, &node, frameNumber(*this));
 
 	osgUtil::UpdateVisitor::apply(node);
@@ -536,7 +616,11 @@ void ProfilerUpdateVisitor::apply(osg::OccluderNode& node) { _traced(node); }
 
 ProfilerEventVisitor::ProfilerEventVisitor() = default;
 
-ProfilerEventVisitor::ProfilerEventVisitor(const osgGA::EventVisitor& ev) {
+ProfilerEventVisitor::ProfilerEventVisitor(
+	const osgGA::EventVisitor& ev,
+	detail::ProfilerState* state
+):
+_state(state) {
 	copyTraversalSettings(*this, ev);
 	setActionAdapter(const_cast<osgGA::GUIActionAdapter*>(ev.getActionAdapter()));
 }
@@ -545,6 +629,12 @@ ProfilerEventVisitor::~ProfilerEventVisitor() = default;
 
 template<typename T>
 void ProfilerEventVisitor::_traced(T& node) {
+	if(!enabled(_state)) {
+		osgGA::EventVisitor::apply(node);
+
+		return;
+	}
+
 	TraceScope scope(EVENT_NODE, &node, frameNumber(*this));
 
 	osgGA::EventVisitor::apply(node);
@@ -563,22 +653,23 @@ void ProfilerEventVisitor::apply(osg::LOD& node) { _traced(node); }
 void ProfilerEventVisitor::apply(osg::OccluderNode& node) { _traced(node); }
 
 Profiler::Profiler(QueryMode mode):
-_finalCallback(new ProfilerFinalCallback(mode)),
-_assembleCallback(new AssembleCallback(this)),
-_cameraEnter(new CameraSpanCallback(TraceRecord::Kind::ENTER)),
-_cameraLeave(new CameraSpanCallback(TraceRecord::Kind::LEAVE)) {}
+_state(new detail::ProfilerState()),
+_finalCallback(new ProfilerFinalCallback(mode, _state)),
+_assembleCallback(new AssembleCallback(this, _state)),
+_cameraEnter(new CameraSpanCallback(TraceRecord::Kind::ENTER, _state)),
+_cameraLeave(new CameraSpanCallback(TraceRecord::Kind::LEAVE, _state)) {}
 
 void Profiler::attach(osgViewer::ViewerBase& viewer) {
 	auto* updateVisitor = viewer.getUpdateVisitor();
 
 	if(updateVisitor && !dynamic_cast<ProfilerUpdateVisitor*>(updateVisitor)) {
-		viewer.setUpdateVisitor(new ProfilerUpdateVisitor(*updateVisitor));
+		viewer.setUpdateVisitor(new ProfilerUpdateVisitor(*updateVisitor, _state));
 	}
 
 	auto* eventVisitor = viewer.getEventVisitor();
 
 	if(eventVisitor && !dynamic_cast<ProfilerEventVisitor*>(eventVisitor)) {
-		viewer.setEventVisitor(new ProfilerEventVisitor(*eventVisitor));
+		viewer.setEventVisitor(new ProfilerEventVisitor(*eventVisitor, _state));
 	}
 
 	osgViewer::ViewerBase::Views views;
@@ -591,13 +682,13 @@ void Profiler::attach(osgViewer::ViewerBase& viewer) {
 		appendCameraDrawCallback(view->getCamera(), CameraDrawCallbackSlot::FINAL_DRAW, _finalCallback.get());
 		appendCameraDrawCallback(view->getCamera(), CameraDrawCallbackSlot::FINAL_DRAW, _assembleCallback.get());
 		installCameraSpans(view->getCamera(), _cameraEnter.get(), _cameraLeave.get());
-		installCullVisitor(view->getCamera());
+		installCullVisitor(view->getCamera(), _state);
 
 		for(unsigned int i = 0; i < view->getNumSlaves(); i++) {
 			auto* camera = view->getSlave(i)._camera.get();
 
 			installCameraSpans(camera, _cameraEnter.get(), _cameraLeave.get());
-			installCullVisitor(camera);
+			installCullVisitor(camera, _state);
 		}
 	}
 
@@ -605,7 +696,7 @@ void Profiler::attach(osgViewer::ViewerBase& viewer) {
 }
 
 void Profiler::refresh() {
-	ProfilerVisitor visitor;
+	ProfilerVisitor visitor(_state);
 	CameraSpanVisitor cameras(_cameraEnter.get(), _cameraLeave.get());
 
 	// observer_ptr::lock() fails for a view with a zero reference count (a stack-allocated
@@ -627,6 +718,14 @@ void Profiler::setMode(QueryMode mode) {
 
 QueryMode Profiler::getMode() const {
 	return _finalCallback->getMode();
+}
+
+void Profiler::setEnabled(bool enabled) {
+	_state->enabled.store(enabled, std::memory_order_relaxed);
+}
+
+bool Profiler::getEnabled() const {
+	return _state->enabled.load(std::memory_order_relaxed);
 }
 
 std::array<TraceNode, 4> Profiler::getProfile() const {

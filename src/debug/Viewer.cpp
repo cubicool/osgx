@@ -6,6 +6,8 @@ OSGX_DISABLE_WARNINGS
 
 OSGX_ENABLE_WARNINGS
 
+#include <optional>
+
 namespace osgx::debug {
 
 namespace {
@@ -52,13 +54,17 @@ unsigned int ProfilingViewer::_frame() const {
 }
 
 void ProfilingViewer::eventTraversal() {
-	TraceScope scope(EVENT_TRAVERSAL, this, _frame());
+	std::optional<TraceScope> scope;
+
+	if(_profiler->getEnabled()) scope.emplace(EVENT_TRAVERSAL, this, _frame());
 
 	osgViewer::Viewer::eventTraversal();
 }
 
 void ProfilingViewer::updateTraversal() {
-	TraceScope scope(UPDATE_TRAVERSAL, this, _frame());
+	std::optional<TraceScope> scope;
+
+	if(_profiler->getEnabled()) scope.emplace(UPDATE_TRAVERSAL, this, _frame());
 
 	osgViewer::Viewer::updateTraversal();
 }

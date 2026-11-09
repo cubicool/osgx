@@ -536,6 +536,7 @@ struct Waterfall {
 	double budgetMs;
 	double minMs;
 	debug::WaterfallGpu gpu;
+	bool enabled;
 
 	// Per row (see waterfallKey()): whether it was shown, for the threshold's hysteresis.
 	std::unordered_map<std::string, bool>* shown;
@@ -591,6 +592,18 @@ void waterfallBar(
 	bool waiting,
 	const Waterfall& waterfall
 ) {
+	if(!waterfall.enabled) {
+		const auto red = static_cast<int>((color >> IM_COL32_R_SHIFT) & 0xffu);
+		const auto green = static_cast<int>((color >> IM_COL32_G_SHIFT) & 0xffu);
+		const auto blue = static_cast<int>((color >> IM_COL32_B_SHIFT) & 0xffu);
+		const auto alpha = static_cast<int>(
+			static_cast<float>((color >> IM_COL32_A_SHIFT) & 0xffu) * ImGui::GetStyle().DisabledAlpha
+		);
+		const auto gray = (red + green + blue) / 3;
+
+		color = IM_COL32(gray, gray, gray, alpha);
+	}
+
 	auto x = [&](double ms) {
 		return left + width * static_cast<float>(std::clamp(ms / waterfall.axisMs, 0.0, 1.0));
 	};
@@ -605,8 +618,14 @@ void waterfallBar(
 		const ImVec2 overMin(std::max(x0, budget), y0);
 		const ImVec2 overMax(x1, y1);
 
-		drawList->AddRectFilled(overMin, overMax, OVER_BUDGET_TINT);
-		drawList->AddRect(overMin, overMax, OVER_BUDGET_OUTLINE);
+		const ImU32 tint = waterfall.enabled ? OVER_BUDGET_TINT : IM_COL32(100, 100, 100, 90);
+		const ImU32 outline = waterfall.enabled
+			? OVER_BUDGET_OUTLINE
+			: IM_COL32(150, 150, 150, 120)
+		;
+
+		drawList->AddRectFilled(overMin, overMax, tint);
+		drawList->AddRect(overMin, overMax, outline);
 	}
 }
 
@@ -759,7 +778,7 @@ void waterfallRow(const debug::TraceNode& node, const Waterfall& waterfall, bool
 		drawList->AddLine(
 			ImVec2(x, origin.y - pad),
 			ImVec2(x, origin.y + height + pad),
-			BUDGET_LINE_COLOR
+			waterfall.enabled ? BUDGET_LINE_COLOR : IM_COL32(130, 130, 130, 120)
 		);
 	}
 
@@ -779,6 +798,14 @@ void waterfallRow(const debug::TraceNode& node, const Waterfall& waterfall, bool
 }
 
 void ProfilerSection::operator()(osg::RenderInfo& ri) {
+	bool enabled = _profiler->getEnabled();
+
+	if(ImGui::Checkbox("Enabled", &enabled)) _profiler->setEnabled(enabled);
+
+	ImGui::SameLine();
+	ImGui::TextDisabled("|");
+	ImGui::SameLine();
+
 	int modeIdx = _profiler->getMode() == debug::QueryMode::SYNC ? 0 : 1;
 
 	if(ImGui::RadioButton("SYNC", &modeIdx, 0)) _profiler->setMode(debug::QueryMode::SYNC);
@@ -817,11 +844,13 @@ void ProfilerSection::operator()(osg::RenderInfo& ri) {
 	ImGui::SameLine();
 	ImGui::SetNextItemWidth(ImGui::CalcTextSize("0.000").x + ImGui::GetFrameHeight());
 	ImGui::DragFloat("hide below ms", &_minMs, 0.005f, 0.0f, 5.0f, "%.3f");
+	ImGui::BeginDisabled(!enabled);
 
 	const auto newest = _profiler->getProfileFrame();
 
 	if(!newest) {
 		ImGui::TextDisabled("no frames yet");
+		ImGui::EndDisabled();
 
 		return;
 	}
@@ -840,6 +869,7 @@ void ProfilerSection::operator()(osg::RenderInfo& ri) {
 		budgetMs,
 		static_cast<double>(_minMs),
 		_gpu,
+		enabled,
 		&_shown
 	};
 
@@ -888,6 +918,8 @@ void ProfilerSection::operator()(osg::RenderInfo& ri) {
 
 		ImGui::EndTable();
 	}
+
+	ImGui::EndDisabled();
 }
 
 void Panel::draw(osg::RenderInfo& ri) {

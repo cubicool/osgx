@@ -23,6 +23,7 @@ OSGX_DISABLE_WARNINGS
 OSGX_ENABLE_WARNINGS
 
 #include <array>
+#include <atomic>
 #include <cstdint>
 #include <mutex>
 #include <optional>
@@ -34,6 +35,11 @@ OSGX_ENABLE_WARNINGS
 namespace osgx::debug {
 
 namespace detail {
+	class ProfilerState: public osg::Referenced {
+	public:
+		std::atomic<bool> enabled{true};
+	};
+
 	// Per-context GPU timestamp queries for two-phase timing. ProfilerCallback (phase 1) pushes
 	// pending query pairs here without blocking; ProfilerFinalCallback (phase 2) reads their
 	// results after the camera has rendered and writes them into the drawables' trace records.
@@ -130,7 +136,10 @@ namespace detail {
 // safe in any threading model.
 class ProfilerCallback: public osg::Drawable::DrawCallback {
 public:
-	explicit ProfilerCallback(osg::Drawable::DrawCallback* cb=nullptr);
+	explicit ProfilerCallback(
+		osg::Drawable::DrawCallback* cb=nullptr,
+		detail::ProfilerState* state=nullptr
+	);
 
 	void drawImplementation(osg::RenderInfo& ri, const osg::Drawable* drawable) const override;
 
@@ -139,6 +148,7 @@ protected:
 
 private:
 	osg::ref_ptr<osg::Drawable::DrawCallback> _cb;
+	osg::ref_ptr<detail::ProfilerState> _state;
 };
 
 // Phase 2: install on a camera via FINAL_DRAW slot to drain the FrameAccumulator, writing GPU
@@ -151,7 +161,7 @@ private:
 // GPU) then swaps buffers. Zero meaningful stall; one-frame lag.
 class ProfilerFinalCallback: public osg::Camera::DrawCallback {
 public:
-	explicit ProfilerFinalCallback(QueryMode mode=QueryMode::SYNC);
+	explicit ProfilerFinalCallback(QueryMode mode=QueryMode::SYNC, detail::ProfilerState* state=nullptr);
 
 	// TODO: Switching ASYNC->SYNC leaves one set of retired query objects in
 	// FrameAccumulator::ready that SYNC will never drain. Harmless for a debug
@@ -167,18 +177,22 @@ protected:
 
 private:
 	QueryMode _mode;
+	osg::ref_ptr<detail::ProfilerState> _state;
 };
 
 // Walks the scene graph and installs a ProfilerCallback on every Drawable that has none, wrapping
 // its draw callback. Install ProfilerFinalCallback on the camera separately to complete setup.
 class ProfilerVisitor: public osg::NodeVisitor {
 public:
-	ProfilerVisitor();
+	explicit ProfilerVisitor(detail::ProfilerState* state=nullptr);
 
 	~ProfilerVisitor() override;
 
 	void apply(osg::Geode& geode) override;
 	void apply(osg::Drawable& drawable) override;
+
+private:
+	osg::ref_ptr<detail::ProfilerState> _state;
 };
 
 // An osgUtil::CullVisitor that records every node and drawable it visits as a CULL TraceScope
@@ -192,7 +206,7 @@ public:
 	ProfilerCullVisitor();
 
 	// Copies `cv`'s cull settings, as CullVisitor::clone() does.
-	explicit ProfilerCullVisitor(const osgUtil::CullVisitor& cv);
+	explicit ProfilerCullVisitor(const osgUtil::CullVisitor& cv, detail::ProfilerState* state=nullptr);
 
 	META_NodeVisitor(osgx::debug, ProfilerCullVisitor)
 
@@ -221,6 +235,8 @@ protected:
 	~ProfilerCullVisitor() override;
 
 private:
+	osg::ref_ptr<detail::ProfilerState> _state;
+
 	unsigned int _frame() const;
 
 	template<typename T>
@@ -239,7 +255,7 @@ public:
 	ProfilerUpdateVisitor();
 
 	// Copies `uv`'s traversal mode and masks.
-	explicit ProfilerUpdateVisitor(const osgUtil::UpdateVisitor& uv);
+	explicit ProfilerUpdateVisitor(const osgUtil::UpdateVisitor& uv, detail::ProfilerState* state=nullptr);
 
 	META_NodeVisitor(osgx::debug, ProfilerUpdateVisitor)
 
@@ -261,6 +277,8 @@ protected:
 	~ProfilerUpdateVisitor() override;
 
 private:
+	osg::ref_ptr<detail::ProfilerState> _state;
+
 	template<typename T>
 	void _traced(T& node);
 };
@@ -273,7 +291,7 @@ public:
 	ProfilerEventVisitor();
 
 	// Copies `ev`'s action adapter, traversal mode and masks.
-	explicit ProfilerEventVisitor(const osgGA::EventVisitor& ev);
+	explicit ProfilerEventVisitor(const osgGA::EventVisitor& ev, detail::ProfilerState* state=nullptr);
 
 	META_NodeVisitor(osgx::debug, ProfilerEventVisitor)
 
@@ -295,6 +313,8 @@ protected:
 	~ProfilerEventVisitor() override;
 
 private:
+	osg::ref_ptr<detail::ProfilerState> _state;
+
 	template<typename T>
 	void _traced(T& node);
 };
@@ -361,6 +381,12 @@ public:
 	void setMode(QueryMode mode);
 	QueryMode getMode() const;
 
+	// Installed hooks remain in place while disabled, but short-circuit before recording traces,
+	// issuing GPU queries, pushing profiler debug groups or folding frames. Application tracing is
+	// independent of this control.
+	void setEnabled(bool enabled);
+	bool getEnabled() const;
+
 	// The rolling per-phase trees (TraceProfile::snapshot()).
 	std::array<TraceNode, 4> getProfile() const;
 
@@ -402,6 +428,7 @@ private:
 	TraceProfile::CameraNames _cameraNames() const;
 
 	std::vector<osg::observer_ptr<osgViewer::View>> _views;
+	osg::ref_ptr<detail::ProfilerState> _state;
 	osg::ref_ptr<ProfilerFinalCallback> _finalCallback;
 	osg::ref_ptr<osg::Camera::DrawCallback> _assembleCallback;
 	osg::ref_ptr<osg::Camera::DrawCallback> _cameraEnter;

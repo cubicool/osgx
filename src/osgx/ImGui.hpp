@@ -221,8 +221,8 @@ private:
 // overlay excepted). The header compares the frame's CPU and GPU busy times (debug::frameLoad()) with
 // the budget: amber from 90%, red over it. Nodes below the threshold (CPU and GPU) are left out
 // with their subtrees; a shown node stays until it drops below half of it. Hovering a row shows
-// its details. Controls: SYNC/ASYNC queries, Refresh, the GPU overlay, the budget (refresh rate),
-// the threshold.
+// its details. Controls: profiler enabled state, SYNC/ASYNC queries, Refresh, the GPU overlay,
+// the budget (refresh rate), the threshold.
 // Pass to Widget::addSection() or use Widget::addProfilerSection() shortcut.
 class ProfilerSection {
 public:
