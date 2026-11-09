@@ -290,6 +290,11 @@ void Ortho2DManipulator::home(const osgGA::GUIEventAdapter&, osgGA::GUIActionAda
 }
 
 bool Ortho2DManipulator::handle(const osgGA::GUIEventAdapter& ea, osgGA::GUIActionAdapter& aa) {
+	// osgViewer dispatches the camera manipulator after every event handler and ignores their
+	// return values, so an event a handler consumed (an ImGui window under the cursor) is skipped
+	// here by its handled flag.
+	if(ea.getHandled()) return false;
+
 	switch(ea.getEventType()) {
 	case osgGA::GUIEventAdapter::PUSH:
 		_lastPointer.set(ea.getXnormalized(), ea.getYnormalized());
@@ -547,6 +552,9 @@ void OrbitAxisManipulator::_orbit(double nx, double ny) {
 }
 
 bool OrbitAxisManipulator::handle(const osgGA::GUIEventAdapter& ea, osgGA::GUIActionAdapter& aa) {
+	// See Ortho2DManipulator::handle().
+	if(ea.getHandled()) return false;
+
 	switch(ea.getEventType()) {
 	case osgGA::GUIEventAdapter::MOVE:
 	case osgGA::GUIEventAdapter::DRAG:
