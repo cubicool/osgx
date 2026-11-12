@@ -1,6 +1,15 @@
+// Before the first imgui.h include: imgui_internal.h (the title-bar dock button below) requires it.
+#define IMGUI_DEFINE_MATH_OPERATORS
+
 #include "osgx/ImGui.hpp"
 
 #ifdef OSGX_IMGUI
+
+OSGX_DISABLE_WARNINGS
+
+#include <imgui_internal.h>
+
+OSGX_ENABLE_WARNINGS
 
 #include <algorithm>
 #include <array>
@@ -999,6 +1008,71 @@ ImGuiKey imguiKey(int key, bool ctrl) {
 	return ImGuiKey_None;
 }
 
+// Limits for the docked window's width (pixels): never narrower than DOCK_MIN_WIDTH, and always
+// leaving at least DOCK_MIN_SCENE_WIDTH of the window to the scene.
+constexpr float DOCK_MIN_WIDTH = 160.0f;
+constexpr float DOCK_MIN_SCENE_WIDTH = 160.0f;
+
+// A button at the right end of the current window's title bar (where Begin()'s close button would
+// go; Widget passes none), built the way Dear ImGui builds its own collapse/close buttons
+// (imgui_internal.h's ItemAdd() + ButtonBehavior() on a fixed rect, nothing laid out). The icon is
+// a small window outline with a solid bar on the `side` edge while docked.
+bool titleBarDockButton(bool docked, Dock side) {
+	ImGuiContext& g = *ImGui::GetCurrentContext();
+	ImGuiWindow* window = ImGui::GetCurrentWindow();
+
+	if(window->Flags & ImGuiWindowFlags_NoTitleBar) return false;
+
+	const ImRect title = window->TitleBarRect();
+	const float size = g.FontSize;
+	const ImVec2 pos(title.Max.x - g.Style.FramePadding.x - size, title.Min.y + g.Style.FramePadding.y);
+	const ImRect bb(pos, pos + ImVec2(size, size));
+	const ImGuiID id = window->GetID("#osgx_dock");
+
+	ImGui::PushClipRect(title.Min, title.Max, false);
+
+	ImGui::ItemAdd(bb, id);
+
+	bool hovered = false;
+	bool held = false;
+
+	const bool pressed = ImGui::ButtonBehavior(bb, id, &hovered, &held);
+	auto* drawList = window->DrawList;
+
+	if(hovered) drawList->AddRectFilled(
+		bb.Min,
+		bb.Max,
+		ImGui::GetColorU32(held ? ImGuiCol_ButtonActive : ImGuiCol_ButtonHovered)
+	);
+
+	const ImU32 color = ImGui::GetColorU32(ImGuiCol_Text);
+	const ImVec2 inset(ImTrunc(size * 0.2f), ImTrunc(size * 0.2f));
+	const ImRect icon(bb.Min + inset, bb.Max - inset);
+
+	drawList->AddRect(icon.Min, icon.Max, color);
+
+	if(docked) {
+		const float bar = ImTrunc(icon.GetWidth() * 0.35f);
+
+		if(side == Dock::RIGHT) drawList->AddRectFilled(ImVec2(icon.Max.x - bar, icon.Min.y), icon.Max, color);
+
+		else drawList->AddRectFilled(icon.Min, ImVec2(icon.Min.x + bar, icon.Max.y), color);
+	}
+
+	ImGui::PopClipRect();
+
+	if(hovered) ImGui::SetTooltip(docked ? "Undock" : "Dock");
+
+	return pressed;
+}
+
+}
+
+void Widget::setDocked(bool docked) {
+	if(docked == _docked) return;
+
+	_docked = docked;
+	_dockChanged = true;
 }
 
 bool Widget::handle(const osgGA::GUIEventAdapter& ea, osgGA::GUIActionAdapter& aa) {
@@ -1020,6 +1094,13 @@ bool Widget::handle(const osgGA::GUIEventAdapter& ea, osgGA::GUIActionAdapter& a
 
 			_initialized = true;
 		}
+
+		return false;
+	}
+
+	// Before this frame's cull, so the scene is culled and drawn with this frame's viewport.
+	if(ea.getEventType() == osgGA::GUIEventAdapter::FRAME) {
+		reserveViewport();
 
 		return false;
 	}
@@ -1141,28 +1222,58 @@ void Widget::newFrame(osg::RenderInfo& ri) {
 }
 
 void Widget::render(osg::RenderInfo& ri) {
+	const ImGuiIO& io = ImGui::GetIO();
+
 	ImGuiWindowFlags flags = ImGuiWindowFlags_None;
 
-	if(_opts.dock == Dock::NONE) ImGui::SetNextWindowSize(
-		ImVec2(600, 320),
-		ImGuiCond_FirstUseEver
-	);
+	if(_docked) {
+		const float maxWidth = std::max(io.DisplaySize.x - DOCK_MIN_SCENE_WIDTH, DOCK_MIN_WIDTH);
 
-	else {
-		const ImGuiIO& io = ImGui::GetIO();
-		float x = _opts.dock == Dock::LEFT ? 0.0f : io.DisplaySize.x - _opts.dockWidth;
+		_opts.dockWidth = std::clamp(_opts.dockWidth, DOCK_MIN_WIDTH, maxWidth);
 
+		const float x = _dockSide == Dock::LEFT ? 0.0f : io.DisplaySize.x - _opts.dockWidth;
+
+		// Pinned to its edge at full window height; only the width is the user's (dragging the
+		// inner edge). The title-bar collapse triangle stays: a comparison viewport needs a quick
+		// way to clear the panel without losing its controls.
 		ImGui::SetNextWindowPos(ImVec2(x, 0.0f), ImGuiCond_Always);
-		ImGui::SetNextWindowSize(ImVec2(_opts.dockWidth, io.DisplaySize.y), ImGuiCond_Always);
+		ImGui::SetNextWindowSizeConstraints(
+			ImVec2(DOCK_MIN_WIDTH, io.DisplaySize.y),
+			ImVec2(maxWidth, io.DisplaySize.y)
+		);
 
-		// Keep a docked panel pinned and fixed-width, but leave Dear ImGui's
-		// standard title-bar collapse button enabled. A comparison viewport
-		// needs a quick way to clear the overlay without losing its controls:
-		// click the title-bar triangle to collapse it, then click again to reopen.
-		flags |= ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize;
+		if(_dockChanged) ImGui::SetNextWindowSize(ImVec2(_opts.dockWidth, io.DisplaySize.y), ImGuiCond_Always);
+
+		flags |= ImGuiWindowFlags_NoMove;
 	}
 
-	if(ImGui::Begin("osgx::imgui", nullptr, flags)) {
+	else if(_dockChanged) {
+		if(_floatSize.x <= 0.0f || _floatSize.y <= 0.0f) {
+			_floatSize = ImVec2(std::max(_opts.dockWidth, 600.0f), std::max(io.DisplaySize.y * 0.6f, 320.0f));
+		}
+
+		ImGui::SetNextWindowPos(_floatPos, ImGuiCond_Always);
+		ImGui::SetNextWindowSize(_floatSize, ImGuiCond_Always);
+	}
+
+	_dockChanged = false;
+
+	const bool expanded = ImGui::Begin("osgx::imgui", nullptr, flags);
+
+	_collapsed = ImGui::IsWindowCollapsed();
+
+	if(!_collapsed) {
+		if(_docked) _opts.dockWidth = ImGui::GetWindowWidth();
+
+		else {
+			_floatPos = ImGui::GetWindowPos();
+			_floatSize = ImGui::GetWindowSize();
+		}
+	}
+
+	if(titleBarDockButton(_docked, _dockSide)) setDocked(!_docked);
+
+	if(expanded) {
 		if(_opts.showGPUInfo) {
 			static const auto* glRenderer = glGetString(GL_RENDERER);
 			static const auto* glVersion = glGetString(GL_VERSION);
@@ -1190,6 +1301,51 @@ void Widget::render(osg::RenderInfo& ri) {
 	ImGui::End();
 	ImGui::Render();
 	ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+}
+
+void Widget::reserveViewport() {
+	auto* camera = _masterCamera.get();
+
+	if(!camera || !camera->getViewport() || !camera->getGraphicsContext()) return;
+
+	const auto* traits = camera->getGraphicsContext()->getTraits();
+
+	if(!traits || traits->width <= 0 || traits->height <= 0) return;
+
+	const double width = traits->width;
+	const double height = traits->height;
+	const bool reserve = _docked && _opts.dockReserve && !_collapsed;
+	const double strip = reserve ? std::clamp(static_cast<double>(_opts.dockWidth), 0.0, width - 1.0) : 0.0;
+	const double x = _dockSide == Dock::LEFT ? strip : 0.0;
+
+	auto* viewport = camera->getViewport();
+
+	if(
+		viewport->x() == x &&
+		viewport->y() == 0.0 &&
+		viewport->width() == width - strip &&
+		viewport->height() == height
+	) return;
+
+	const double oldAspect = viewport->aspectRatio();
+
+	viewport->setViewport(x, 0.0, width - strip, height);
+
+	const double aspectChange = viewport->aspectRatio() / oldAspect;
+
+	// The same correction osg::GraphicsContext::resizedImplementation() applies on a window resize.
+	switch(camera->getProjectionResizePolicy()) {
+		case osg::Camera::HORIZONTAL:
+			camera->getProjectionMatrix() *= osg::Matrixd::scale(1.0 / aspectChange, 1.0, 1.0);
+			break;
+
+		case osg::Camera::VERTICAL:
+			camera->getProjectionMatrix() *= osg::Matrixd::scale(1.0, aspectChange, 1.0);
+			break;
+
+		default:
+			break;
+	}
 }
 
 }

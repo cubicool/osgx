@@ -27,16 +27,32 @@ namespace imgui {
 // Vendored ext/imgui is pinned to a plain release tag, not the docking branch (no
 // IMGUI_HAS_DOCK/DockSpaceOverViewport), so there's no drag-to-dock here the way
 // osgEarth's ImGuiEventHandler does it with its own vendored docking-branch imgui.h.
-// Dock::LEFT/RIGHT instead just pins the "osgx::imgui" window to that edge, full
-// viewport height, every frame - no dragging, but no extra build surface either.
+// Dock::LEFT/RIGHT instead pins the "osgx::imgui" window to that edge, full window
+// height, every frame; its inner edge can be dragged to change its width. A button at
+// the right end of the title bar undocks it into a free, movable, resizable window and
+// docks it back (to Options::dock's edge, LEFT if that is NONE).
 enum class Dock { NONE, LEFT, RIGHT };
 
 // Controls what the Widget window shows.
 struct Options {
 	bool showGPUInfo = true;
 	bool showFrameInfo = true;
-	Dock dock = Dock::NONE;
+
+	// The initial dock state; the title-bar button changes it at runtime.
+	Dock dock = Dock::LEFT;
+
+	// The initial docked width; dragging the docked window's inner edge changes it at runtime.
 	float dockWidth = 340.0f;
+
+	// Docked only: while the window is expanded, the view's master camera viewport is shrunk to
+	// the rest of the window (re-applied every frame, so window resizes and collapsing the window
+	// via its title bar both follow), and its projection is rescaled per its
+	// ProjectionResizePolicy to the new viewport aspect. The panel then never covers the scene, and
+	// manipulators (which read viewport-relative pointer coordinates) only respond inside the
+	// scene's area. Code reading raw window coordinates (GUIEventAdapter::getX()/getY()) for
+	// scene-space work, e.g. picking, must offset them by the viewport origin. false: the docked
+	// window is drawn over the full-window scene instead.
+	bool dockReserve = true;
 };
 
 // Per-section knobs for Widget::addSection() - a growable bag of named options
@@ -338,9 +354,16 @@ public:
 	Widget(osgViewer::View& view, osg::Camera* drawCamera=nullptr, Options opts={}):
 	_masterCamera(view.getCamera()),
 	_opts(opts),
-	_drawCamera(drawCamera) {
+	_drawCamera(drawCamera),
+	_docked(opts.dock != Dock::NONE),
+	_dockSide(opts.dock == Dock::RIGHT ? Dock::RIGHT : Dock::LEFT) {
 		view.getEventHandlers().push_front(this);
 	}
+
+	// The window's current dock state (the title-bar button toggles it). Docking uses
+	// Options::dock's edge, or LEFT if that is NONE.
+	bool isDocked() const { return _docked; }
+	void setDocked(bool docked);
 
 	Panel& panel() { return _panel; }
 	const Panel& panel() const { return _panel; }
@@ -362,11 +385,23 @@ private:
 	osg::observer_ptr<osg::Camera> _drawCamera;
 	bool _initialized = false;
 	bool _firstFrame = true;
+	bool _collapsed = false;
+
+	bool _docked;
+	Dock _dockSide;
+	// The next render() applies the dock state's position/size once (after a toggle, and on the
+	// first frame); in between, the user's resizing/moving stands.
+	bool _dockChanged = true;
+	// The floating window's last position/size, restored on undocking; a zero size means "not
+	// floated yet" (a default is derived from the dock then).
+	ImVec2 _floatPos = ImVec2(60.0f, 60.0f);
+	ImVec2 _floatSize = ImVec2(0.0f, 0.0f);
 	double _time = 0.0;
 	Panel _panel;
 
 	void newFrame(osg::RenderInfo& ri);
 	void render(osg::RenderInfo& ri);
+	void reserveViewport();
 
 	struct PreDraw: public osg::Camera::DrawCallback {
 		Widget& _w;

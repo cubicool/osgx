@@ -15,6 +15,27 @@ do with `GL_KHR_debug` specifically.
 See `examples/osgx-imgui.cpp` (self-owned context) and `examples/osgx-imgui-external.cpp`
 (app-owned context/frame/window pattern) for worked examples.
 
+## Docking (`osgx::imgui::Options`)
+
+`Widget`'s window is docked to the left edge by default (`Options::dock`, `Dock::LEFT`/`RIGHT`/
+`NONE`; `dockWidth` pixels wide, full window height). Dragging the docked window's inner edge
+changes its width. The button at the right end of its title bar undocks it into a free, movable,
+resizable window (its last floating position/size is restored) and docks it back, to
+`Options::dock`'s edge (or the left one if that is `NONE`); `Widget::isDocked()/setDocked()`
+(Python: `Widget.docked`) is the same state. The button follows Dear ImGui's own title-bar buttons
+(`imgui_internal.h`'s `ItemAdd()`/`ButtonBehavior()`), so a Dear ImGui upgrade can touch it. With `Options::dockReserve` (default on), the
+docked window also takes its strip away from the scene: every frame, the view's master camera
+viewport is set to the rest of the window and its projection rescaled per the camera's
+`ProjectionResizePolicy` (the same correction OSG applies on a window resize). Collapsing the window
+via its title-bar triangle gives the strip back to the scene. Manipulators read viewport-relative
+pointer coordinates, so they only respond inside the scene's area; code reading raw window
+coordinates (`GUIEventAdapter::getX()/getY()`) for scene-space work, e.g. picking, has to offset
+them by the viewport origin.
+
+`dockReserve = false` draws the docked window over the full-window scene instead (the previous
+behavior), and `Dock::NONE` gives a free-floating window. Python: `osgx.imgui.Options(dock=...,
+dock_width=..., dock_reserve=...)`.
+
 ## Two ways to get Dear ImGui: vendored, or your own
 
 `OSGX_WITH_IMGUI` has two build-level modes, matching whether the host application already builds

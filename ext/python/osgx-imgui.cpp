@@ -22,6 +22,8 @@ namespace pybind11x {
 		if(kwargs.contains("dock")) self.dock = kwargs["dock"].cast<osgx::imgui::Dock>();
 
 		if(kwargs.contains("dock_width")) self.dockWidth = kwargs["dock_width"].cast<float>();
+
+		if(kwargs.contains("dock_reserve")) self.dockReserve = kwargs["dock_reserve"].cast<bool>();
 	}
 }
 
@@ -32,8 +34,8 @@ void bind_imgui(py::module_& m_imgui) {
 		m_imgui,
 		"Dock",
 		"Where the osgx::imgui window pins itself. LEFT/RIGHT pin it to that edge at full "
-		"viewport height every frame (vendored imgui is a plain release tag, not the docking "
-		"branch, so there's no drag-to-dock)."
+		"window height every frame (vendored imgui is a plain release tag, not the docking "
+		"branch, so there's no drag-to-dock). LEFT is the default."
 	)
 		.value("NONE", osgx::imgui::Dock::NONE)
 		.value("LEFT", osgx::imgui::Dock::LEFT)
@@ -54,11 +56,19 @@ void bind_imgui(py::module_& m_imgui) {
 			pyx::kwargs_init(result, kwargs);
 
 			return result;
-		}), "Constructs Options from any subset of show_gpu_info/show_frame_info/dock/dock_width keywords.")
+		}), "Constructs Options from any subset of show_gpu_info/show_frame_info/dock/dock_width/dock_reserve keywords.")
 		.def_readwrite("show_gpu_info", &osgx::imgui::Options::showGPUInfo, "Whether the window shows a GPU info header.")
 		.def_readwrite("show_frame_info", &osgx::imgui::Options::showFrameInfo, "Whether the window shows a frame info header.")
 		.def_readwrite("dock", &osgx::imgui::Options::dock, "Which edge (if any) the window pins itself to.")
 		.def_readwrite("dock_width", &osgx::imgui::Options::dockWidth, "Window width in pixels when docked LEFT/RIGHT.")
+		.def_readwrite(
+			"dock_reserve",
+			&osgx::imgui::Options::dockReserve,
+			"Docked only (default True): while the window is expanded, shrink the view's master camera "
+			"viewport to the rest of the window (projection rescaled to its aspect), so the panel never "
+			"covers the scene. Raw window mouse coordinates then need offsetting by the viewport origin. "
+			"False draws the docked window over the full-window scene."
+		)
 	;
 
 	// A growable options bag for addSection() - expected to grow (a size hint
@@ -191,6 +201,13 @@ void bind_imgui(py::module_& m_imgui) {
 		)
 		.def("removeSection", &osgx::imgui::Widget::removeSection, "label"_a, "Removes the section named `label`, if present.")
 		.def("clearSections", &osgx::imgui::Widget::clearSections, "Removes every section.")
+		.def_property(
+			"docked",
+			&osgx::imgui::Widget::isDocked,
+			&osgx::imgui::Widget::setDocked,
+			"Whether the window is docked (the title-bar button toggles it); docking uses "
+			"Options.dock's edge, or LEFT if that is NONE."
+		)
 		.def(
 			"setSectionOpen", &osgx::imgui::Widget::setSectionOpen, "label"_a, "open"_a,
 			"Forces section `label`'s CollapsingHeader open/closed every frame; same contract as Panel.setSectionOpen()."
