@@ -21,6 +21,8 @@ OSGX_ENABLE_WARNINGS
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <tuple>
+#include <utility>
 
 namespace osgx::headless {
 
@@ -45,6 +47,31 @@ std::size_t parseFrames(std::string_view value) {
 	}
 
 	return frames;
+}
+
+// "WxH" (e.g. 1280x800), both at least 1.
+std::pair<int, int> parseSize(std::string_view value) {
+	const auto x = value.find('x');
+
+	int width = 0;
+	int height = 0;
+
+	if(x != std::string_view::npos) {
+		const auto* begin = value.data();
+		const auto* mid = begin + x;
+		const auto* end = begin + value.size();
+
+		const auto [widthEnd, widthError] = std::from_chars(begin, mid, width);
+		const auto [heightEnd, heightError] = std::from_chars(mid + 1, end, height);
+
+		if(
+			widthError == std::errc() && widthEnd == mid &&
+			heightError == std::errc() && heightEnd == end &&
+			width > 0 && height > 0
+		) return {width, height};
+	}
+
+	throw std::invalid_argument("--headless-size expects WxH (e.g. 1280x800), got '" + std::string(value) + "'");
 }
 
 const char* backendName(Backend backend) {
@@ -159,7 +186,7 @@ Options readArguments(osg::ArgumentParser& arguments) {
 			continue;
 		}
 
-		if(name == "--headless-frames" || name == "--headless-out") {
+		if(name == "--headless-frames" || name == "--headless-out" || name == "--headless-size") {
 			std::string optionValue(value);
 
 			arguments.remove(index);
@@ -173,6 +200,8 @@ Options readArguments(osg::ArgumentParser& arguments) {
 			}
 
 			if(name == "--headless-frames") options.frames = parseFrames(optionValue);
+
+			else if(name == "--headless-size") std::tie(options.width, options.height) = parseSize(optionValue);
 
 			else options.output = optionValue;
 

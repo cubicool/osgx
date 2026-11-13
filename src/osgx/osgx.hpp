@@ -17,6 +17,8 @@
 #include "Light.hpp"
 #include "Shadow.hpp"
 #include "GBuffer.hpp"
+#include "SSAO.hpp"
+#include "CORTAO.hpp"
 #include "Aura.hpp"
 #include "Gizmos.hpp"
 #include "Headless.hpp"

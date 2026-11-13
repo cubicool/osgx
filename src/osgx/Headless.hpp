@@ -39,8 +39,9 @@ struct Options {
 	int height = 600;
 };
 
-// Consume --headless [egl|native], --headless-frames N, and --headless-out FILE. Backend aliases
-// are auto, glx, wgl, and cocoa. Throws std::invalid_argument for malformed headless options.
+// Consume --headless [egl|native], --headless-frames N, --headless-out FILE, and --headless-size WxH.
+// Backend aliases are auto, glx, wgl, and cocoa. Throws std::invalid_argument for malformed headless
+// options.
 Options readArguments(osg::ArgumentParser& arguments);
 
 // Create an offscreen pbuffer. AUTO selects EGL when osgx was built with OSGX_EGL and otherwise

@@ -136,6 +136,8 @@ by concern:
   (`LambertianBake`, `LambertianCubeReadback`).
 - `osgx/GBuffer.hpp` — generic deferred G-buffer camera setup (`GBuffer::create()`), the primitive
   `osgx::PBRGBuffer` builds on.
+- `osgx/SSAO.hpp` — hemisphere-kernel screen-space ambient occlusion (`SSAO::create()`) over any
+  G-buffer's view-space normal + position channels.
 - `osgx.hpp` — convenience umbrella that includes all of the above (but not `osgx::debug` or
   `osgx::imgui` — see [Documentation](#documentation) below).
 - `osgx/Version.hpp` — `OSGX_VERSION_MAJOR`/`MINOR`/`PATCH` and the `OSGX_VERSION` string, generated

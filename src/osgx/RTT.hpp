@@ -103,7 +103,7 @@ private:
 
 // Internal only - NOT part of the public API, unlike AttachmentList above. AttachmentList/
 // HookList are things a caller constructs directly (an options struct field, an attach() call);
-// TextureInput only ever gets built inside Aura.cpp/GBuffer.cpp/TemporalEdge.cpp's own private
+// TextureInput only ever gets built inside Aura.cpp/SSAO.cpp/TemporalEdge.cpp's own private
 // fullscreen-pass helpers to bind their sampler inputs, so it stays un-bound to Python - no
 // caller-facing get/set contract to keep honest, just three copies of the same loop collapsed to
 // one. std::span, not std::vector (unlike AttachmentList/HookList above) - every real call site
@@ -122,7 +122,7 @@ struct TextureInput {
 
 // Binds every entry in `inputs` onto `stateSet`: setTextureAttributeAndModes(unit, texture, ON)
 // plus an addUniform(uniformName, int(unit)) so the shader's sampler declaration resolves to the
-// right unit. Previously reimplemented as a private loop in Aura.cpp, GBuffer.cpp, and
+// right unit. Previously reimplemented as a private loop in Aura.cpp, SSAO.cpp, and
 // TemporalEdge.cpp.
 void bindTextureInputs(osg::StateSet* stateSet, std::span<const TextureInput> inputs);
 

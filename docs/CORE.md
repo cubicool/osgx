@@ -674,25 +674,28 @@ reasoning as `Shadow.hpp` above.
     its own fixed view/projection instead (`ShadowMap::create()` builds its own camera directly
     rather than going through this helper, since it's depth-only with no color attachments at all).
 
-- `SSAO` — hemisphere-kernel screen-space ambient occlusion, reading any G-buffer's view-space
-  normal + position channels directly and nothing else (glTF-material-shaped, hand-authored, or
-  otherwise). Ported from `OpenSceneGraph.py/examples/pyosg-lighting/11-sketchfab.py`'s proven-live
-  implementation: a 16-sample hemisphere kernel + a small tiled tangent-space noise-rotation
-  texture, a raw RTT pass, then a small box-blur RTT pass denoising it. `radius`/`bias` are live
-  `osg::Uniform`s — set them at any time, no pass rebuild needed. `aoTexture` (the blurred,
-  single-channel `GL_R8` result) plugs directly into `PBRLightingPass::Options::aoTexture` or any
-  other consumer wanting a generic occlusion mask.
-  - `SSAO::create(normalTexture, positionTexture, projectionMatrix, width, height, radius=0.5, bias=0.02)`
-    — `projectionMatrix` is a caller-owned uniform this pass reads every draw; keep it refreshed
-    from the same per-frame callback that updates `PBRLightingPass`'s own view-matrix uniforms
-    (see `PBRLightingPass::update()` below for why it must be a `PRE_RENDER` `preDrawCallback`).
-    `radius`/`bias` are scale-dependent (a sane radius is a small fraction of the scene's own
-    bounding radius, not a fixed constant) — compute them from the scene being rendered.
-
 See `examples/osgx-gbuffer.cpp` for the full deferred pipeline (`PBRGBuffer` +
 `PBRLightingPass`, both built on this), live SSAO wired into `PBRLightingPass::Options::aoTexture`
 with live ImGui radius/bias sliders, and a channel-by-channel G-buffer visualizer (press `0`-`6`,
 `6` being SSAO's own output). Python: `osgx.GBuffer`/`osgx.SSAO`.
+
+## `osgx/SSAO.hpp`
+
+`SSAO` — hemisphere-kernel screen-space ambient occlusion, reading any G-buffer's view-space
+normal + position channels directly and nothing else (glTF-material-shaped, hand-authored, or
+otherwise). Ported from `OpenSceneGraph.py/examples/pyosg-lighting/11-sketchfab.py`'s proven-live
+implementation: a 16-sample hemisphere kernel + a small tiled tangent-space noise-rotation
+texture, a raw RTT pass, then a small box-blur RTT pass denoising it. `radius`/`bias` are live
+`osg::Uniform`s — set them at any time, no pass rebuild needed. `aoTexture` (the blurred,
+single-channel `GL_R8` result) plugs directly into `PBRLightingPass::Options::aoTexture` or any
+other consumer wanting a generic occlusion mask.
+
+- `SSAO::create(normalTexture, positionTexture, projectionMatrix, width, height, radius=0.5, bias=0.02)`
+  — `projectionMatrix` is a caller-owned uniform this pass reads every draw; keep it refreshed
+  from the same per-frame callback that updates `PBRLightingPass`'s own view-matrix uniforms
+  (see `PBRLightingPass::update()` below for why it must be a `PRE_RENDER` `preDrawCallback`).
+  `radius`/`bias` are scale-dependent (a sane radius is a small fraction of the scene's own
+  bounding radius, not a fixed constant) — compute them from the scene being rendered.
 
 ## `osgx/PBRScene.hpp`
 

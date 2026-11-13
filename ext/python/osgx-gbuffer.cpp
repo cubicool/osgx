@@ -1,5 +1,6 @@
 #include "osgx-python.hpp"
 #include "osgx/GBuffer.hpp"
+#include "osgx/SSAO.hpp"
 
 namespace osgx_python {
 

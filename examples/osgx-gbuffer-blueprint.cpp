@@ -31,7 +31,7 @@
 // that blur can't happen inside this single fullscreen-quad fragment shader - it needs a real
 // spatial blur, which means sampling a PRE-blurred texture, not more per-pixel math. Likely
 // approach: render the edge/contour/scan mask(s) to a small offscreen target (same shape as
-// osgx::SSAO's rawCamera->blurCamera two-pass split, GBuffer.hpp), box/gaussian-blur it in a
+// osgx::SSAO's rawCamera->blurCamera two-pass split, SSAO.hpp), box/gaussian-blur it in a
 // second RTT pass, then add the blurred result back as a soft glow ON TOP OF the existing sharp
 // lines (not replacing them) in this shader. A genuinely separate future pass, not a tweak to the
 // current one.

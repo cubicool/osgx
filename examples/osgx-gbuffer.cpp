@@ -13,10 +13,14 @@
 // pyosg-mrt.py's own visualizeMode toggle uses, confirming each channel independently instead
 // of only ever looking at the final composite.
 //
-// Also the first live consumer of osgx::SSAO (GBuffer.hpp) - the generic hemisphere-kernel
+// Also the first live consumer of osgx::SSAO (SSAO.hpp) - the generic hemisphere-kernel
 // screen-space AO pass ported from OpenSceneGraph.py/examples/pyosg-lighting/11-sketchfab.py's
 // hand-rolled one. Feeds PBRLightingPass::Options::aoTexture, the same seam a caller's own
 // hand-built SSAO (or a baked lightmap, or nothing) would use instead.
+//
+// osgx::CORTAO runs alongside SSAO from the same inputs: '7' shows its filtered output, '8' its raw
+// (unfiltered) output, '9' its bent normals, and 'o' swaps which of SSAO/filtered CORTAO feeds the
+// lighting pass.
 //
 // Also proves osgx::shadow's 3 correctness fixes (same as osgx-shadow.cpp - see that file's own
 // header comment for the full writeup) inside the deferred G-buffer pipeline specifically: the
@@ -31,6 +35,9 @@
 #include "osgx/Callbacks.hpp"
 #include "osgx/Core.hpp"
 #include "osgx/GBuffer.hpp"
+#include "osgx/SSAO.hpp"
+
+#include "osgx/CORTAO.hpp"
 #include "osgx/Gizmos.hpp"
 #include "osgx/IBL.hpp"
 #include "osgx/ImGui.hpp"
@@ -64,6 +71,7 @@ OSGX_DISABLE_WARNINGS
 OSGX_ENABLE_WARNINGS
 
 #include <algorithm>
+#include <array>
 #include <filesystem>
 #include <iostream>
 #include <string>
@@ -158,18 +166,29 @@ public:
 		osg::Camera* debugCamera,
 		osg::Uniform* channelModeUniform,
 		const osgx::PBRGBuffer& gbuffer,
-		osg::Texture2D* aoTexture=nullptr
+		osg::Texture2D* aoTexture=nullptr,
+		osg::Texture2D* cortaoTexture=nullptr,
+		osg::Texture2D* cortaoRawTexture=nullptr,
+		osg::Texture2D* cortaoBentNormalTexture=nullptr
 	):
 		_lightingCamera(lightingCamera),
 		_debugCamera(debugCamera),
 		_channelModeUniform(channelModeUniform),
 		_gbuffer(gbuffer),
-		_aoTexture(aoTexture) {}
+		_aoTexture(aoTexture),
+		_cortaoTexture(cortaoTexture),
+		_cortaoRawTexture(cortaoRawTexture),
+		_cortaoBentNormalTexture(cortaoBentNormalTexture) {}
 
 	bool handle(const osgGA::GUIEventAdapter& ea, osgGA::GUIActionAdapter&) override {
 		if(ea.getEventType() != osgGA::GUIEventAdapter::KEYDOWN) return false;
 
-		switch(ea.getKey()) {
+		return selectKey(ea.getKey());
+	}
+
+	// The view for key '0'-'9' (see the file header); false for any other key.
+	bool selectKey(int key) {
+		switch(key) {
 			case '0': select(-1, 0, "lit composite"); return true;
 			case '1': select(0, 0, "albedo"); return true;
 			case '2': select(1, 1, "view-space normal"); return true;
@@ -177,6 +196,9 @@ public:
 			case '4': select(3, 0, "emissive"); return true;
 			case '5': select(4, 2, "depth"); return true;
 			case '6': if(_aoTexture.valid()) { select(5, 2, "SSAO"); } return true;
+			case '7': if(_cortaoTexture.valid()) { select(6, 2, "CORTAO"); } return true;
+			case '8': if(_cortaoRawTexture.valid()) { select(7, 2, "CORTAO (raw)"); } return true;
+			case '9': if(_cortaoBentNormalTexture.valid()) { select(8, 1, "CORTAO bent normal"); } return true;
 			default: return false;
 		}
 	}
@@ -198,6 +220,9 @@ private:
 				case 3: tex = _gbuffer.emissiveTexture; break;
 				case 4: tex = _gbuffer.depthTexture; break;
 				case 5: tex = _aoTexture.get(); break;
+				case 6: tex = _cortaoTexture.get(); break;
+				case 7: tex = _cortaoRawTexture.get(); break;
+				case 8: tex = _cortaoBentNormalTexture.get(); break;
 				default: break;
 			}
 
@@ -215,6 +240,9 @@ private:
 	osg::observer_ptr<osg::Uniform> _channelModeUniform;
 	osgx::PBRGBuffer _gbuffer;
 	osg::observer_ptr<osg::Texture2D> _aoTexture;
+	osg::observer_ptr<osg::Texture2D> _cortaoTexture;
+	osg::observer_ptr<osg::Texture2D> _cortaoRawTexture;
+	osg::observer_ptr<osg::Texture2D> _cortaoBentNormalTexture;
 };
 
 // Floor: a plain procedural quad, deliberately NOT sharing the model's G-buffer Program
@@ -377,8 +405,54 @@ int main(int argc, char** argv) {
 	args.getApplicationUsage()->addCommandLineOption(
 		"--animation", "Play the model's animation (default: hold the first frame)"
 	);
+	args.getApplicationUsage()->addCommandLineOption(
+		"--view <N>", "Initial view, 0-9 (same as pressing that key; default 0)"
+	);
+	args.getApplicationUsage()->addCommandLineOption(
+		"--ao <ssao|cortao>", "AO source of the lighting pass (default ssao; 'o' toggles)"
+	);
+	args.getApplicationUsage()->addCommandLineOption(
+		"--cortao-samples <N>", "CORTAO sample count (default 16)"
+	);
+	args.getApplicationUsage()->addCommandLineOption(
+		"--cortao-filter <none|sparse|tiled>", "CORTAO filter mode (default tiled)"
+	);
 
 	std::string hdrPath, envPath;
+
+	int initialView = 0;
+
+	args.read("--view", initialView);
+
+	std::string aoSource = "ssao";
+	unsigned int cortaoSamples = 16;
+
+	std::string cortaoFilterName = "tiled";
+
+	args.read("--ao", aoSource);
+	args.read("--cortao-samples", cortaoSamples);
+	args.read("--cortao-filter", cortaoFilterName);
+
+	auto cortaoFilter = osgx::CORTAO::Filter::TILED;
+
+	if(cortaoFilterName == "none") cortaoFilter = osgx::CORTAO::Filter::NONE;
+
+	else if(cortaoFilterName == "sparse") cortaoFilter = osgx::CORTAO::Filter::SPARSE;
+
+	else if(cortaoFilterName != "tiled") {
+		std::cerr
+			<< "osgx-gbuffer: --cortao-filter expects none, sparse or tiled, got " << cortaoFilterName
+			<< std::endl
+		;
+
+		return 1;
+	}
+
+	if(aoSource != "ssao" && aoSource != "cortao") {
+		std::cerr << "osgx-gbuffer: --ao expects ssao or cortao, got " << aoSource << std::endl;
+
+		return 1;
+	}
 
 	const bool animation = args.read("--animation");
 	const bool haveHdr = args.read("--hdr", hdrPath);
@@ -543,7 +617,7 @@ int main(int argc, char** argv) {
 	// object; see osgx::DepthProjectionCallback's own comment in Projection.hpp). Installed as
 	// the geometry camera's own postDrawCallback, so it captures the real osg::State matrix right
 	// after that camera draws, well before ssao.rawCamera consumes it below. Named "projectionMatrix"
-	// to match SSAO_FRAGMENT_SHADER_SRC's own uniform declaration (GBuffer.cpp).
+	// to match SSAO_FRAGMENT_SHADER_SRC's own uniform declaration (SSAO.cpp).
 	auto gbufferProjection = osgx::make_ref<osgx::DepthProjectionCallback>("projectionMatrix");
 
 	gbuffer.gbuffer.camera->setPostDrawCallback(gbufferProjection.get());
@@ -566,6 +640,30 @@ int main(int argc, char** argv) {
 
 	if(!ssao.valid()) {
 		std::cerr << "Failed to build the SSAO pass" << std::endl;
+
+		return 1;
+	}
+
+	// Same inputs as ssao, including the same captured projection uniform. maxRadius is a
+	// world-space hemisphere radius, scaled off the model's bound like ssaoRadius.
+	osgx::CORTAO::Options cortaoOptions;
+
+	cortaoOptions.maxRadius = ssaoRadius;
+	cortaoOptions.sampleCount = cortaoSamples;
+	cortaoOptions.filter = cortaoFilter;
+	cortaoOptions.bentNormal = true;
+
+	auto cortao = osgx::CORTAO::create(
+		gbuffer.normalTexture,
+		gbuffer.positionTexture,
+		gbufferProjection->getProjection(),
+		WIDTH,
+		HEIGHT,
+		cortaoOptions
+	);
+
+	if(!cortao.valid()) {
+		std::cerr << "Failed to build the CORTAO pass" << std::endl;
 
 		return 1;
 	}
@@ -642,6 +740,10 @@ int main(int argc, char** argv) {
 	root->addChild(gbuffer.gbuffer.camera);
 	root->addChild(ssao.rawCamera);
 	root->addChild(ssao.blurCamera);
+	// Two compute dispatches, not cameras: drawn in the main camera's own render stage (RenderBins
+	// -2/-1), which runs after every PRE_RENDER camera above and before the POST_RENDER
+	// lighting.node, so add order here doesn't matter.
+	root->addChild(cortao.node);
 	root->addChild(lighting.node);
 	root->addChild(gizmos);
 	// Shadow-frustum visualization - composed here, same as `gizmos` itself, NOT built into either
@@ -659,13 +761,61 @@ int main(int argc, char** argv) {
 	viewer.setSceneData(root);
 	viewer.setCameraManipulator(new osgGA::TrackballManipulator());
 	viewer.addEventHandler(new osgViewer::StatsHandler());
-	viewer.addEventHandler(new VisualizeModeHandler(
+	auto visualizeMode = osgx::make_ref<VisualizeModeHandler>(
 		dynamic_cast<osg::Camera*>(lighting.node.get()),
 		debugCamera,
 		debugChannelMode,
 		gbuffer,
-		ssao.aoTexture.get()
+		ssao.aoTexture.get(),
+		cortao.aoTexture.get(),
+		cortao.rawAoTexture.get(),
+		cortao.bentNormalTexture.get()
+	);
+
+	viewer.addEventHandler(visualizeMode);
+
+	if(initialView != 0 && !visualizeMode->selectKey('0' + initialView)) {
+		std::cerr << "osgx-gbuffer: --view expects 0-9, got " << initialView << std::endl;
+
+		return 1;
+	}
+
+	// 'o' rebinds the lighting pass's "osgx::gbuffer.ao" texture unit (where
+	// PBRLightingPass::create() bound ssao.aoTexture) to either AO source.
+	viewer.addEventHandler(new osgx::LambdaKeyHandler(
+		'o',
+		[
+			lightingSS = lighting.node->getOrCreateStateSet(),
+			unit = osgx::Library::instance().bindings().get("osgx::gbuffer.ao"),
+			ssaoTexture = ssao.aoTexture,
+			cortaoTexture = cortao.aoTexture
+		](const osgGA::GUIEventAdapter&, osgGA::GUIActionAdapter&) {
+			const bool useCortao = lightingSS->getTextureAttribute(
+				unit, osg::StateAttribute::TEXTURE
+			) != cortaoTexture.get();
+
+			lightingSS->setTextureAttributeAndModes(
+				unit,
+				useCortao ? cortaoTexture.get() : ssaoTexture.get(),
+				osg::StateAttribute::ON
+			);
+
+			std::cout
+				<< "osgx-gbuffer: lighting AO source = " << (useCortao ? "CORTAO" : "SSAO")
+				<< std::endl
+			;
+
+			return true;
+		}
 	));
+
+	if(aoSource == "cortao") {
+		lighting.node->getOrCreateStateSet()->setTextureAttributeAndModes(
+			osgx::Library::instance().bindings().get("osgx::gbuffer.ao"),
+			cortao.aoTexture.get(),
+			osg::StateAttribute::ON
+		);
+	}
 	viewer.getCamera()->setClearColor(osg::Vec4f(48.0f / 255.0f, 53.0f / 255.0f, 66.0f / 255.0f, 1.0f));
 
 	// Ground-truth dump: 'w' writes the shadow camera's own depth texture (what it actually
@@ -726,6 +876,8 @@ int main(int argc, char** argv) {
 	std::cout
 		<< "osgx-gbuffer: deferred PBRGBuffer::create() + PBRLightingPass::create()" << std::endl
 		<< " 0=lit composite (default) 1=albedo 2=normal 3=material 4=emissive 5=depth 6=SSAO" << std::endl
+		<< " 7=CORTAO 8=CORTAO (raw) 9=CORTAO bent normal" << std::endl
+		<< " o=swap the lighting pass's AO source between SSAO and CORTAO" << std::endl
 		<< " w=dump the shadow camera's own depth texture to osgx-gbuffer-shadow-depth.png" << std::endl
 		<< " c=cycle glTF COLOR_0 vertex color: normal/forced-off/forced-on (A/B comparison, temporary)"
 		<< std::endl
@@ -841,6 +993,62 @@ int main(int argc, char** argv) {
 			ssao.radius->set(radius);
 			ssao.bias->set(bias);
 		}
+	}, osgx::imgui::SectionOptions::create(false, true));
+
+	// Every slider is a live uniform except Samples and the filter checkboxes, which are defines:
+	// OSG compiles one Program per combination the first time it's used, so expect a hitch on each
+	// new one. '7'/'8'/'9' show the filtered/raw/bent-normal outputs, 'o' lights with CORTAO.
+	gui->addSection("CORTAO", [cortao](osg::RenderInfo&) mutable {
+		const auto slider = [](osg::Uniform* uniform, const char* label, float min, float max) {
+			float value = 0.0f;
+
+			uniform->get(value);
+
+			if(ImGui::SliderFloat(label, &value, min, max)) uniform->set(value);
+		};
+
+		slider(cortao.maxRadius, "Max Radius", 0.01f, 2.0f);
+		slider(cortao.maxScreenspaceRadiusHeightRatio, "Max Screen Radius", 0.05f, 0.5f);
+		slider(cortao.mipBias, "Mip Bias", -8.0f, 0.0f);
+		slider(cortao.maxSlopeCompensation, "Max Slope Comp.", 1.0f, 8.0f);
+		slider(cortao.backfaceThreshold, "Backface Threshold", 0.0f, 1.0f);
+		slider(cortao.backfaceBoost, "Backface Boost", 0.0f, 1.0f);
+
+		static constexpr std::array<unsigned int, 7> SAMPLE_COUNTS = {4, 6, 8, 12, 16, 24, 32};
+
+		int index = 0;
+
+		for(std::size_t i = 0; i < SAMPLE_COUNTS.size(); i++) {
+			if(SAMPLE_COUNTS[i] == cortao.getSampleCount()) index = static_cast<int>(i);
+		}
+
+		const auto label = std::to_string(SAMPLE_COUNTS[static_cast<std::size_t>(index)]);
+		const int last = static_cast<int>(SAMPLE_COUNTS.size()) - 1;
+
+		if(ImGui::SliderInt("Samples", &index, 0, last, label.c_str())) {
+			cortao.setSampleCount(SAMPLE_COUNTS[static_cast<std::size_t>(index)]);
+		}
+
+		ImGui::Separator();
+
+		static constexpr const char* FILTERS[] = {"None", "Sparse (CORTAO)", "Tiled 4x4"};
+
+		int filter = static_cast<int>(cortao.getFilter());
+
+		if(ImGui::Combo("Filter", &filter, FILTERS, 3)) {
+			cortao.setFilter(static_cast<osgx::CORTAO::Filter>(filter));
+		}
+
+		if(cortao.getFilter() == osgx::CORTAO::Filter::SPARSE) {
+			bool largeFilter = cortao.getLargeFilter();
+			bool symmetry = cortao.getFilterSymmetry();
+
+			if(ImGui::Checkbox("Large Filter (13 taps)", &largeFilter)) cortao.setLargeFilter(largeFilter);
+			if(ImGui::Checkbox("Filter Symmetry", &symmetry)) cortao.setFilterSymmetry(symmetry);
+		}
+
+		slider(cortao.filterDepthSensitivity, "Filter Depth Sens.", 0.0f, 2048.0f);
+		slider(cortao.filterNormalSensitivity, "Filter Normal Sens.", 0.0f, 64.0f);
 	}, osgx::imgui::SectionOptions::create(false, true));
 #endif
 

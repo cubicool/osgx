@@ -69,7 +69,7 @@
 // pipeline bug: it works correctly on models that actually carry one, e.g. the Khronos
 // `CompareAmbientOcclusion` sample (purpose-built for exactly this A/B) or `DamagedHelmet`. `aoTex`
 // (gated behind `OSGX_PBR_AO`, set automatically when `PBRLightingPass::Options::aoTexture` is
-// non-null) is real-time screen-space AO from `osgx::SSAO::create()` (GBuffer.hpp) - catches
+// non-null) is real-time screen-space AO from `osgx::SSAO::create()` (SSAO.hpp) - catches
 // self/contact occlusion the static bake can't (this model resting against itself, or against
 // nothing else in this shadowless/lightless scratchpad, but the mechanism is general). Combining
 // both into one `hatch *= mix(1.0, ao, aoMask);` mask means a crevice reads as fully occluded if
@@ -114,6 +114,7 @@
 
 #include "osgx/Core.hpp"
 #include "osgx/GBuffer.hpp"
+#include "osgx/SSAO.hpp"
 #include "osgx/gltf/Environment.hpp"
 #include "osgx/gltf/SimplePlayer.hpp"
 #include "osgx/PBRDeferred.hpp"
@@ -677,7 +678,7 @@ int main(int argc, char** argv) {
 	// object; see osgx::DepthProjectionCallback's own comment in Projection.hpp). Installed as
 	// the geometry camera's own postDrawCallback, so it captures the real osg::State matrix right
 	// after that camera draws, well before ssao.rawCamera consumes it below. Named "projectionMatrix"
-	// to match SSAO_FRAGMENT_SHADER_SRC's own uniform declaration (GBuffer.cpp).
+	// to match SSAO_FRAGMENT_SHADER_SRC's own uniform declaration (SSAO.cpp).
 	auto gbufferProjection = osgx::make_ref<osgx::DepthProjectionCallback>("projectionMatrix");
 
 	gbuffer.gbuffer.camera->setPostDrawCallback(gbufferProjection.get());

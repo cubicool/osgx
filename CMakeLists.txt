@@ -233,6 +233,7 @@ add_library(osgx SHARED
 	src/CameraActions.cpp
 	src/CaptureCubeMap.cpp
 	src/CompressedTexture.cpp
+	src/CORTAO.cpp
 	src/Cursor.cpp
 	src/debug/Annotation.cpp
 	src/debug/Profiler.cpp
@@ -264,6 +265,7 @@ add_library(osgx SHARED
 	src/Shapes.cpp
 	src/Shader.cpp
 	src/Skinning.cpp
+	src/SSAO.cpp
 	# src/TemporalEdge.cpp
 )
 add_library(osgx::osgx ALIAS osgx)
@@ -282,9 +284,11 @@ target_sources(osgx PUBLIC
 	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/IBL.hpp>"
 	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/CaptureCubeMap.hpp>"
 	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/CompressedTexture.hpp>"
+	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/CORTAO.hpp>"
 	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/Cursor.hpp>"
 	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/Environment.hpp>"
 	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/GBuffer.hpp>"
+	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/SSAO.hpp>"
 	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/GGXPrefilter.hpp>"
 	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/LambertianBake.hpp>"
 	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/Library.hpp>"

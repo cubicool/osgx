@@ -2,7 +2,7 @@
 
 // Options every osgx example accepts, and the run() that applies them:
 //
-//   --headless [egl|native], --headless-frames N, --headless-out FILE
+//   --headless [egl|native], --headless-frames N, --headless-out FILE, --headless-size WxH
 //                     Render offscreen (osgx::headless::readArguments()). Any osgx::imgui::Widget
 //                     the example installed is removed first, so the image shows only the scene;
 //                     --headless-imgui keeps it.
@@ -92,6 +92,7 @@ inline Options readArguments(osg::ArgumentParser& args) {
 	usage->addCommandLineOption("--headless [egl|native]", "Render offscreen (no window)");
 	usage->addCommandLineOption("--headless-frames <N>", "Frames to render headless (default 10)");
 	usage->addCommandLineOption("--headless-out <file>", "Write the last headless frame to <file>");
+	usage->addCommandLineOption("--headless-size <WxH>", "Headless framebuffer size (default 800x600)");
 	usage->addCommandLineOption("--headless-imgui", "Keep the example's ImGui panel when headless");
 	usage->addCommandLineOption(
 		"--profile",
