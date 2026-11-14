@@ -66,7 +66,7 @@ struct GTAO {
 	osg::ref_ptr<ComputePass> prefilterPass;
 	osg::ref_ptr<ComputePass> mainPass;
 	// The intermediate denoise passes (ping-pong between `workingTextures`) and the last one.
-	std::array<osg::ref_ptr<ComputePass>, 2> denoisePasses;
+	std::array<osg::ref_ptr<ComputePass>, 2> intermediateDenoisePasses;
 	osg::ref_ptr<ComputePass> finalDenoisePass;
 
 	// The result to consume.

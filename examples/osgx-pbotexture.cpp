@@ -31,7 +31,7 @@ OSGX_ENABLE_WARNINGS
 int main(int argc, char** argv) {
 	osg::ArgumentParser args(&argc, argv);
 
-	const auto options = example::readArguments(args);
+	auto options = example::readArguments(args);
 
 	const std::string path = argc > 1 ? argv[1] : std::string(getenv("HOME")) + "/dev/mbew/data/small.webm";
 	mbew::Context video = mbew::create(path);
@@ -99,7 +99,7 @@ int main(int argc, char** argv) {
 	viewer.setSceneData(geode);
 	viewer.setCameraManipulator(new osgGA::TrackballManipulator);
 	viewer.addEventHandler(new osgViewer::StatsHandler);
-	viewer.setUpViewInWindow(80, 80, 800, 800);
+	example::setUpWindow(viewer, options, 80, 80, 800, 800);
 
 #ifdef OSGX_IMGUI
 	auto* gui = new osgx::imgui::Widget(viewer);

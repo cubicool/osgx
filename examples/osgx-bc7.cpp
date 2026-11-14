@@ -30,7 +30,7 @@ OSGX_ENABLE_WARNINGS
 int main(int argc, char* argv[]) {
 	osg::ArgumentParser args(&argc, argv);
 
-	const auto options = example::readArguments(args);
+	auto options = example::readArguments(args);
 
 	if(argc != 2) {
 		std::cerr << "Usage: " << argv[0] << " file.dds" << std::endl;
@@ -79,7 +79,7 @@ int main(int argc, char* argv[]) {
 	viewer.setSceneData(geode);
 	viewer.setCameraManipulator(new osgGA::TrackballManipulator);
 	viewer.addEventHandler(new osgViewer::StatsHandler);
-	viewer.setUpViewInWindow(80, 80, 1280, 720);
+	example::setUpWindow(viewer, options, 80, 80, 1280, 720);
 
 	return example::run(viewer, options);
 }

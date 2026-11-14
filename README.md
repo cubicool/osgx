@@ -138,6 +138,12 @@ by concern:
   `osgx::PBRGBuffer` builds on.
 - `osgx/SSAO.hpp` — hemisphere-kernel screen-space ambient occlusion (`SSAO::create()`) over any
   G-buffer's view-space normal + position channels.
+- `osgx/GTAO.hpp` — horizon-based Ground Truth Ambient Occlusion (`GTAO::create()`), a GLSL port
+  of Intel's XeGTAO, with the same inputs and output as `SSAO`.
+- `osgx/CORTAO.hpp` — Circular Occluder Ray-Traced Ambient Occlusion (`CORTAO::create()`), the
+  CORTAO reference shaders ported to GLSL, with the same inputs and output as `SSAO`.
+- `osgx/ComputePass.hpp` — `ComputePass`, one compute dispatch plus the memory barrier its
+  consumers need; the building block of `GTAO` and `CORTAO`.
 - `osgx.hpp` — convenience umbrella that includes all of the above (but not `osgx::debug` or
   `osgx::imgui` — see [Documentation](#documentation) below).
 - `osgx/Version.hpp` — `OSGX_VERSION_MAJOR`/`MINOR`/`PATCH` and the `OSGX_VERSION` string, generated

@@ -274,14 +274,14 @@ void main() {
 int main(int argc, char** argv) {
 	osg::ArgumentParser args(&argc, argv);
 
-	const auto options = example::readArguments(args);
+	auto options = example::readArguments(args);
 
 	auto lib = osgx::initialize();
 
 	osgViewer::Viewer viewer;
 
 	viewer.setThreadingModel(osgViewer::Viewer::SingleThreaded);
-	viewer.setUpViewInWindow(50, 50, WIDTH, HEIGHT);
+	example::setUpWindow(viewer, options, 50, 50, WIDTH, HEIGHT);
 
 	auto shape = osgx::make_ref<osgx::Icosahedron>(osg::Vec3(), 1.8f);
 

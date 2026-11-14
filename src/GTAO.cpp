@@ -335,8 +335,8 @@ void GTAO::setDenoisePasses(unsigned int passes) {
 	// Even without denoising a single last pass runs, to write the outputs (blur disabled).
 	const unsigned int intermediatePasses = std::max(_denoisePasses, 1u) - 1;
 
-	for(unsigned int i = 0; i < denoisePasses.size(); i++) {
-		denoisePasses[i]->setNodeMask(i < intermediatePasses ? ~0u : 0u);
+	for(unsigned int i = 0; i < intermediateDenoisePasses.size(); i++) {
+		intermediateDenoisePasses[i]->setNodeMask(i < intermediatePasses ? ~0u : 0u);
 	}
 
 	// The main pass writes workingTextures[0]; each intermediate pass flips to the other one.
@@ -494,7 +494,7 @@ GTAO GTAO::create(
 		denoiseSource(options.bentNormal, false)
 	);
 
-	for(std::size_t i = 0; i < result.denoisePasses.size(); i++) {
+	for(std::size_t i = 0; i < result.intermediateDenoisePasses.size(); i++) {
 		auto pass = osgx::make_ref<ComputePass>("osgx_gtao_DenoisePass" + std::to_string(i), denoiseProgram);
 
 		pass->setComputeGroupsFor(width, height, DENOISE_PIXELS_PER_GROUP_X, DENOISE_PIXELS_PER_GROUP_Y);
@@ -508,7 +508,7 @@ GTAO GTAO::create(
 			static_cast<GLenum>(workingFormat)
 		);
 
-		result.denoisePasses[i] = pass;
+		result.intermediateDenoisePasses[i] = pass;
 	}
 
 	result.finalDenoisePass = new ComputePass(
@@ -537,8 +537,8 @@ GTAO GTAO::create(
 
 	result.node->addChild(result.prefilterPass);
 	result.node->addChild(result.mainPass);
-	result.node->addChild(result.denoisePasses[0]);
-	result.node->addChild(result.denoisePasses[1]);
+	result.node->addChild(result.intermediateDenoisePasses[0]);
+	result.node->addChild(result.intermediateDenoisePasses[1]);
 	result.node->addChild(result.finalDenoisePass);
 
 	// Binds the final pass's input texture.

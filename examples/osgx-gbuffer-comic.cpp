@@ -551,7 +551,7 @@ void main() {
 int main(int argc, char** argv) {
 	osg::ArgumentParser args(&argc, argv);
 
-	const auto options = example::readArguments(args);
+	auto options = example::readArguments(args);
 	auto lib = osgx::initialize(args);
 
 	args.getApplicationUsage()->setCommandLineUsage(
@@ -605,7 +605,7 @@ int main(int argc, char** argv) {
 	// see osgx::imgui::Widget's own class comment; harmless to set unconditionally even when
 	// OSGX_IMGUI is off.
 	viewer.setThreadingModel(osgViewer::Viewer::SingleThreaded);
-	viewer.setUpViewInWindow(50, 50, WIDTH, HEIGHT);
+	example::setUpWindow(viewer, options, 50, 50, WIDTH, HEIGHT);
 
 	osgDB::Registry::instance()->addFileExtensionAlias("glb", "gltf");
 

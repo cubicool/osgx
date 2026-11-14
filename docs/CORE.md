@@ -675,9 +675,12 @@ reasoning as `Shadow.hpp` above.
     rather than going through this helper, since it's depth-only with no color attachments at all).
 
 See `examples/osgx-gbuffer.cpp` for the full deferred pipeline (`PBRGBuffer` +
-`PBRLightingPass`, both built on this), live SSAO wired into `PBRLightingPass::Options::aoTexture`
-with live ImGui radius/bias sliders, and a channel-by-channel G-buffer visualizer (press `0`-`6`,
-`6` being SSAO's own output). Python: `osgx.GBuffer`/`osgx.SSAO`.
+`PBRLightingPass`, both built on this), with SSAO, GTAO and CORTAO all running from the same
+G-buffer and live ImGui controls for each. `o` cycles which one feeds
+`PBRLightingPass::Options::aoTexture` (or `--ao ssao|gtao|cortao`), and a channel-by-channel
+visualizer shows every stage: `0` the lit composite, `1`-`5` the G-buffer channels, `6` SSAO, `g`/`G` GTAO and its bent normals,
+`7`/`8`/`9` CORTAO filtered/raw/bent normals (or `--view <key>`). Python: `osgx.GBuffer`/
+`osgx.SSAO`/`osgx.GTAO`/`osgx.CORTAO`.
 
 ## `osgx/SSAO.hpp`
 
@@ -696,6 +699,116 @@ other consumer wanting a generic occlusion mask.
   (see `PBRLightingPass::update()` below for why it must be a `PRE_RENDER` `preDrawCallback`).
   `radius`/`bias` are scale-dependent (a sane radius is a small fraction of the scene's own
   bounding radius, not a fixed constant) — compute them from the scene being rendered.
+
+## `osgx/ComputePass.hpp`
+
+`ComputePass` — one compute dispatch followed by the `glMemoryBarrier()` its consumers need. The
+compute sibling of `RTT`: it IS-A `osg::DispatchCompute`, so it goes into the scene graph like any
+drawable and every `DispatchCompute` setter stays available. OSG 3.6 has no `StateAttribute` for
+memory barriers, and without one the next pass (or draw) may read stale image contents, a silent
+failure that varies by driver and timing; `ComputePass` issues the barrier right after its dispatch.
+
+- `ComputePass(name, program=nullptr, barriers=TEXTURE_BARRIERS)` — `TEXTURE_BARRIERS` is
+  `GL_TEXTURE_FETCH_BARRIER_BIT | GL_SHADER_IMAGE_ACCESS_BARRIER_BIT`, what a texture-to-texture
+  compute chain needs; `barriers=0` skips the barrier. Culling is disabled (a dispatch has no
+  meaningful bound).
+- `setComputeGroupsFor(width, height, localSizeX, localSizeY)` — enough workgroups to cover a
+  pixel size, rounded up (the shader bounds-checks the remainder).
+- `setRenderBin(number)` — ordering: OSG draws a render stage's bins in ascending number, so a chain
+  of passes under one camera runs in bin order (e.g. `-3`, `-2`, `-1`, ahead of default-bin
+  geometry at `0`).
+- `bindImage(unit, texture, access, format, level=0)`, `bindTexture(unit, texture, uniformName)` —
+  image-unit and sampler bindings on the pass's own StateSet.
+- `setDefineEnabled(name, enabled)`/`isDefineEnabled(name)` — on/off `#pragma import_defines`
+  switches; each new combination compiles (and OSG caches) one more Program variant.
+- `setProgram()`/`getProgram()`, `setBarriers()`/`getBarriers()`.
+- `ComputePass::createProgram(name, source)` (a Program with one COMPUTE shader),
+  `ComputePass::createTexture(name, width, height, internalFormat)` (an image-store target: LINEAR,
+  `CLAMP_TO_EDGE`, `DYNAMIC`).
+
+The passes run in whatever render stage traverses them; for a screen-space effect, put them under a
+camera that runs after the `PRE_RENDER` camera producing their inputs and before whatever samples
+their outputs (e.g. directly under the viewer's main camera, as `GTAO`/`CORTAO` do). Python:
+`osgx.ComputePass` (an `osg.DispatchCompute`; `bindImage()` takes an
+`osg.BindImageTexture.Access`).
+
+## `osgx/GTAO.hpp`
+
+`GTAO` — Ground Truth Ambient Occlusion (Jimenez et al. 2016, "Practical Real-Time Strategies for
+Accurate Indirect Occlusion"), as implemented by Intel's
+[XeGTAO](https://github.com/GameTechDev/XeGTAO) (MIT; v1.30, ported from HLSL to GLSL). Horizon
+based: per pixel, a few screen-space slices, each searched in both directions for the highest
+horizon, with the visible arc between them integrated analytically (cosine-weighted). Smooth and
+stable on its own, between `SSAO` and `CORTAO` in cost.
+
+Same inputs and output contract as `SSAO`: a G-buffer's view-space normal and eye-space position
+(background pixels left at 0), the caller-owned `projectionMatrix` uniform, and `aoTexture`
+(`GL_R8`, `1.0` = unoccluded), so it plugs into `PBRLightingPass::Options::aoTexture` the same way.
+Depth is read as `-position.z`, never from a depth buffer, so near/far are never needed.
+Perspective projections only (off-center is fine).
+
+- `GTAO::create(normalTexture, positionTexture, projectionMatrix, width, height, options={})` —
+  `GTAO::Options`:
+  - `radius` (0.5) — world-space occlusion radius, scale-dependent like `SSAO`'s.
+  - `quality` — `Quality::LOW`/`MEDIUM`/`HIGH` (default)/`ULTRA`: slices x steps per slice of 1x2,
+    2x2, 3x3 and 9x3.
+  - `denoisePasses` (1) — 0 (no blur), 1 (sharp), 2 (medium) or 3 (soft) edge-aware 3x3 blurs.
+  - `bentNormal` (false) — also writes `bentNormalTexture` (`GL_RGBA8_SNORM`: xyz = view-space bent
+    normal, the average unoccluded direction; w = visibility).
+- Compute passes, all `ComputePass` nodes under `node` (add it to the scene graph; same placement as
+  `ComputePass` above), ordered by RenderBin `-5` to `-1`: depth prefilter (`depthTexture`, 5
+  mips), the main horizon search, and the denoise chain (`intermediateDenoisePasses` ping-ponging
+  `workingTextures`, then `finalDenoisePass` writing the outputs).
+- Live: `setQuality()`/`getQuality()` (a define on the main pass, one Program variant per level),
+  `setDenoisePasses()`/`getDenoisePasses()`, and `osg::Uniform`s `radius` plus XeGTAO's own
+  heuristics with its defaults (`radiusMultiplier`, `falloffRange`, `sampleDistributionPower`,
+  `thinOccluderCompensation`, `finalValuePower` — the overall darkness — and
+  `depthMipSamplingOffset`), tuned by Intel against ray-traced ground truth.
+- `noiseIndex` (0) — XeGTAO is designed to be followed by temporal anti-aliasing with a new noise
+  index per frame; without one, keep it constant and let the denoiser smooth the fixed noise.
+
+Python: `osgx.GTAO` (`GTAO.Quality`, `GTAO.Options`; `quality`/`denoisePasses` are properties).
+
+## `osgx/CORTAO.hpp`
+
+`CORTAO` — Circular Occluder Ray-Traced Ambient Occlusion (Daniel Isheden,
+[theagentd/CORTAO](https://github.com/theagentd/CORTAO), MIT; the reference shaders, v1.0.0,
+ported to plain GLSL). Per pixel it traces 16 rays against circular occluders built from a packed
+depth/normal mip chain, using a precomputed occluder lookup table; occluders seen from behind
+(backfaces) are detected heuristically and can be enlarged to avoid light leaking
+(`backfaceThreshold`/`backfaceBoost`). Same inputs and output contract as `SSAO`/`GTAO`.
+
+- `CORTAO::create(normalTexture, positionTexture, projectionMatrix, width, height, options={})` —
+  `CORTAO::Options`:
+  - `maxRadius` (0.5) — world-space maximum occlusion radius, scale-dependent.
+  - `sampleCount` (16) — `CORTAO_SAMPLE_COUNT`, the primary quality/cost knob (4-32).
+  - `filter` — the filter pass's mode (below).
+  - `bentNormal` (false) — also writes `bentNormalTexture` (same layout as `GTAO`'s, w = occlusion;
+    unfiltered).
+- Compute passes under `node`, RenderBin `-3` to `-1`: prepass (linear depth plus a spheremap
+  normal packed into `packedTexture`, `GL_R32UI`, every mip in one dispatch), main pass
+  (`rawAoTexture`, occlusion quantized to 1/16), filter pass (`aoTexture`).
+- `Filter`:
+  - `TILED` (default, osgx's own) — the main pass's per-pixel randomness repeats every 4x4 pixels,
+    and a depth/normal-aware 4x4 average covers all 16 phases at every pixel, cancelling the
+    pattern on flat surfaces: smooth and frame-stable without temporal filtering.
+  - `SPARSE` — CORTAO's own 5- or 13-tap prefilter (`setLargeFilter()`, `setFilterSymmetry()`). The
+    reference intends it to be followed by temporal filtering (a new `randomSeed` per frame);
+    on its own it leaves a regular lattice.
+  - `NONE` — a copy of `rawAoTexture`.
+- Live: `setSampleCount()`, `setFilter()`, `setLargeFilter()`, `setFilterSymmetry()` (defines: each
+  first use of a new value compiles a Program variant), and `osg::Uniform`s named after the
+  reference's `CORTAOConfigurationParameters`: `maxRadius`, `maxScreenspaceRadiusHeightRatio`,
+  `mipBias`, `maxSlopeCompensation`, `backfaceThreshold`, `backfaceBoost`,
+  `filterDepthSensitivity`, `filterNormalSensitivity`, `randomSeed` (constant unless a temporal
+  filter follows).
+- `CORTAO::createOccluderLookupTable(rayCount=16, directionResolution=24, radiusResolution=16)` —
+  the 3D lookup table as an `osg::Image`, a C++ port of the reference
+  `OccluderLookupTableGenerator.py`, built at startup (bit-identical to the reference's shipped
+  `24x24x16x16_R16_UINT.bin`).
+
+Python: `osgx.CORTAO` (`CORTAO.Filter`, `CORTAO.Options`; `sampleCount`/`filter`/`largeFilter`/
+`filterSymmetry` are properties).
 
 ## `osgx/PBRScene.hpp`
 

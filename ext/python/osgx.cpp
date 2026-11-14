@@ -35,6 +35,9 @@ PYBIND11_MODULE(osgx, m) {
 	osgx_python::bind_capturecubemap(m);
 	osgx_python::bind_shadow(m);
 	osgx_python::bind_gbuffer(m);
+	osgx_python::bind_computepass(m);
+	osgx_python::bind_cortao(m);
+	osgx_python::bind_gtao(m);
 	osgx_python::bind_ibl(m);
 	osgx_python::bind_environment(m);
 	osgx_python::bind_aura(m);

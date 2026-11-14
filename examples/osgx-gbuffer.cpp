@@ -397,7 +397,7 @@ osg::ref_ptr<osg::Camera> makeDebugBlitCamera(osg::Uniform*& channelModeOut) {
 int main(int argc, char** argv) {
 	osg::ArgumentParser args(&argc, argv);
 
-	const auto options = example::readArguments(args);
+	auto options = example::readArguments(args);
 	auto lib = osgx::initialize(args);
 
 	args.getApplicationUsage()->setCommandLineUsage(
@@ -512,12 +512,12 @@ int main(int argc, char** argv) {
 	viewer.setThreadingModel(osgViewer::Viewer::SingleThreaded);
 #endif
 
-	// Force the real window to exactly WIDTH x HEIGHT - the G-buffer textures are that fixed
-	// size, and if the actual window ends up a different size/aspect (the default, since no
+	// Force the window (or the headless framebuffer) to exactly WIDTH x HEIGHT - the G-buffer
+	// textures are that fixed size, and if the actual window ends up a different size/aspect (the default, since no
 	// --window was passed), the geometry pass renders under one aspect ratio while
 	// viewer.getCamera()'s own projection matrix reflects a different one. Same fix
 	// 11-sketchfab.py applies via its own OSG_WINDOW env var, just via the C++ API here.
-	viewer.setUpViewInWindow(50, 50, WIDTH, HEIGHT);
+	example::setUpWindow(viewer, options, 50, 50, WIDTH, HEIGHT);
 
 	osgDB::Registry::instance()->addFileExtensionAlias("glb", "gltf");
 

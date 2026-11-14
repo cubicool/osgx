@@ -5,7 +5,8 @@
 //   --headless [egl|native], --headless-frames N, --headless-out FILE, --headless-size WxH
 //                     Render offscreen (osgx::headless::readArguments()). Any osgx::imgui::Widget
 //                     the example installed is removed first, so the image shows only the scene;
-//                     --headless-imgui keeps it.
+//                     --headless-imgui keeps it. Without --headless-size, an example that opens
+//                     its window through setUpWindow() renders at that window's size.
 //   --camera-eye X,Y,Z, --camera-center X,Y,Z, --camera-up X,Y,Z
 //                     The initial camera, e.g. to frame a headless capture. Each one left out keeps
 //                     the camera manipulator's own home value (its computed home, framing the
@@ -24,6 +25,8 @@
 //       const auto options = example::readArguments(args);
 //
 //       ... build the scene and the viewer, set its scene data ...
+//
+//       example::setUpWindow(viewer, options, 50, 50, 1280, 800);
 //
 //       return example::run(viewer, options);
 //   }
@@ -56,6 +59,7 @@ constexpr std::size_t PROFILE_FRAMES = 120;
 
 struct Options {
 	osgx::headless::Options headless;
+	bool headlessSizeGiven = false;
 	bool headlessImGui = false;
 	bool profile = false;
 
@@ -84,6 +88,17 @@ inline std::optional<osg::Vec3d> readVec3(osg::ArgumentParser& args, const std::
 	return result;
 }
 
+// True if `args` holds `name`, as `name value` or `name=value`.
+inline bool hasOption(osg::ArgumentParser& args, const std::string& name) {
+	for(int i = 1; i < args.argc(); i++) {
+		const std::string argument(args[i]);
+
+		if(argument == name || argument.starts_with(name + "=")) return true;
+	}
+
+	return false;
+}
+
 // Removes the shared options from `args` (call first, before the example reads its own) and adds
 // them to its usage text.
 inline Options readArguments(osg::ArgumentParser& args) {
@@ -92,7 +107,10 @@ inline Options readArguments(osg::ArgumentParser& args) {
 	usage->addCommandLineOption("--headless [egl|native]", "Render offscreen (no window)");
 	usage->addCommandLineOption("--headless-frames <N>", "Frames to render headless (default 10)");
 	usage->addCommandLineOption("--headless-out <file>", "Write the last headless frame to <file>");
-	usage->addCommandLineOption("--headless-size <WxH>", "Headless framebuffer size (default 800x600)");
+	usage->addCommandLineOption(
+		"--headless-size <WxH>",
+		"Headless framebuffer size (default: the example's window size, or 800x600)"
+	);
 	usage->addCommandLineOption("--headless-imgui", "Keep the example's ImGui panel when headless");
 	usage->addCommandLineOption(
 		"--profile",
@@ -104,7 +122,9 @@ inline Options readArguments(osg::ArgumentParser& args) {
 
 	Options options;
 
-	const bool framesGiven = args.find("--headless-frames") >= 0;
+	const bool framesGiven = hasOption(args, "--headless-frames");
+
+	options.headlessSizeGiven = hasOption(args, "--headless-size");
 
 	options.headless = osgx::headless::readArguments(args);
 	options.headlessImGui = args.read("--headless-imgui");
@@ -116,6 +136,22 @@ inline Options readArguments(osg::ArgumentParser& args) {
 	if(options.profile && !framesGiven) options.headless.frames = PROFILE_FRAMES;
 
 	return options;
+}
+
+// Opens the example's window: setUpViewInWindow(x, y, width, height). Headless, opens nothing (a
+// window created here would flash on screen until run() replaces its context) and renders at
+// width x height instead, unless --headless-size was given.
+inline void setUpWindow(osgViewer::Viewer& viewer, Options& options, int x, int y, int width, int height) {
+	if(options.headless.enabled) {
+		if(!options.headlessSizeGiven) {
+			options.headless.width = width;
+			options.headless.height = height;
+		}
+
+		return;
+	}
+
+	viewer.setUpViewInWindow(x, y, width, height);
 }
 
 #ifdef OSGX_IMGUI
