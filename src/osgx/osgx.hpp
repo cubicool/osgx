@@ -19,6 +19,7 @@
 #include "GBuffer.hpp"
 #include "SSAO.hpp"
 #include "CORTAO.hpp"
+#include "GTAO.hpp"
 #include "Aura.hpp"
 #include "Gizmos.hpp"
 #include "Headless.hpp"

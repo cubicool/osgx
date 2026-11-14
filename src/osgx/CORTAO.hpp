@@ -1,10 +1,9 @@
 #pragma once
 
-#include "Core.hpp"
+#include "ComputePass.hpp"
 
 OSGX_DISABLE_WARNINGS
 
-#include <osg/DispatchCompute>
 #include <osg/Group>
 #include <osg/Image>
 #include <osg/Program>
@@ -42,10 +41,11 @@ namespace osgx {
 //     osgx doesn't do; on its own it leaves a regular lattice (its taps are 3 and 6 pixels apart).
 //   - NONE: a copy of `rawAoTexture`.
 //
-// All dispatches live under `node` with fixed RenderBin numbers (-3, -2, -1) and glMemoryBarrier()
-// after each. `node` must be traversed by a camera whose render stage runs after the camera that
-// writes normal/position and before whatever samples the outputs - e.g. directly under the
-// viewer's main camera, between a PRE_RENDER G-buffer camera and a POST_RENDER lighting pass.
+// All dispatches are osgx::ComputePass nodes under `node`, ordered by fixed RenderBin numbers (-3,
+// -2, -1), each followed by its glMemoryBarrier(). `node` must be traversed by a camera whose
+// render stage runs after the camera that writes normal/position and before whatever samples the
+// outputs - e.g. directly under the viewer's main camera, between a PRE_RENDER G-buffer camera and
+// a POST_RENDER lighting pass.
 struct CORTAO {
 	enum class Filter {
 		NONE,
@@ -70,9 +70,9 @@ struct CORTAO {
 	};
 
 	osg::ref_ptr<osg::Group> node;
-	osg::ref_ptr<osg::DispatchCompute> prepass;
-	osg::ref_ptr<osg::DispatchCompute> mainPass;
-	osg::ref_ptr<osg::DispatchCompute> filterPass;
+	osg::ref_ptr<ComputePass> prepass;
+	osg::ref_ptr<ComputePass> mainPass;
+	osg::ref_ptr<ComputePass> filterPass;
 
 	// The filter pass's two programs, swapped by setFilter() (NONE uses the TILED program's copy
 	// variant).

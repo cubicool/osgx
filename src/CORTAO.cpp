@@ -1,5 +1,4 @@
 #include "osgx/CORTAO.hpp"
-#include "osgx/RTT.hpp"
 
 // CORTAO_BASE_SRC/CORTAO_PREPASS_SRC/CORTAO_MAIN_PASS_SRC/CORTAO_FILTER_PASS_SRC: the reference
 // shaders, ported to plain GLSL.
@@ -9,18 +8,13 @@ OSGX_DISABLE_WARNINGS
 
 #include <osg/BindImageTexture>
 #include <osg/GL>
-#include <osg/GLExtensions>
 #include <osg/Math>
 #include <osg/Notify>
-#include <osg/Program>
-#include <osg/Shader>
-#include <osg/State>
 #include <osg/StateSet>
 
 OSGX_ENABLE_WARNINGS
 
 #include <algorithm>
-#include <array>
 #include <cmath>
 #include <cstdint>
 #include <limits>
@@ -46,28 +40,6 @@ constexpr int FILTER_PASS_WORKGROUP_SIZE = 8;
 constexpr int PREPASS_RENDER_BIN = -3;
 constexpr int MAIN_PASS_RENDER_BIN = -2;
 constexpr int FILTER_PASS_RENDER_BIN = -1;
-
-// osg::DispatchCompute followed by glMemoryBarrier(barriers), so the next pass (or the next
-// consumer of the written image) sees this dispatch's image stores.
-class BarrierDispatchCompute: public osg::DispatchCompute {
-public:
-	BarrierDispatchCompute(GLint numGroupsX, GLint numGroupsY, GLbitfield barriers):
-	osg::DispatchCompute(numGroupsX, numGroupsY, 1),
-	_barriers(barriers) {
-	}
-
-	void drawImplementation(osg::RenderInfo& renderInfo) const override {
-		osg::DispatchCompute::drawImplementation(renderInfo);
-
-		renderInfo.getState()->get<osg::GLExtensions>()->glMemoryBarrier(_barriers);
-	}
-
-protected:
-	~BarrierDispatchCompute() override = default;
-
-private:
-	GLbitfield _barriers;
-};
 
 // Shared header for every pass. GL_EXT_control_flow_attributes is what CORTAO_BASE_SRC checks for
 // [[unroll]]; desktop GL drivers generally don't expose it, so the NVIDIA pragma asks for the same
@@ -458,47 +430,6 @@ std::string tiledFilterSource() {
 	return src;
 }
 
-void setBoolDefine(osg::DispatchCompute* pass, const char* name, bool value) {
-	if(!pass) return;
-
-	auto* ss = pass->getOrCreateStateSet();
-
-	if(value) ss->setDefine(name, "1");
-
-	else ss->removeDefine(name);
-}
-
-bool getBoolDefine(const osg::DispatchCompute* pass, const char* name) {
-	return pass && pass->getStateSet() && pass->getStateSet()->getDefinePair(name);
-}
-
-osg::ref_ptr<osg::Texture2D> makeOutputTexture(const char* name, int width, int height, GLint format) {
-	auto tex = osgx::make_nref<osg::Texture2D>(name);
-
-	tex->setTextureSize(width, height);
-	tex->setInternalFormat(format);
-	tex->setResizeNonPowerOfTwoHint(false);
-	tex->setFilter(osg::Texture::MIN_FILTER, osg::Texture::LINEAR);
-	tex->setFilter(osg::Texture::MAG_FILTER, osg::Texture::LINEAR);
-	tex->setWrap(osg::Texture::WRAP_S, osg::Texture::CLAMP_TO_EDGE);
-	tex->setWrap(osg::Texture::WRAP_T, osg::Texture::CLAMP_TO_EDGE);
-	tex->setDataVariance(osg::Object::DYNAMIC);
-
-	return tex;
-}
-
-osg::ref_ptr<osg::Program> makeComputeProgram(const char* name, const std::string& source) {
-	auto program = osgx::make_nref<osg::Program>(name);
-
-	program->addShader(new osg::Shader(osg::Shader::COMPUTE, source));
-
-	return program;
-}
-
-GLint groupCount(int size, int workgroupSize) {
-	return static_cast<GLint>((size + workgroupSize - 1) / workgroupSize);
-}
-
 unsigned int mipCountFor(int width, int height) {
 	const auto largest = static_cast<unsigned int>(std::max(width, height));
 
@@ -655,19 +586,19 @@ unsigned int CORTAO::getSampleCount() const {
 }
 
 void CORTAO::setLargeFilter(bool large) {
-	setBoolDefine(filterPass.get(), "CORTAO_LARGE_FILTER", large);
+	if(filterPass.valid()) filterPass->setDefineEnabled("CORTAO_LARGE_FILTER", large);
 }
 
 bool CORTAO::getLargeFilter() const {
-	return getBoolDefine(filterPass.get(), "CORTAO_LARGE_FILTER");
+	return filterPass.valid() && filterPass->isDefineEnabled("CORTAO_LARGE_FILTER");
 }
 
 void CORTAO::setFilterSymmetry(bool symmetry) {
-	setBoolDefine(filterPass.get(), "CORTAO_FILTER_SYMMETRY", symmetry);
+	if(filterPass.valid()) filterPass->setDefineEnabled("CORTAO_FILTER_SYMMETRY", symmetry);
 }
 
 bool CORTAO::getFilterSymmetry() const {
-	return getBoolDefine(filterPass.get(), "CORTAO_FILTER_SYMMETRY");
+	return filterPass.valid() && filterPass->isDefineEnabled("CORTAO_FILTER_SYMMETRY");
 }
 
 void CORTAO::setFilter(Filter filter) {
@@ -675,38 +606,38 @@ void CORTAO::setFilter(Filter filter) {
 
 	const int width = aoTexture->getTextureWidth();
 	const int height = aoTexture->getTextureHeight();
-	auto* filterSS = filterPass->getOrCreateStateSet();
 
+	// SPARSE threads cover a 2x2 pixel block each.
 	if(filter == Filter::SPARSE) {
-		filterSS->setAttributeAndModes(sparseFilterProgram);
-		filterPass->setComputeGroups(
-			groupCount((width + 1) / 2, FILTER_PASS_WORKGROUP_SIZE),
-			groupCount((height + 1) / 2, FILTER_PASS_WORKGROUP_SIZE),
-			1
+		filterPass->setProgram(sparseFilterProgram);
+		filterPass->setComputeGroupsFor(
+			(width + 1) / 2,
+			(height + 1) / 2,
+			FILTER_PASS_WORKGROUP_SIZE,
+			FILTER_PASS_WORKGROUP_SIZE
 		);
 	}
 
 	else {
-		filterSS->setAttributeAndModes(tiledFilterProgram);
-		filterPass->setComputeGroups(
-			groupCount(width, FILTER_PASS_WORKGROUP_SIZE),
-			groupCount(height, FILTER_PASS_WORKGROUP_SIZE),
-			1
+		filterPass->setProgram(tiledFilterProgram);
+		filterPass->setComputeGroupsFor(
+			width,
+			height,
+			FILTER_PASS_WORKGROUP_SIZE,
+			FILTER_PASS_WORKGROUP_SIZE
 		);
 	}
 
-	setBoolDefine(filterPass.get(), "OSGX_CORTAO_FILTER_COPY", filter == Filter::NONE);
-	setBoolDefine(mainPass.get(), "OSGX_CORTAO_TILED_NOISE", filter == Filter::TILED);
+	filterPass->setDefineEnabled("OSGX_CORTAO_FILTER_COPY", filter == Filter::NONE);
+	mainPass->setDefineEnabled("OSGX_CORTAO_TILED_NOISE", filter == Filter::TILED);
 }
 
 CORTAO::Filter CORTAO::getFilter() const {
-	if(!filterPass.valid() || !filterPass->getStateSet()) return Filter::NONE;
+	if(!filterPass.valid()) return Filter::NONE;
 
-	if(filterPass->getStateSet()->getAttribute(osg::StateAttribute::PROGRAM) == sparseFilterProgram.get()) {
-		return Filter::SPARSE;
-	}
+	if(filterPass->getProgram() == sparseFilterProgram.get()) return Filter::SPARSE;
 
-	return getBoolDefine(filterPass.get(), "OSGX_CORTAO_FILTER_COPY") ? Filter::NONE : Filter::TILED;
+	return filterPass->isDefineEnabled("OSGX_CORTAO_FILTER_COPY") ? Filter::NONE : Filter::TILED;
 }
 
 CORTAO CORTAO::create(
@@ -755,10 +686,15 @@ CORTAO CORTAO::create(
 	result.packedTexture->setBorderColor(osg::Vec4d(0.0, 0.0, 0.0, 0.0));
 	result.packedTexture->setDataVariance(osg::Object::DYNAMIC);
 
-	result.rawAoTexture = makeOutputTexture("osgx_cortao_RawAO", width, height, GL_R8);
+	result.rawAoTexture = ComputePass::createTexture("osgx_cortao_RawAO", width, height, GL_R8);
 
 	if(options.bentNormal) {
-		result.bentNormalTexture = makeOutputTexture("osgx_cortao_BentNormal", width, height, GL_RGBA8_SNORM);
+		result.bentNormalTexture = ComputePass::createTexture(
+			"osgx_cortao_BentNormal",
+			width,
+			height,
+			GL_RGBA8_SNORM
+		);
 	}
 
 	result.occluderLookupTable = osgx::make_nref<osg::Texture3D>("osgx_cortao_OccluderLookupTable");
@@ -781,69 +717,60 @@ CORTAO CORTAO::create(
 	result.filterNormalSensitivity = new osg::Uniform("cortao_filterNormalSensitivity", 16.0f);
 	result.randomSeed = new osg::Uniform("cortao_randomSeed", 0u);
 
-	const GLbitfield barriers = GL_TEXTURE_FETCH_BARRIER_BIT | GL_SHADER_IMAGE_ACCESS_BARRIER_BIT;
-
 	// Prepass: writes packedTexture's mips, which the main and filter passes then sample.
-	result.prepass = new BarrierDispatchCompute(
-		groupCount(width, PREPASS_WORKGROUP_SIZE),
-		groupCount(height, PREPASS_WORKGROUP_SIZE),
-		barriers
+	result.prepass = new ComputePass(
+		"osgx_cortao_Prepass",
+		ComputePass::createProgram("osgx_cortao_Prepass", prepassSource())
 	);
-	result.prepass->setName("osgx_cortao_Prepass");
-	result.prepass->setCullingActive(false);
-
-	auto* prepassSS = result.prepass->getOrCreateStateSet();
-
-	prepassSS->setAttributeAndModes(makeComputeProgram("osgx_cortao_Prepass", prepassSource()));
-	prepassSS->setRenderBinDetails(PREPASS_RENDER_BIN, "RenderBin");
-	prepassSS->addUniform(result.randomSeed);
-	prepassSS->addUniform(new osg::Uniform("cortao_mipCount", mipCount));
+	result.prepass->setComputeGroupsFor(width, height, PREPASS_WORKGROUP_SIZE, PREPASS_WORKGROUP_SIZE);
+	result.prepass->setRenderBin(PREPASS_RENDER_BIN);
 
 	for(unsigned int level = 0; level < mipCount; level++) {
-		prepassSS->setAttribute(new osg::BindImageTexture(
+		result.prepass->bindImage(
 			level,
 			result.packedTexture,
 			osg::BindImageTexture::WRITE_ONLY,
 			GL_R32UI,
 			static_cast<int>(level)
-		));
+		);
 	}
 
-	const std::array<osgx::detail::TextureInput, 2> prepassTextures = {{
-		{0, normalTexture, "gNormal"},
-		{1, positionTexture, "gPosition"}
-	}};
+	result.prepass->bindTexture(0, normalTexture, "gNormal");
+	result.prepass->bindTexture(1, positionTexture, "gPosition");
 
-	osgx::detail::bindTextureInputs(prepassSS, prepassTextures);
+	auto* prepassSS = result.prepass->getOrCreateStateSet();
+
+	prepassSS->addUniform(result.randomSeed);
+	prepassSS->addUniform(new osg::Uniform("cortao_mipCount", mipCount));
 
 	// Main pass: writes rawAoTexture (+ bentNormalTexture).
-	result.mainPass = new BarrierDispatchCompute(
-		groupCount(width, MAIN_PASS_WORKGROUP_SIZE),
-		groupCount(height, MAIN_PASS_WORKGROUP_SIZE),
-		barriers
+	result.mainPass = new ComputePass(
+		"osgx_cortao_MainPass",
+		ComputePass::createProgram("osgx_cortao_MainPass", mainPassSource(options.bentNormal))
 	);
-	result.mainPass->setName("osgx_cortao_MainPass");
-	result.mainPass->setCullingActive(false);
-
-	auto* mainSS = result.mainPass->getOrCreateStateSet();
-
-	mainSS->setAttributeAndModes(makeComputeProgram("osgx_cortao_MainPass", mainPassSource(options.bentNormal)));
-	mainSS->setRenderBinDetails(MAIN_PASS_RENDER_BIN, "RenderBin");
-	mainSS->setAttribute(new osg::BindImageTexture(
-		0,
-		result.rawAoTexture,
-		osg::BindImageTexture::WRITE_ONLY,
-		GL_R8
-	));
+	result.mainPass->setComputeGroupsFor(
+		width,
+		height,
+		MAIN_PASS_WORKGROUP_SIZE,
+		MAIN_PASS_WORKGROUP_SIZE
+	);
+	result.mainPass->setRenderBin(MAIN_PASS_RENDER_BIN);
+	result.mainPass->bindImage(0, result.rawAoTexture, osg::BindImageTexture::WRITE_ONLY, GL_R8);
 
 	if(options.bentNormal) {
-		mainSS->setAttribute(new osg::BindImageTexture(
+		result.mainPass->bindImage(
 			1,
 			result.bentNormalTexture,
 			osg::BindImageTexture::WRITE_ONLY,
 			GL_RGBA8_SNORM
-		));
+		);
 	}
+
+	result.mainPass->bindTexture(0, result.packedTexture, "cortao_packedData");
+	result.mainPass->bindTexture(1, normalTexture, "gNormal");
+	result.mainPass->bindTexture(2, result.occluderLookupTable, "cortao_occluderLookupTable");
+
+	auto* mainSS = result.mainPass->getOrCreateStateSet();
 
 	mainSS->addUniform(projectionMatrix);
 	mainSS->addUniform(result.randomSeed);
@@ -854,14 +781,6 @@ CORTAO CORTAO::create(
 	mainSS->addUniform(result.backfaceThreshold);
 	mainSS->addUniform(result.backfaceBoost);
 
-	const std::array<osgx::detail::TextureInput, 3> mainTextures = {{
-		{0, result.packedTexture, "cortao_packedData"},
-		{1, normalTexture, "gNormal"},
-		{2, result.occluderLookupTable, "cortao_occluderLookupTable"}
-	}};
-
-	osgx::detail::bindTextureInputs(mainSS, mainTextures);
-
 	result.setSampleCount(options.sampleCount);
 
 	result.node = osgx::make_nref<osg::Group>("osgx_cortao");
@@ -869,32 +788,26 @@ CORTAO CORTAO::create(
 	result.node->addChild(result.mainPass);
 
 	// Filter pass: rawAoTexture -> aoTexture; program and dispatch size set by setFilter() below.
-	result.aoTexture = makeOutputTexture("osgx_cortao_AO", width, height, GL_R8);
-	result.sparseFilterProgram = makeComputeProgram("osgx_cortao_SparseFilterPass", filterPassSource());
-	result.tiledFilterProgram = makeComputeProgram("osgx_cortao_TiledFilterPass", tiledFilterSource());
+	result.aoTexture = ComputePass::createTexture("osgx_cortao_AO", width, height, GL_R8);
+	result.sparseFilterProgram = ComputePass::createProgram(
+		"osgx_cortao_SparseFilterPass",
+		filterPassSource()
+	);
+	result.tiledFilterProgram = ComputePass::createProgram(
+		"osgx_cortao_TiledFilterPass",
+		tiledFilterSource()
+	);
 
-	result.filterPass = new BarrierDispatchCompute(1, 1, barriers);
-	result.filterPass->setName("osgx_cortao_FilterPass");
-	result.filterPass->setCullingActive(false);
+	result.filterPass = new ComputePass("osgx_cortao_FilterPass");
+	result.filterPass->setRenderBin(FILTER_PASS_RENDER_BIN);
+	result.filterPass->bindImage(0, result.aoTexture, osg::BindImageTexture::WRITE_ONLY, GL_R8);
+	result.filterPass->bindTexture(0, result.packedTexture, "cortao_packedData");
+	result.filterPass->bindTexture(1, result.rawAoTexture, "cortao_rawOcclusion");
 
 	auto* filterSS = result.filterPass->getOrCreateStateSet();
 
-	filterSS->setRenderBinDetails(FILTER_PASS_RENDER_BIN, "RenderBin");
-	filterSS->setAttribute(new osg::BindImageTexture(
-		0,
-		result.aoTexture,
-		osg::BindImageTexture::WRITE_ONLY,
-		GL_R8
-	));
 	filterSS->addUniform(result.filterDepthSensitivity);
 	filterSS->addUniform(result.filterNormalSensitivity);
-
-	const std::array<osgx::detail::TextureInput, 2> filterTextures = {{
-		{0, result.packedTexture, "cortao_packedData"},
-		{1, result.rawAoTexture, "cortao_rawOcclusion"}
-	}};
-
-	osgx::detail::bindTextureInputs(filterSS, filterTextures);
 
 	// The reference GLSL filter wrapper's own defaults (SPARSE only).
 	result.setLargeFilter(true);

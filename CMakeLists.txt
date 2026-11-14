@@ -233,6 +233,7 @@ add_library(osgx SHARED
 	src/CameraActions.cpp
 	src/CaptureCubeMap.cpp
 	src/CompressedTexture.cpp
+	src/ComputePass.cpp
 	src/CORTAO.cpp
 	src/Cursor.cpp
 	src/debug/Annotation.cpp
@@ -247,6 +248,7 @@ add_library(osgx SHARED
 	src/Gizmos.cpp
 	src/Headless.cpp
 	src/Grid.cpp
+	src/GTAO.cpp
 	src/IBL.cpp
 	src/LambertianBake.cpp
 	src/Library.cpp
@@ -281,9 +283,11 @@ target_sources(osgx PUBLIC
 	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/Gizmos.hpp>"
 	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/Headless.hpp>"
 	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/Grid.hpp>"
+	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/GTAO.hpp>"
 	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/IBL.hpp>"
 	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/CaptureCubeMap.hpp>"
 	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/CompressedTexture.hpp>"
+	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/ComputePass.hpp>"
 	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/CORTAO.hpp>"
 	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/Cursor.hpp>"
 	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/osgx/Environment.hpp>"

@@ -18,9 +18,9 @@
 // hand-rolled one. Feeds PBRLightingPass::Options::aoTexture, the same seam a caller's own
 // hand-built SSAO (or a baked lightmap, or nothing) would use instead.
 //
-// osgx::CORTAO runs alongside SSAO from the same inputs: '7' shows its filtered output, '8' its raw
-// (unfiltered) output, '9' its bent normals, and 'o' swaps which of SSAO/filtered CORTAO feeds the
-// lighting pass.
+// osgx::CORTAO and osgx::GTAO run alongside SSAO from the same inputs: '7' shows CORTAO's filtered
+// output, '8' its raw (unfiltered) output, '9' its bent normals; 'g' shows GTAO's output, 'G' its
+// bent normals; 'o' cycles which of SSAO/GTAO/CORTAO feeds the lighting pass.
 //
 // Also proves osgx::shadow's 3 correctness fixes (same as osgx-shadow.cpp - see that file's own
 // header comment for the full writeup) inside the deferred G-buffer pipeline specifically: the
@@ -38,6 +38,7 @@
 #include "osgx/SSAO.hpp"
 
 #include "osgx/CORTAO.hpp"
+#include "osgx/GTAO.hpp"
 #include "osgx/Gizmos.hpp"
 #include "osgx/IBL.hpp"
 #include "osgx/ImGui.hpp"
@@ -169,7 +170,9 @@ public:
 		osg::Texture2D* aoTexture=nullptr,
 		osg::Texture2D* cortaoTexture=nullptr,
 		osg::Texture2D* cortaoRawTexture=nullptr,
-		osg::Texture2D* cortaoBentNormalTexture=nullptr
+		osg::Texture2D* cortaoBentNormalTexture=nullptr,
+		osg::Texture2D* gtaoTexture=nullptr,
+		osg::Texture2D* gtaoBentNormalTexture=nullptr
 	):
 		_lightingCamera(lightingCamera),
 		_debugCamera(debugCamera),
@@ -178,7 +181,9 @@ public:
 		_aoTexture(aoTexture),
 		_cortaoTexture(cortaoTexture),
 		_cortaoRawTexture(cortaoRawTexture),
-		_cortaoBentNormalTexture(cortaoBentNormalTexture) {}
+		_cortaoBentNormalTexture(cortaoBentNormalTexture),
+		_gtaoTexture(gtaoTexture),
+		_gtaoBentNormalTexture(gtaoBentNormalTexture) {}
 
 	bool handle(const osgGA::GUIEventAdapter& ea, osgGA::GUIActionAdapter&) override {
 		if(ea.getEventType() != osgGA::GUIEventAdapter::KEYDOWN) return false;
@@ -186,7 +191,7 @@ public:
 		return selectKey(ea.getKey());
 	}
 
-	// The view for key '0'-'9' (see the file header); false for any other key.
+	// The view for key '0'-'9', 'g' or 'G' (see the file header); false for any other key.
 	bool selectKey(int key) {
 		switch(key) {
 			case '0': select(-1, 0, "lit composite"); return true;
@@ -199,6 +204,8 @@ public:
 			case '7': if(_cortaoTexture.valid()) { select(6, 2, "CORTAO"); } return true;
 			case '8': if(_cortaoRawTexture.valid()) { select(7, 2, "CORTAO (raw)"); } return true;
 			case '9': if(_cortaoBentNormalTexture.valid()) { select(8, 1, "CORTAO bent normal"); } return true;
+			case 'g': if(_gtaoTexture.valid()) { select(9, 2, "GTAO"); } return true;
+			case 'G': if(_gtaoBentNormalTexture.valid()) { select(10, 1, "GTAO bent normal"); } return true;
 			default: return false;
 		}
 	}
@@ -223,6 +230,8 @@ private:
 				case 6: tex = _cortaoTexture.get(); break;
 				case 7: tex = _cortaoRawTexture.get(); break;
 				case 8: tex = _cortaoBentNormalTexture.get(); break;
+				case 9: tex = _gtaoTexture.get(); break;
+				case 10: tex = _gtaoBentNormalTexture.get(); break;
 				default: break;
 			}
 
@@ -243,6 +252,8 @@ private:
 	osg::observer_ptr<osg::Texture2D> _cortaoTexture;
 	osg::observer_ptr<osg::Texture2D> _cortaoRawTexture;
 	osg::observer_ptr<osg::Texture2D> _cortaoBentNormalTexture;
+	osg::observer_ptr<osg::Texture2D> _gtaoTexture;
+	osg::observer_ptr<osg::Texture2D> _gtaoBentNormalTexture;
 };
 
 // Floor: a plain procedural quad, deliberately NOT sharing the model's G-buffer Program
@@ -406,10 +417,16 @@ int main(int argc, char** argv) {
 		"--animation", "Play the model's animation (default: hold the first frame)"
 	);
 	args.getApplicationUsage()->addCommandLineOption(
-		"--view <N>", "Initial view, 0-9 (same as pressing that key; default 0)"
+		"--view <key>", "Initial view: 0-9, g or G (same as pressing that key; default 0)"
 	);
 	args.getApplicationUsage()->addCommandLineOption(
-		"--ao <ssao|cortao>", "AO source of the lighting pass (default ssao; 'o' toggles)"
+		"--ao <ssao|gtao|cortao>", "AO source of the lighting pass (default ssao; 'o' cycles)"
+	);
+	args.getApplicationUsage()->addCommandLineOption(
+		"--gtao-quality <low|medium|high|ultra>", "GTAO quality level (default high)"
+	);
+	args.getApplicationUsage()->addCommandLineOption(
+		"--gtao-denoise <N>", "GTAO denoise passes, 0-3 (default 1)"
 	);
 	args.getApplicationUsage()->addCommandLineOption(
 		"--cortao-samples <N>", "CORTAO sample count (default 16)"
@@ -420,7 +437,7 @@ int main(int argc, char** argv) {
 
 	std::string hdrPath, envPath;
 
-	int initialView = 0;
+	std::string initialView = "0";
 
 	args.read("--view", initialView);
 
@@ -432,6 +449,29 @@ int main(int argc, char** argv) {
 	args.read("--ao", aoSource);
 	args.read("--cortao-samples", cortaoSamples);
 	args.read("--cortao-filter", cortaoFilterName);
+
+	std::string gtaoQualityName = "high";
+	unsigned int gtaoDenoisePasses = 1;
+
+	args.read("--gtao-quality", gtaoQualityName);
+	args.read("--gtao-denoise", gtaoDenoisePasses);
+
+	auto gtaoQuality = osgx::GTAO::Quality::HIGH;
+
+	if(gtaoQualityName == "low") gtaoQuality = osgx::GTAO::Quality::LOW;
+
+	else if(gtaoQualityName == "medium") gtaoQuality = osgx::GTAO::Quality::MEDIUM;
+
+	else if(gtaoQualityName == "ultra") gtaoQuality = osgx::GTAO::Quality::ULTRA;
+
+	else if(gtaoQualityName != "high") {
+		std::cerr
+			<< "osgx-gbuffer: --gtao-quality expects low, medium, high or ultra, got " << gtaoQualityName
+			<< std::endl
+		;
+
+		return 1;
+	}
 
 	auto cortaoFilter = osgx::CORTAO::Filter::TILED;
 
@@ -448,8 +488,8 @@ int main(int argc, char** argv) {
 		return 1;
 	}
 
-	if(aoSource != "ssao" && aoSource != "cortao") {
-		std::cerr << "osgx-gbuffer: --ao expects ssao or cortao, got " << aoSource << std::endl;
+	if(aoSource != "ssao" && aoSource != "gtao" && aoSource != "cortao") {
+		std::cerr << "osgx-gbuffer: --ao expects ssao, gtao or cortao, got " << aoSource << std::endl;
 
 		return 1;
 	}
@@ -668,6 +708,29 @@ int main(int argc, char** argv) {
 		return 1;
 	}
 
+	// Same inputs again; radius is world-space like the other two.
+	osgx::GTAO::Options gtaoOptions;
+
+	gtaoOptions.radius = ssaoRadius;
+	gtaoOptions.quality = gtaoQuality;
+	gtaoOptions.denoisePasses = gtaoDenoisePasses;
+	gtaoOptions.bentNormal = true;
+
+	auto gtao = osgx::GTAO::create(
+		gbuffer.normalTexture,
+		gbuffer.positionTexture,
+		gbufferProjection->getProjection(),
+		WIDTH,
+		HEIGHT,
+		gtaoOptions
+	);
+
+	if(!gtao.valid()) {
+		std::cerr << "Failed to build the GTAO pass" << std::endl;
+
+		return 1;
+	}
+
 	// osgx::ShadowSet aggregates however many ShadowMaps this scene has (just the one directional
 	// key light here) into the combined uniform arrays/Hook::ShadowFactor override
 	// PBRLightingPass::Options::shadowSet reads - see ShadowSet's own comment (Shadow.hpp). Every
@@ -740,10 +803,11 @@ int main(int argc, char** argv) {
 	root->addChild(gbuffer.gbuffer.camera);
 	root->addChild(ssao.rawCamera);
 	root->addChild(ssao.blurCamera);
-	// Two compute dispatches, not cameras: drawn in the main camera's own render stage (RenderBins
-	// -2/-1), which runs after every PRE_RENDER camera above and before the POST_RENDER
+	// Compute dispatches, not cameras: drawn in the main camera's own render stage (negative
+	// RenderBins), which runs after every PRE_RENDER camera above and before the POST_RENDER
 	// lighting.node, so add order here doesn't matter.
 	root->addChild(cortao.node);
+	root->addChild(gtao.node);
 	root->addChild(lighting.node);
 	root->addChild(gizmos);
 	// Shadow-frustum visualization - composed here, same as `gizmos` itself, NOT built into either
@@ -769,53 +833,58 @@ int main(int argc, char** argv) {
 		ssao.aoTexture.get(),
 		cortao.aoTexture.get(),
 		cortao.rawAoTexture.get(),
-		cortao.bentNormalTexture.get()
+		cortao.bentNormalTexture.get(),
+		gtao.aoTexture.get(),
+		gtao.bentNormalTexture.get()
 	);
 
 	viewer.addEventHandler(visualizeMode);
 
-	if(initialView != 0 && !visualizeMode->selectKey('0' + initialView)) {
-		std::cerr << "osgx-gbuffer: --view expects 0-9, got " << initialView << std::endl;
+	if(initialView.size() != 1 || !visualizeMode->selectKey(initialView[0])) {
+		std::cerr << "osgx-gbuffer: --view expects 0-9, g or G, got " << initialView << std::endl;
 
 		return 1;
 	}
 
 	// 'o' rebinds the lighting pass's "osgx::gbuffer.ao" texture unit (where
-	// PBRLightingPass::create() bound ssao.aoTexture) to either AO source.
+	// PBRLightingPass::create() bound ssao.aoTexture) to the next AO source: SSAO, GTAO, CORTAO.
+	const std::array<std::pair<const char*, osg::ref_ptr<osg::Texture2D>>, 3> aoSources = {{
+		{"SSAO", ssao.aoTexture},
+		{"GTAO", gtao.aoTexture},
+		{"CORTAO", cortao.aoTexture}
+	}};
+
 	viewer.addEventHandler(new osgx::LambdaKeyHandler(
 		'o',
 		[
 			lightingSS = lighting.node->getOrCreateStateSet(),
 			unit = osgx::Library::instance().bindings().get("osgx::gbuffer.ao"),
-			ssaoTexture = ssao.aoTexture,
-			cortaoTexture = cortao.aoTexture
+			aoSources
 		](const osgGA::GUIEventAdapter&, osgGA::GUIActionAdapter&) {
-			const bool useCortao = lightingSS->getTextureAttribute(
-				unit, osg::StateAttribute::TEXTURE
-			) != cortaoTexture.get();
+			const auto* current = lightingSS->getTextureAttribute(unit, osg::StateAttribute::TEXTURE);
 
-			lightingSS->setTextureAttributeAndModes(
-				unit,
-				useCortao ? cortaoTexture.get() : ssaoTexture.get(),
-				osg::StateAttribute::ON
-			);
+			std::size_t next = 0;
 
-			std::cout
-				<< "osgx-gbuffer: lighting AO source = " << (useCortao ? "CORTAO" : "SSAO")
-				<< std::endl
-			;
+			for(std::size_t i = 0; i < aoSources.size(); i++) {
+				if(aoSources[i].second.get() == current) next = (i + 1) % aoSources.size();
+			}
+
+			lightingSS->setTextureAttributeAndModes(unit, aoSources[next].second.get(), osg::StateAttribute::ON);
+
+			std::cout << "osgx-gbuffer: lighting AO source = " << aoSources[next].first << std::endl;
 
 			return true;
 		}
 	));
 
-	if(aoSource == "cortao") {
+	if(aoSource != "ssao") {
 		lighting.node->getOrCreateStateSet()->setTextureAttributeAndModes(
 			osgx::Library::instance().bindings().get("osgx::gbuffer.ao"),
-			cortao.aoTexture.get(),
+			aoSource == "gtao" ? gtao.aoTexture.get() : cortao.aoTexture.get(),
 			osg::StateAttribute::ON
 		);
 	}
+
 	viewer.getCamera()->setClearColor(osg::Vec4f(48.0f / 255.0f, 53.0f / 255.0f, 66.0f / 255.0f, 1.0f));
 
 	// Ground-truth dump: 'w' writes the shadow camera's own depth texture (what it actually
@@ -876,8 +945,8 @@ int main(int argc, char** argv) {
 	std::cout
 		<< "osgx-gbuffer: deferred PBRGBuffer::create() + PBRLightingPass::create()" << std::endl
 		<< " 0=lit composite (default) 1=albedo 2=normal 3=material 4=emissive 5=depth 6=SSAO" << std::endl
-		<< " 7=CORTAO 8=CORTAO (raw) 9=CORTAO bent normal" << std::endl
-		<< " o=swap the lighting pass's AO source between SSAO and CORTAO" << std::endl
+		<< " 7=CORTAO 8=CORTAO (raw) 9=CORTAO bent normal g=GTAO G=GTAO bent normal" << std::endl
+		<< " o=cycle the lighting pass's AO source: SSAO, GTAO, CORTAO" << std::endl
 		<< " w=dump the shadow camera's own depth texture to osgx-gbuffer-shadow-depth.png" << std::endl
 		<< " c=cycle glTF COLOR_0 vertex color: normal/forced-off/forced-on (A/B comparison, temporary)"
 		<< std::endl
@@ -992,6 +1061,45 @@ int main(int argc, char** argv) {
 		if(changed) {
 			ssao.radius->set(radius);
 			ssao.bias->set(bias);
+		}
+	}, osgx::imgui::SectionOptions::create(false, true));
+
+	// Every slider is a live uniform; Quality is a define (one Program per level, compiled on first
+	// use). 'g'/'G' show the output/bent normals, 'o' cycles the lighting pass's AO source.
+	gui->addSection("GTAO", [gtao](osg::RenderInfo&) mutable {
+		const auto slider = [](osg::Uniform* uniform, const char* label, float min, float max) {
+			float value = 0.0f;
+
+			uniform->get(value);
+
+			if(ImGui::SliderFloat(label, &value, min, max)) uniform->set(value);
+		};
+
+		static constexpr const char* QUALITIES[] = {"Low (1x2)", "Medium (2x2)", "High (3x3)", "Ultra (9x3)"};
+		static constexpr const char* DENOISE[] = {"Disabled", "Sharp", "Medium", "Soft"};
+
+		int quality = static_cast<int>(gtao.getQuality());
+		int denoise = static_cast<int>(gtao.getDenoisePasses());
+
+		if(ImGui::Combo("Quality", &quality, QUALITIES, 4)) {
+			gtao.setQuality(static_cast<osgx::GTAO::Quality>(quality));
+		}
+
+		if(ImGui::Combo("Denoise", &denoise, DENOISE, 4)) {
+			gtao.setDenoisePasses(static_cast<unsigned int>(denoise));
+		}
+
+		slider(gtao.radius, "Radius##gtao", 0.01f, 2.0f);
+
+		if(ImGui::TreeNode("Heuristics (XeGTAO auto-tuned)")) {
+			slider(gtao.radiusMultiplier, "Radius Multiplier", 0.3f, 3.0f);
+			slider(gtao.falloffRange, "Falloff Range", 0.0f, 1.0f);
+			slider(gtao.sampleDistributionPower, "Sample Distribution", 1.0f, 3.0f);
+			slider(gtao.thinOccluderCompensation, "Thin Occluder Comp.", 0.0f, 0.7f);
+			slider(gtao.finalValuePower, "Final Power", 0.5f, 5.0f);
+			slider(gtao.depthMipSamplingOffset, "Depth Mip Offset", 0.0f, 6.0f);
+
+			ImGui::TreePop();
 		}
 	}, osgx::imgui::SectionOptions::create(false, true));
 
